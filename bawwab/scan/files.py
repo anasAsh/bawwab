@@ -101,6 +101,42 @@ def _is_code_name(rel: str, head: bytes) -> bool:
     return rel.endswith(CODE_EXT) or head.startswith(b"#!")
 
 
+_MACHO_CPUS = {7, 0x01000007, 12, 0x0100000C, 0x0200000C, 18, 0x01000012}
+
+
+def _plausible_executable(h: bytes) -> bool:
+    """An executable header that a real toolchain wrote (round 5): a bare magic followed by text is not."""
+    if h.startswith(b"\x7fELF"):
+        return len(h) > 6 and h[4] in (1, 2) and h[5] in (1, 2) and h[6] == 1
+    if h[:4] in (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf"):
+        return int.from_bytes(h[4:8], "big") in _MACHO_CPUS
+    if h[:4] in (b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe"):
+        return int.from_bytes(h[4:8], "little") in _MACHO_CPUS
+    if h.startswith(b"\xca\xfe\xba\xbe"):  # universal binary
+        return 1 <= int.from_bytes(h[4:8], "big") <= 32 and int.from_bytes(h[8:12], "big") in _MACHO_CPUS
+    if h.startswith(b"\x00asm"):
+        return h[4:8] == b"\x01\x00\x00\x00"
+    return _is_pe(h)
+
+
+_INTERP = r"""(?:\b(?:sh|bash|zsh|dash|ksh|fish|source|exec)|(?:^|(?<=[\s;&|(`'"]))\.)"""
+_INTERP_LIST = r"""['"](?:/usr)?(?:/bin/)?(?:env\s+)?(?:sh|bash|zsh|dash|ksh)['"]\s*,\s*(?:['"]-[\w-]+['"]\s*,\s*)*"""
+
+
+def _interpreted(rel: str, texts: list[ScanFile]) -> bool:
+    """Some file runs this one through a shell: `bash -x hooks/run`, `sh "payload"`, `. ./payload`,
+    subprocess.call(['sh', 'payload']) (round 5). A shell runs the text lines after any header."""
+    path = r"""(?:[^\s'"`;&|]*/)?""" + re.escape(rel.rsplit("/", 1)[-1] if "/" not in rel else rel)
+    if "/" in rel:
+        path = r"""(?:[^\s'"`;&|]*/)?""" + re.escape(rel)
+    rx = re.compile(
+        _INTERP + r"""\s+(?:-{1,2}[\w-]+\s+)*['"\\]*""" + path + r"""['"\\]*(?![\w./-])"""
+        r"|" + _INTERP_LIST + r"""['"]""" + path + r"""['"]""",
+        re.M,
+    )
+    return any(rx.search(f.text) for f in texts)
+
+
 def _is_launcher(rel: str) -> bool:
     base = rel.rsplit("/", 1)[-1]
     return base in LAUNCHER_BASES or rel.endswith(SHELL_EXT) or bool(re.search(r"(?:^|/)hooks/", rel))
@@ -144,18 +180,25 @@ def load_files(
     # Non-executable files that look binary by magic (media, documents, archives); decided after
     # every text file is read, because a file that a manifest/hook/install script runs is never
     # taken as media (R30d): bash runs line 2 of a "%PDF" script.
-    pending: list[tuple[str, str, bool]] = []  # (rel, evidence if referenced, counts as binary otherwise)
-    binaries = 0
+    # (rel, evidence, kind): kind "exec" (plausible executable), "forged" (executable magic with an
+    # implausible header), "media" (counted as binary when left alone) or "quiet" (small media).
+    pending: list[tuple[str, str, str]] = []
 
     def finish() -> tuple[list[ScanFile], list[Finding]]:
-        nonlocal binaries
         launchers = [f for f in files if _is_launcher(f.rel)]
-        for rel, evidence, counted in pending:
-            if _referenced(rel, launchers):
+        binaries = 0
+        for rel, evidence, kind in pending:
+            interpreted = _interpreted(rel, files)
+            if kind == "exec" and not interpreted:
+                binaries += 1  # a real executable launched directly (round 5)
+            elif kind in ("exec", "forged") or interpreted or _referenced(rel, launchers):
                 findings.append(_truncated(evidence, rel))
-            elif counted:
+            elif kind == "media":
                 binaries += 1
         return files, findings + _binary_unscanned(binaries)
+
+    def exec_kind(head: bytes) -> str:
+        return "exec" if _plausible_executable(head) else "forged"
 
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
@@ -174,10 +217,8 @@ def load_files(
                         head = fh.read(8192)
                     # A code/script name (or #!) is never taken as media: bash runs line 2 of a "%PDF" script.
                     if _is_binary(head) and not _is_code_name(rel, head):
-                        if _is_executable(head):  # a real executable: what a launcher runs, but not a script
-                            binaries += 1
-                        else:
-                            pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", True))
+                        kind = exec_kind(head) if _is_executable(head) else "media"
+                        pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", kind))
                     else:
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
                     continue
@@ -189,9 +230,9 @@ def load_files(
                 if _is_code_name(rel, head):
                     findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
                 elif _is_executable(head):  # prebuilt executables are counted
-                    binaries += 1
+                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", exec_kind(head)))
                 else:  # small images/archives stay silent unless a launcher runs them
-                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", False))
+                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", "quiet"))
                 continue
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
     return finish()

@@ -14,6 +14,7 @@ from bawwab.scan.identity import identity_checks
 from bawwab.scan.judge.backends import Backend, backend_for
 from bawwab.scan.judge.judge import judge
 from bawwab.scan.rules import run_static_rules
+from bawwab.scan.rules.code import registry_install_adjust
 from bawwab.scan.rules.text import model_facing_text
 from bawwab.severity import compute_verdict
 from bawwab.store import Store, open_store, target_key
@@ -209,7 +210,10 @@ def _static_step(f: Fetched) -> tuple[list[ScanFile], list[ExtraText], list[Find
         findings += loaded
     extra = _extra_from_tools(f.remote_tools)
     findings += identity_checks(f.meta)
-    findings += run_static_rules(files, extra)
+    static = run_static_rules(files, extra)
+    if f.target.kind == "npm":  # R31: registry installs do not run `prepare`
+        static = registry_install_adjust(files, static)
+    findings += static
     return files, extra, findings
 
 

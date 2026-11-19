@@ -286,7 +286,7 @@ FB_EVAL_FETCH_RE = re.compile(
 )
 
 CRED_RES = [
-    r"\.ssh/", r"\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\b", r"\.aws/credentials",
+    r"\.ssh/", r"\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\b", r"\.aws/credentials", r"\.credentials\.json",
     # Segment-joined key paths: path.join(home, '.ssh', 'id_x'), Path.home() / '.ssh' / 'id_x' (round 4, R30e).
     r"\.ssh['\"`]\s*[,/+]\s*[frbu]?['\"`]/?id_",
     r"(?<![\w.])\.env\b", r"\.claude\.json",
@@ -460,6 +460,25 @@ def _install_files(files: list[ScanFile]) -> set[str]:
         rels.add(h.file.rel)
         rels.update(r.rel for r in _referenced_files(h, files))
     return rels
+
+
+def registry_install_adjust(files: list[ScanFile], findings: list[Finding]) -> list[Finding]:
+    """R31: npm does not run `prepare` when installing from the registry, so for an npm-registry
+    target a hook that is only `prepare` is listed as LOW. Git and local targets keep MED."""
+    prepare = set()
+    for f in files:
+        if _base(f.rel) == "package.json":
+            scripts = _package_scripts(f)
+            if "prepare" in scripts:
+                prepare.add((f.rel, _json_key_line(f.text, "prepare")))
+            for key in INSTALL_KEYS:
+                if key != "prepare" and key in scripts:
+                    prepare.discard((f.rel, _json_key_line(f.text, key)))
+    return [
+        Finding(x.rule, Severity.LOW, x.source, x.evidence, file=x.file, line=x.line)
+        if x.rule == "install-script" and (x.file, x.line) in prepare else x
+        for x in findings
+    ]
 
 
 class ManifestRules:
@@ -736,9 +755,42 @@ def _stringify_re(leaf: str) -> re.Pattern:
     )
 
 
-def _stringified(t: str, a: int, b: int) -> bool:
+# Round 5 (controller): any stringification idiom anywhere in the file, on any receiver, voids
+# the regex combo-exemption for the whole file.
+_ANY_STRINGIFY_RE = re.compile(
+    r"""\.\s*(?:source|pattern)\b|\[\s*(['"`])(?:source|pattern)\1\s*\]"""
+    r"""|\{[^{}=]*\b(?:source|pattern)\b[^{}=]*\}\s*=(?!=)|\brepr\s*\("""
+    r"""|\bgetattr\s*\([^()]*,\s*(['"])(?:source|pattern)\2|\.\s*toString\s*\(\s*\)"""
+    r"""|\b(?:String|str)\(\s*/"""
+)
+_REGEX_CTOR_RE = re.compile(r"\b(?:re\.compile|RegExp)\s*\(")
+
+
+@lru_cache(maxsize=256)
+def _regex_void(t: str, regexes: tuple) -> bool:
+    if _ANY_STRINGIFY_RE.search(t):
+        return True
+    names: set[str] = set()
+    starts = [a for a, _ in regexes] + [m.start() for m in _REGEX_CTOR_RE.finditer(t)]
+    for a in starts:
+        held, elements = _holder_names(t, a)
+        names |= {n.rsplit(".", 1)[-1] for n in held} | {e for e, _, _ in elements}
+    for n in names:
+        n = re.escape(n)
+        if re.search(
+            rf"""\b(?:String|str)\(\s*{n}\b|(?<![\w$.]){n}\s*\+\s*['"`]|['"`]\s*\+\s*{n}(?![\w$])"""
+            rf"""|\$\{{\s*{n}\s*\}}|\{{\s*{n}\s*(?:!r|!s)?\s*\}}""",
+            t,
+        ):
+            return True
+    return False
+
+
+def _stringified(t: str, a: int, b: int, regexes: tuple = ()) -> bool:
     """The regex at [a, b) is turned back into a string somewhere (R29: then it is not exempt)."""
     if _STRINGIFY_TAIL_RE.match(t, b) or _STRINGIFY_HEAD_RE.search(t[max(0, a - 20) : a]):
+        return True
+    if _regex_void(t, tuple(regexes)):
         return True
     names, elements = _holder_names(t, a)
     if any(_stringify_re(re.escape(n.rsplit(".", 1)[-1])).search(t) for n in names):
@@ -785,7 +837,7 @@ def _context(f: ScanFile, t: str, pos: int, regexes) -> str | None:
     """
     for a, b in regexes:
         if a <= pos < b:
-            if not _stringified(t, a, b):
+            if not _stringified(t, a, b, regexes):
                 return "regex"
             pos = a  # turned into a string: only an enclosing deny-list can still lower it
     depth, i, levels = 0, pos - 1, 0
@@ -807,15 +859,15 @@ def _context(f: ScanFile, t: str, pos: int, regexes) -> str | None:
                     i -= 1
                     continue
                 if REGEX_CALL_RE.match(callee):
-                    end = _close_of(t, i)
                     args = _top_args(t, i)
-                    literal = levels == 1 and args and _LITERAL_ARG_RE.match(re.sub(r"^\s*[rbu]+(?=['\"])", "", args[0]))
-                    if literal and not _stringified(t, i, end):
+                    in_pattern = levels == 1 and bool(args) and i + 1 <= pos < i + 1 + len(args[0])
+                    literal = in_pattern and _LITERAL_ARG_RE.match(re.sub(r"^\s*[rbu]+(?=['\"])", "", args[0]))
+                    if literal and not _stringified(t, i, _close_of(t, i), regexes):
                         return "regex"
-                    if _stringified(t, i, end):
-                        i -= 1
-                        continue  # new RegExp('...').source: judged by what encloses it
-                    return "deny"
+                    # the subject / replacement of re.sub(...), or a pattern turned into a string:
+                    # judged by what encloses the call (round 5)
+                    i -= 1
+                    continue
                 if callee and callee not in CONTAINER_CALLEES:
                     recv, _, leaf = callee.rpartition(".")
                     if _glob_callee(f, callee):
@@ -844,25 +896,67 @@ CLAUDE_READ_LEAVES = {
 CLAUDE_ARCHIVE_LEAVES = {"make_archive", "zip", "zipSync", "tar", "archive", "create", "c", "directory", "add", "write"}
 CLAUDE_METHOD_LEAVES = {"rglob", "glob", "iterdir", "read_text", "read_bytes", "open", "walk", "readdir"}
 _WRITE_MODE_RE = re.compile(r"""(?:^|,)\s*(?:mode\s*=\s*|flags?\s*:\s*)?['"][wax]b?\+?['"]""")
-_JOIN_SEG_RE = re.compile(r"""\s*\)?\s*(?:,|/|\+)\s*[frbu]?(['"`])/*([^'"`/\\]*)""")
 _TEMPLATE_SEG_RE = re.compile(r"""\s*\}\s*/([^/`'"{}]*)""")
 
 
-def _bare_claude_read(f: ScanFile, t: str, m: re.Match, line_no: int) -> bool:
-    """A bare home ~/.claude (the value itself, not joined with agents/skills/commands/plugins/
-    CLAUDE.md) is the argument of a read / walk / copy-source call (R30a)."""
-    calls = _calls(f.rel, f.text)
-    if calls is None:  # unparsed: same-function read, as in round 3
-        reads = [_line_of(t, r.start()) for r in READ_ITER_RE.finditer(t)]
-        return bool(reads) and _same_scope(f, [line_no], reads)
+_SEG_STEP_RE = re.compile(r"""\s*\)?\s*(?:,|/|\+)\s*[frbu]?(['"`])([^'"`\n]*)\1""")
+GLOB_LEAVES = {"glob", "globSync", "globby", "sync", "stream", "async", "fg", "fastGlob"}
+
+
+def _segments_after(text: str, pos: int) -> list[str] | None:
+    """Literal path segments joined right after pos (path.join(x, 'a', 'b/c'), x / 'a', x + '/a',
+    `${x}/a`), or None when nothing literal follows."""
+    segs: list[str] = []
+    m = _TEMPLATE_SEG_RE.match(text, pos)
+    if m:
+        return [x for x in m.group(1).split("/") if x]
+    while (m := _SEG_STEP_RE.match(text, pos)) is not None:
+        segs += [x for x in m.group(2).split("/") if x]
+        pos = m.end()
+    return segs or None
+
+
+def _escapes(segs: list[str] | None) -> bool:
+    """A bare ~/.claude joined this way reaches beyond the install dirs (round 5: '..' escapes)."""
+    return not segs or ".." in segs or segs[0] not in CLAUDE_INSTALL_SUBDIRS
+
+
+def _decl_names(t: str, m_start: int) -> set[str]:
     names: set[str] = set()
-    prefix = t[t.rfind("\n", 0, m.start()) + 1 : m.start()]
+    prefix = t[t.rfind("\n", 0, m_start) + 1 : m_start]
     d = re.search(r"(?:^|[;{(,\s])(?:(?:const|let|var)\s+)?([\w$.]+)\s*(?::[^=;]+)?=(?![=>])[^=;]*$", prefix)
     if d:
         names.add(d.group(1))
     for n in list(names):
         for a in re.finditer(rf"(?<![\w$.])([\w$.]+)\s*(?::[^=\n]+)?=\s*{re.escape(n)}\s*(?:[;\n)]|$)", t, re.M):
             names.add(a.group(1))
+    return names
+
+
+def _install_dir_escapes(t: str, m: re.Match) -> bool:
+    """An install-dir reference that climbs out of it: '.claude/skills/..', join(.., 'skills', '..'),
+    or a name bound to it that is joined with '..', passed to dirname() or .parent (round 5)."""
+    after = t[m.end() : m.end() + 40]
+    if re.match(r"""/\.\.(?:[/'"`]|$)""", after) or ".." in (_segments_after(t, m.end()) or []):
+        return True
+    for n in _decl_names(t, m.start()):
+        e = re.escape(n)
+        if re.search(rf"\bdirname\s*\(\s*{e}\s*\)|(?<![\w$.]){e}\s*\.\s*parent\b", t):
+            return True
+        for o in re.finditer(rf"(?<![\w$.]){e}(?![\w$])", t):
+            if ".." in (_segments_after(t, o.end()) or []):
+                return True
+    return False
+
+
+def _bare_claude_read(f: ScanFile, t: str, m: re.Match, line_no: int) -> bool:
+    """A bare home ~/.claude (the value itself, not joined with agents/skills/commands/plugins/
+    CLAUDE.md) is the argument of a read / walk / glob / shell / copy-source call (R30a, round 5)."""
+    calls = _calls(f.rel, f.text)
+    if calls is None:  # unparsed: same-function read, as in round 3
+        reads = [_line_of(t, r.start()) for r in READ_ITER_RE.finditer(t)]
+        return bool(reads) and _same_scope(f, [line_no], reads)
+    names = _decl_names(t, m.start())
 
     def reaches(target: str) -> bool:
         for r in CLAUDE_REF_RE.finditer(target):
@@ -870,10 +964,8 @@ def _bare_claude_read(f: ScanFile, t: str, m: re.Match, line_no: int) -> bool:
                 return True  # the bare home .claude expression inline
         for n in names:
             for o in re.finditer(rf"(?<![\w$.]){re.escape(n)}(?![\w$])", target):
-                seg = _JOIN_SEG_RE.match(target, o.end()) or _TEMPLATE_SEG_RE.match(target, o.end())
-                first = (seg.group(seg.lastindex) if seg else "").split("/", 1)[0]
-                if first not in CLAUDE_INSTALL_SUBDIRS or first == "":
-                    return True  # bare, joined with a variable or a glob, or with another subpath
+                if _escapes(_segments_after(target, o.end())):
+                    return True  # bare, joined with a variable / glob / '..', or another subpath
         return False
 
     for c in calls:
@@ -881,8 +973,12 @@ def _bare_claude_read(f: ScanFile, t: str, m: re.Match, line_no: int) -> bool:
         if leaf == "open" and _WRITE_MODE_RE.search(c.args_raw[len(c.first_raw):] if c.first_raw else ""):
             continue  # open(..., 'w' / 'a'): a destination
         targets = []
-        if leaf in CLAUDE_READ_LEAVES or recv.endswith(("glob", "fg")) and leaf in ("sync", "stream", "async"):
+        if leaf in CLAUDE_READ_LEAVES:
             targets.append(c.first_raw)
+        if leaf in GLOB_LEAVES and (leaf in CLAUDE_READ_LEAVES or re.search(r"glob|fg", recv, re.I)):
+            targets.append(c.args_raw)  # fg.sync('**/*', {cwd: base})
+        if leaf in SHELL_FUNCS:
+            targets.append(c.args_raw)  # execSync('tar czf - ' + base)
         if leaf in CLAUDE_ARCHIVE_LEAVES and re.search(r"zip|tar|archiv|shutil", c.callee, re.I):
             targets.append(c.args_raw)
         if leaf in CLAUDE_METHOD_LEAVES and recv:
@@ -906,6 +1002,8 @@ def _claude_refs(t: str, f: ScanFile | None = None):
         home = bool(HOME_RE.search(_line_text(t, line_no)))
         if CLAUDE_CRED_FILE_RE.match(sub):
             kind = "cred"
+        elif sub in CLAUDE_INSTALL_SUBDIRS and sub and home and _install_dir_escapes(t, m):
+            kind = "cred"  # ~/.claude/skills/.. and the like (round 5)
         elif sub in CLAUDE_INSTALL_SUBDIRS:
             kind = "install"
             if sub == "" and home and f is not None and _bare_claude_read(f, t, m, line_no):
@@ -1259,6 +1357,16 @@ def _dotted(node) -> str | None:
     return None
 
 
+def _literal_import(node) -> str | None:
+    """'m' for importlib.import_module('m') / import_module('m') / __import__('m')."""
+    if (
+        isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str) and _dotted(node.func) in ("importlib.import_module", "import_module", "__import__")
+    ):
+        return node.args[0].value
+    return None
+
+
 def _py_bindings(text: str) -> _Bindings:
     al: dict[str, str] = {}
     mods: set[str] = set()
@@ -1279,6 +1387,12 @@ def _py_bindings(text: str) -> _Bindings:
                     al[a.asname or a.name] = f"{n.module}.{a.name}"
                     members.append((n.module, a.name))
             elif isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+                lit = _literal_import(n.value)
+                if lit:  # m = importlib.import_module('requests'): m is that module (round 5)
+                    mods.add(lit)
+                    al[n.targets[0].id] = lit
+                    modbind[n.targets[0].id] = lit
+                    continue
                 v = _dotted(n.value)
                 if v:
                     al.setdefault(n.targets[0].id, v)
@@ -1558,6 +1672,14 @@ def _network_capable(f: ScanFile, t: str) -> bool:
     return False
 
 
+# '.ssh' followed by any further segment in a join (round 5): path.join(home, '.ssh', name),
+# Path.home() / '.ssh' / name, '.ssh' + '/' + name. A plain list ['.ssh', '.gnupg'] is not a join.
+SSH_JOIN_RE = re.compile(
+    r"""(?:\bpath\.(?:join|resolve)|\bos\.path\.join|\bjoinpath|\bPath)\s*\((?:[^()]|\([^()]*\))*?['"`](\.ssh)['"`]\s*,\s*[^\s)]"""
+    r"""|['"`](\.ssh)['"`]\s*[/+]\s*[\w$'"`(]"""
+)
+
+
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     """Sorted (pos, kind) for credential paths and .claude credential references.
 
@@ -1566,9 +1688,15 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     context, R29).
     """
     hits = []
+    seen = set()
     for m in CRED_RE.finditer(t):
         if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
+            seen.add(m.start())
             hits.append((m.start(), _context(f, t, m.start(), regexes) or "real"))
+    for m in SSH_JOIN_RE.finditer(t):
+        pos = m.start(1) if m.group(1) else m.start(2)
+        if pos not in seen and not any(a <= pos < b for a, b in [(x.start(), x.end()) for x in CRED_RE.finditer(t, max(0, pos - 2), pos + 40)]):
+            hits.append((pos, _context(f, t, pos, regexes) or "real"))
     for pos, kind in _claude_refs(t, f):
         if kind == "cred":
             hits.append((pos, _context(f, t, pos, regexes) or "real"))
