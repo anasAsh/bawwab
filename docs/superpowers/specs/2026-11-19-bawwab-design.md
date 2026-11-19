@@ -39,7 +39,24 @@ human in the loop whenever anything looks off.
 ## Non-goals (v1)
 
 - Gates for agents other than Claude Code. The scanner stays
-  agent-agnostic so Cursor/Codex/Claude Desktop gates can be added later.
+  agent-agnostic. In v1, the config readers for the inventory and the
+  effect check are written as **agent adapters**, with only the Claude Code
+  adapter implemented. *(Decided during build, 2026-11-19.)*
+
+## Roadmap: v1.1, multiple agents on one machine (user-approved 2026-11-19)
+
+- **More adapters:** Cursor, Codex CLI, Claude Desktop, and VS Code/Copilot
+  MCP config. Gemini CLI and Windsurf come later. Each adapter declares its
+  config paths and how to read MCP servers, skills and extensions from
+  them.
+- **Background watcher:** a user service (systemd user unit on Linux,
+  launchd agent on macOS) watches every adapter's paths. It scans new or
+  changed items, quarantines anything not clean, and notifies the user with
+  a desktop notification plus `bawwab status`. This is detection right after
+  install, not blocking before it.
+- **Hooks in other agents:** blocking before install in another agent is
+  added only where that agent offers a hook mechanism comparable to Claude
+  Code's, checked per agent.
 - Monitoring tool calls at runtime after installation.
 - A hosted service or public verdict registry.
 
