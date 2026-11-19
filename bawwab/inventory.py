@@ -2,118 +2,32 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import shlex
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
-from bawwab.fetch.target import package_position, target_from_command, target_from_url
-from bawwab.gate.detect import _read_json
+from bawwab.agents import ADAPTERS, InstalledItem
+from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
-from bawwab.paths import bawwab_home, claude_home, claude_json
+from bawwab.paths import bawwab_home
 from bawwab.report import sanitise
 from bawwab.scan import TRANSIENT_RULES, scan_target
 from bawwab.trust import cross_server_findings
 from bawwab.types import Target, Verdict
+
+__all__ = ["InstalledItem", "list_installed", "run_inventory"]
 
 LOCK_STALE_S = 30 * 60
 _UNPINNED = (None, "latest")
 _MAX_FP_FILES = 5000
 
 
-@dataclass
-class InstalledItem:
-    source: str
-    label: str
-    target: Target
-    unpinned: bool
-    kind: Literal["mcp", "skill", "plugin"] = "mcp"
-    ident: str = ""
-    spec: dict = field(default_factory=dict)
-
-
-def _mcp_item(source: str, scope_ident: str, name: str, spec: object, cwd: Path) -> InstalledItem | None:
-    if not isinstance(spec, dict):
-        return None
-    url, cmd, args = spec.get("url"), spec.get("command"), spec.get("args", [])
-    if isinstance(url, str) and url:
-        t = target_from_url(url)
-    elif isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
-        t = target_from_command(cmd, args)
-        if t is not None and t.kind == "local":
-            script = next((a for a in args if not a.startswith("-")), None)
-            if script and not os.path.isabs(script):
-                import dataclasses
-
-                p = str((cwd / script).parent)
-                t = dataclasses.replace(t, path=p)
-    else:
-        t = None
-    if t is None:
-        return None
-    unpinned = t.kind in ("npm", "pypi") and t.version in _UNPINNED
-    return InstalledItem(source, name, t, unpinned, "mcp", f"mcp:{scope_ident}:{name}", dict(spec))
-
-
-def _servers(d: object) -> dict:
-    s = d.get("mcpServers") if isinstance(d, dict) else None
-    return s if isinstance(s, dict) else {}
-
-
-def _skills(base: Path, scope: str, source: str) -> list[InstalledItem]:
-    out: list[InstalledItem] = []
-    try:
-        dirs = sorted(p for p in base.iterdir() if p.is_dir() and (p / "SKILL.md").is_file())
-    except OSError:
-        return out
-    for d in dirs:
-        t = Target("local", str(d), name=str(d), path=str(d))
-        out.append(InstalledItem(source, d.name, t, False, "skill", f"skill:{scope}:{d.name}"))
-    return out
-
-
-def _plugins(cwd: Path) -> list[InstalledItem]:
-    data = _read_json(claude_home() / "plugins" / "installed_plugins.json")
-    plugins = data.get("plugins") if isinstance(data, dict) else None
-    out: list[InstalledItem] = []
-    if not isinstance(plugins, dict):
-        return out
-    for spec, entries in plugins.items():
-        for e in entries if isinstance(entries, list) else []:
-            if not isinstance(e, dict) or not isinstance(e.get("installPath"), str) or not e["installPath"]:
-                continue
-            pp = e.get("projectPath")
-            if e.get("scope") == "project" and isinstance(pp, str) and Path(pp) != cwd:
-                continue
-            p = e["installPath"]
-            t = Target("local", p, name=p, path=p)
-            out.append(InstalledItem("installed_plugins.json", str(spec), t, False, "plugin", f"plugin:{spec}"))
-            break
-    return out
-
-
 def list_installed(cwd: Path) -> list[InstalledItem]:
-    cwd = Path(cwd)
-    items: list[InstalledItem] = []
-    cj = _read_json(claude_json())
-    projects = cj.get("projects") if isinstance(cj, dict) else None
-    proj = projects.get(str(cwd)) if isinstance(projects, dict) else None
-    for name, spec in _servers(cj).items():
-        items.append(_mcp_item("~/.claude.json", "user", name, spec, cwd))
-    for name, spec in _servers(proj).items():
-        items.append(_mcp_item("~/.claude.json (project)", f"project:{cwd}", name, spec, cwd))
-    for name, spec in _servers(_read_json(cwd / ".mcp.json")).items():
-        items.append(_mcp_item(".mcp.json", f"mcpjson:{cwd}", name, spec, cwd))
-    items = [i for i in items if i is not None]
-    items += _skills(claude_home() / "skills", "user", "~/.claude/skills")
-    items += _skills(cwd / ".claude" / "skills", f"project:{cwd}", ".claude/skills")
-    items += _plugins(cwd)
-    return items
+    """Everything installed for `cwd`, across all agent adapters."""
+    return [i for a in ADAPTERS for i in a.list_installed(Path(cwd))]
 
 
 # ------------------------------------------------------------------ scanning

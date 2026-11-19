@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from bawwab.paths import bawwab_home
+from bawwab.ruleset import RULESET_VERSION
 from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
 
 PENDING_TTL = timedelta(hours=1)
@@ -58,7 +59,16 @@ def _migrate_3(conn: sqlite3.Connection) -> None:
     )
 
 
-_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3]
+def _migrate_4(conn: sqlite3.Connection) -> None:
+    """Scans carry the ruleset version; inventory idents are prefixed with the agent adapter's name."""
+    _add_column(conn, "scans", "ruleset", "TEXT")
+    for table in ("baseline", "inventory_seen"):
+        conn.execute(
+            f"UPDATE OR REPLACE {table} SET ident='claude-code:' || ident WHERE ident NOT LIKE 'claude-code:%'"
+        )
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4]
 _VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
 
@@ -151,8 +161,8 @@ class Store:
 
     # --- scans ---
     def get_cached(self, key: str) -> ScanReport | None:
-        row = self._conn.execute("SELECT report FROM scans WHERE key=?", (key,)).fetchone()
-        if not row:
+        row = self._conn.execute("SELECT report, ruleset FROM scans WHERE key=?", (key,)).fetchone()
+        if not row or row["ruleset"] != RULESET_VERSION:  # made by other rules: rescan
             return None
         try:
             return report_from_dict(json.loads(row[0]))
@@ -185,8 +195,9 @@ class Store:
                         raise sqlite3.IntegrityError("finding id space exhausted")
             data = json.dumps(report_to_dict(r))
             self._conn.execute(
-                "INSERT OR REPLACE INTO scans(key, report, scanned_at, snapshot) VALUES (?,?,?,?)",
-                (r.key, data, _iso(r.scanned_at), json.dumps(snapshot) if snapshot is not None else None),
+                "INSERT OR REPLACE INTO scans(key, report, scanned_at, snapshot, ruleset) VALUES (?,?,?,?,?)",
+                (r.key, data, _iso(r.scanned_at), json.dumps(snapshot) if snapshot is not None else None,
+                 RULESET_VERSION),
             )
 
     def get_scan_snapshot(self, key: str) -> dict | None:

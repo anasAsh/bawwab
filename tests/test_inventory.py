@@ -54,22 +54,22 @@ def test_lists_all_kinds(home):
     _layout(h, proj)
     items = {i.ident: i for i in inv.list_installed(proj)}
     assert set(items) == {
-        "mcp:user:alpha", f"mcp:project:{proj}:beta", f"mcp:mcpjson:{proj}:gamma",
-        "skill:user:s1", f"skill:project:{proj}:s2", "plugin:p1@mk",
+        "claude-code:mcp:user:alpha", f"claude-code:mcp:project:{proj}:beta", f"claude-code:mcp:mcpjson:{proj}:gamma",
+        "claude-code:skill:user:s1", f"claude-code:skill:project:{proj}:s2", "claude-code:plugin:p1@mk",
     }
-    assert items["mcp:user:alpha"].kind == "mcp" and items["mcp:user:alpha"].spec["command"] == "npx"
-    assert items["plugin:p1@mk"].label == "p1@mk" and items["plugin:p1@mk"].target.kind == "local"
-    assert items["skill:user:s1"].kind == "skill"
-    assert items[f"mcp:project:{proj}:beta"].target.kind == "remote"
+    assert items["claude-code:mcp:user:alpha"].kind == "mcp" and items["claude-code:mcp:user:alpha"].spec["command"] == "npx"
+    assert items["claude-code:plugin:p1@mk"].label == "p1@mk" and items["claude-code:plugin:p1@mk"].target.kind == "local"
+    assert items["claude-code:skill:user:s1"].kind == "skill"
+    assert items[f"claude-code:mcp:project:{proj}:beta"].target.kind == "remote"
 
 
 def test_unpinned(home):
     h, proj = home
     _layout(h, proj)
     items = {i.ident: i for i in inv.list_installed(proj)}
-    assert items["mcp:user:alpha"].unpinned
-    assert not items[f"mcp:mcpjson:{proj}:gamma"].unpinned
-    assert not items["skill:user:s1"].unpinned
+    assert items["claude-code:mcp:user:alpha"].unpinned
+    assert not items[f"claude-code:mcp:mcpjson:{proj}:gamma"].unpinned
+    assert not items["claude-code:skill:user:s1"].unpinned
 
 
 def _report(t, verdict=Verdict.CLEAN, version="1.2.3", findings=()):
@@ -157,8 +157,8 @@ def test_baseline_only_clean(home):
 
     inv.run_inventory(proj, scan=scan, store=store)
     b = store.get_baseline()
-    assert set(b) == {"mcp:user:good"}
-    assert b["mcp:user:good"].startswith("k:")
+    assert set(b) == {"claude-code:mcp:user:good"}
+    assert b["claude-code:mcp:user:good"].startswith("k:")
 
 
 def test_warnings_dedupe_and_flag(home):
