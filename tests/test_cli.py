@@ -75,3 +75,19 @@ def test_console_script_exit_2(env):
 def test_bare_relative_path_is_local(env, capsys, monkeypatch):
     monkeypatch.chdir(FIX.parent.parent)
     assert main(["scan", "tests/fixtures/code/postinstall_curl", "--json"]) == 2
+
+
+def test_no_cache_flag(env, capsys, monkeypatch):
+    calls = []
+    import bawwab.scan as sm
+
+    real = sm.scan_target
+
+    def spy(*a, **k):
+        calls.append(k.get("no_cache"))
+        return real(*a, **k)
+
+    monkeypatch.setattr(sm, "scan_target", spy)
+    main(["scan", str(FIX / "code/clean_server")])
+    main(["scan", str(FIX / "code/clean_server"), "--no-cache"])
+    assert calls == [False, True]

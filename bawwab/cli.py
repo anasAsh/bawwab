@@ -21,6 +21,7 @@ def _build() -> argparse.ArgumentParser:
     s = sub.add_parser("scan", help="scan a package, repo, path or remote MCP URL")
     s.add_argument("target")
     s.add_argument("--deep", action="store_true", help="also run the sandbox")
+    s.add_argument("--no-cache", action="store_true", help="ignore cached results and rescan")
     s.add_argument("--json", action="store_true", help="print the report as JSON")
     a = sub.add_parser("approve", help="approve a blocked install")
     a.add_argument("id")
@@ -52,7 +53,7 @@ def _scan(args) -> int:
     cfg = load_config(Path.cwd())
     store = open_store()
     report = scan_target(
-        parse_target(_spec(args.target)), mode=Mode.DEEP if args.deep else cfg.mode, cfg=cfg, store=store
+        parse_target(_spec(args.target)), mode=Mode.DEEP if args.deep else cfg.mode, cfg=cfg, store=store, no_cache=args.no_cache
     )
     pid = store.create_pending(report) if report.verdict != Verdict.CLEAN else None
     if args.json:

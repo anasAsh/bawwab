@@ -109,10 +109,18 @@ def _child_target(spec: dict, root: Path) -> Target | None:
 
 
 def _scan_children(f: Fetched, ctx: _Ctx, depth: int) -> list[Finding]:
-    if f.artifact_type != "plugin" or f.root is None or depth >= MAX_PLUGIN_DEPTH:
+    if f.artifact_type != "plugin" or f.root is None:
         return []
+    servers = _bundled_servers(f.root)
+    if depth >= MAX_PLUGIN_DEPTH:
+        if not servers:
+            return []
+        return [Finding(
+            "plugin.unresolved-server", Severity.MED, "gate",
+            f"nesting depth limit reached; bundled server(s) not scanned: {', '.join(sorted(servers))[:150]}",
+        )]
     out: list[Finding] = []
-    for name, spec in _bundled_servers(f.root).items():
+    for name, spec in servers.items():
         t = _child_target(spec, f.root)
         if t is None:
             out.append(Finding(
@@ -164,7 +172,11 @@ def _judge_step(files: list[ScanFile], extra: list[ExtraText], static: list[Find
         return []
     if not static and not model_facing_text(files, extra):
         return []
-    return judge(files, extra, static, ctx.backend)
+    try:
+        backend = ctx.backend
+    except Exception as e:  # noqa: BLE001 - fail closed
+        return [Finding("judge.unavailable", Severity.MED, "gate", f"backend error: {type(e).__name__}")]
+    return judge(files, extra, static, backend)
 
 
 def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx) -> list[Finding]:
@@ -194,10 +206,17 @@ def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0) -> list[Finding]:
 
 def _apply_trust(f: Fetched, findings: list[Finding], cfg: Config) -> list[Finding]:
     """Findings counted toward the verdict. Trusted names: low/med static/judge findings are listed only."""
-    name = f.target.name or f.meta.name
-    if not name or not is_trusted(cfg, name):
+    name = f.target.name  # only what the user asked to install; never package-declared names
+    if f.target.kind not in ("npm", "pypi") or not name or not is_trusted(cfg, name):
         return findings
     return [x for x in findings if x.source in ("identity", "gate") or x.severity >= Severity.HIGH]
+
+
+TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error"}
+
+
+def _cacheable(r: ScanReport) -> bool:
+    return not any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
 
 
 def _fetch_key(t: Target) -> str:
@@ -229,10 +248,21 @@ def scan_target(
         key = target_key(t, f.resolved_version, f.content_hash)
         if not no_cache:
             cached = store.get_cached(key)
-            if cached is not None and (cached.mode == mode or cached.mode == Mode.DEEP):
+            if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
                 return cached
         ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
-        findings = _analyze(f, ctx)
+        try:
+            findings = _analyze(f, ctx)
+        except Exception as e:  # noqa: BLE001 - fail closed on anything unexpected
+            from bawwab.report import sanitise
+
+            r = synthetic_report(
+                sanitise(f"{type(e).__name__}: {e}", 200), key, t, "gate.error", mode
+            )
+            r.resolved_version = f.resolved_version
+            store.put_report(r)
+            store.audit("scan", key=key, verdict=r.verdict.value, mode=mode.value)
+            return r
         # (Task 8: rug-pull / snapshot comparison goes here)
         counted = _apply_trust(f, findings, cfg)
         verdict = compute_verdict(counted, cfg.malicious, cfg.suspicious)

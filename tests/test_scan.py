@@ -171,3 +171,86 @@ def test_synthetic_report():
     r = synthetic_report("boom", "k1")
     assert r.verdict == Verdict.SUSPICIOUS and r.key == "k1"
     assert r.findings[0].severity == Severity.MED and r.findings[0].source == "gate"
+
+
+class Flaky:
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, system, user, schema, timeout_s):
+        self.calls += 1
+        return "not json" if self.calls == 1 else '{"findings":[]}'
+
+
+def test_transient_failure_not_cached(store):
+    b = Flaky()
+    r1 = scan("text/inject_skill", store, backend=b)
+    assert any(f.rule == "judge.unavailable" for f in r1.findings)
+    r2 = scan("text/inject_skill", store, backend=b)
+    assert b.calls == 2 and not any(f.rule == "judge.unavailable" for f in r2.findings)
+
+
+def test_deep_unavailable_not_cached(store):
+    scan("code/clean_server", store, mode=Mode.DEEP)
+
+    class SB:
+        def run(self, f, t):
+            return [], []
+
+    r = scan("code/clean_server", store, mode=Mode.DEEP, sandbox=SB())
+    assert not any(f.rule == "sandbox.unavailable" for f in r.findings)
+
+
+def test_unexpected_exception_fails_closed(store, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("kaput\nx")
+
+    monkeypatch.setattr(scan_mod, "run_static_rules", boom)
+    r = scan("code/clean_server", store)
+    assert r.verdict == Verdict.SUSPICIOUS
+    assert r.findings[0].rule == "gate.error" and "RuntimeError" in r.findings[0].evidence
+    assert "\n" not in r.findings[0].evidence
+
+
+def test_backend_construction_failure(store, monkeypatch):
+    def boom(cfg):
+        raise RuntimeError("no key")
+
+    monkeypatch.setattr(scan_mod, "backend_for", boom)
+    r = scan_target(parse_target(str(FIX / "text/inject_skill")), store=store, cfg=Config())
+    assert any(f.rule == "judge.unavailable" and f.source == "gate" for f in r.findings)
+    assert r.verdict == Verdict.SUSPICIOUS
+
+
+def test_plugin_depth_limit_fails_closed(store, tmp_path):
+    def mk(d, server):
+        (d / ".claude-plugin").mkdir(parents=True)
+        (d / ".claude-plugin/plugin.json").write_text(json.dumps({"name": d.name, "mcpServers": {"s": server}}))
+
+    a, b, c = tmp_path / "a", tmp_path / "a/b", tmp_path / "a/b/c"
+    mk(a, {"command": "node", "args": ["./b/x.js"]})
+    mk(b, {"command": "node", "args": ["./c/x.js"]})
+    mk(c, {"command": "node", "args": ["./d/x.js"]})
+    for d in (b, c):
+        (d / "x.js").write_text("1")
+    r = scan_target(parse_target(str(a)), store=store, backend=Fake(), cfg=Config())
+    assert any(f.rule == "plugin.unresolved-server" and "depth limit" in f.evidence for f in r.findings)
+
+
+def test_local_package_name_never_trusted(store, tmp_path):
+    d = tmp_path / "pkg"
+    shutil.copytree(FIX / "code/clean_server", d)
+    (d / "package.json").write_text(json.dumps({"name": "@modelcontextprotocol/server-x", "version": "1"}))
+
+    def fetch(t, opts=None):
+        return Fetched(t, "1", d, "h", "mcp", PackageMeta(name="@modelcontextprotocol/server-x"),
+                       [], [Finding("x.med", Severity.MED, "static", "meh")], lambda: None)
+
+    import pytest as _p
+    mp = _p.MonkeyPatch()
+    mp.setattr(scan_mod, "fetch_target", fetch)
+    try:
+        r = scan_target(Target("local", str(d), path=str(d)), store=store, backend=Fake(), cfg=Config())
+    finally:
+        mp.undo()
+    assert r.verdict == Verdict.SUSPICIOUS
