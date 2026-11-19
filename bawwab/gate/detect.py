@@ -1006,14 +1006,17 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
     _bash_pass(cmd, cwd, acc, depth, (), regions)
     if not regions:
         return
-    _bash_pass(cmd, cwd, acc, depth, _ALL_TEXT)
     k = len(regions)
+    if k > _MAX_MIXED_REGIONS and any("<<" in cmd[r:_arith_region_end(cmd, r, acc.spend) or len(cmd)]
+                                      for r in regions):
+        raise _TooComplex  # too many readings to enumerate and a mixed one could open a heredoc: fail closed
+    _bash_pass(cmd, cwd, acc, depth, _ALL_TEXT)
     if 2 <= k <= _MAX_MIXED_REGIONS:
         for mask in range(1, (1 << k) - 1):
             _bash_pass(cmd, cwd, acc, depth, frozenset(r for b, r in enumerate(regions) if mask >> b & 1))
 
 
-_MAX_MIXED_REGIONS = 3  # up to 2**3 readings; beyond that only the two uniform readings are analysed
+_MAX_MIXED_REGIONS = 3  # up to 2**3 readings; beyond that: Protected if any region has `<<`, else two passes
 
 
 def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, as_text, regions: list[int] | None = None) -> None:

@@ -1029,3 +1029,17 @@ def test_hook_prefilter_raising_takes_slow_path(monkeypatch, capsys):
         {"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/tmp"})))
     assert hook.gate() == 0
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("cmd", [
+    # 4 filler regions push past mixed-reading enumeration; the real reading mixes arithmetic and a heredoc
+    "(( 1 )); (( 2 )); (( 3 )); (( 4 )); (( a << X )); ((cat <<Y ')' ) )\n'\nY\n" + _E + "\nX\nY\n'",
+    "(( a << X )); (( b << Y )); ((cat <<Z ')' ) ); ((cat <<W ')' ) )\n'\nZ\n'\nW\n" + _E + "\nX\nY\n'",
+])
+def test_r24_many_regions_with_heredoc_op_fail_closed(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Protected) or (isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets]), r
+
+
+def test_r24_many_regions_without_heredoc_op_still_none(home):
+    assert detect_install(bash("(( a = 1 )); (( b = 2 )); (( c = 3 )); (( d = 4 )); echo $(( a + b ))")) is None
