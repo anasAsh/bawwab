@@ -119,6 +119,28 @@ Claude tool call ──► PreToolUse hook ──► fast detector (stdlib only)
   handles the normal path (scan, pin and approve before the install runs).
   The guarantee comes from the effect check below.
 
+### 1a. First run (added during build, user request 2026-11-19)
+
+On a fresh install, before any baseline exists, Bawwab does **not** start
+scanning on its own.
+
+- **SessionStart** counts the installed MCP servers, skills and plugins.
+  It then tells Claude, through additionalContext, to ask the user whether
+  to run a full scan. The question states what a scan involves: package
+  downloads, a Claude review of each item, and a rough time estimate.
+- **Yes:** Claude runs `bawwab init --scan` (allowed; scanning only adds
+  information). That starts the full inventory scan in the background, and
+  the results arrive as the usual deferred warnings.
+- **Skip:** the user runs `! bawwab init --skip`. The current state becomes
+  the accepted baseline, marked "trusted without scan", and only later
+  changes are checked. `init --skip` is a protected action, so Claude can't
+  run it.
+- **No answer:** the question is asked again next session until it's
+  answered. After init, `bawwab scan --all` can run a full scan at any time.
+- **Before init:** the effect check still runs, but it treats the
+  pre-install state as the provisional baseline and only flags changes made
+  after install.
+
 ### 1b. Effect check (added during build, user-approved 2026-11-19)
 
 The check watches what actually changed, not what the command looked like.
