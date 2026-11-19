@@ -25,23 +25,42 @@ def _truncated(evidence: str, rel: str | None = None) -> Finding:
     return Finding("files.truncated", Severity.MED, "static", evidence, file=rel)
 
 
-# Executable formats: ELF, PE, Mach-O (32/64, both byte orders, fat), WebAssembly.
-EXEC_MAGIC = (
-    b"\x7fELF", b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
-    b"\xca\xfe\xba\xbe", b"\x00asm",
+# Binary formats recognised by magic (R27 I6). Each magic starts with bytes that are not valid
+# JavaScript or Python source, so a forged header cannot also be a runnable script.
+# ELF, Mach-O (32/64, both byte orders, fat), WebAssembly, zip, gzip, PNG, JPEG. PE is checked separately.
+BINARY_MAGIC = (
+    b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+    b"\xca\xfe\xba\xbe", b"\x00asm", b"PK\x03\x04", b"\x1f\x8b", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
+)
+# Source files that run if left unscanned: a NUL byte must not hide them (R27 minor 7).
+CODE_EXT = (
+    ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx", ".sh", ".bash", ".zsh", ".ps1",
+    ".rb", ".pl", ".php", ".bat", ".cmd",
 )
 
 
-_TEXT_BYTES = bytes(range(0x20, 0x7F)) + b"\t\n\r\f\b"
+def _is_pe(head: bytes) -> bool:
+    """"MZ" alone is a valid JS identifier; require the PE signature at e_lfanew."""
+    if not head.startswith(b"MZ") or len(head) < 0x40:
+        return False
+    off = int.from_bytes(head[0x3C:0x40], "little")
+    return head[off : off + 4] == b"PE\x00\x00"
+
+
+EXEC_MAGIC = BINARY_MAGIC[:7]  # ELF, Mach-O, wasm
+
+
+def _is_executable(head: bytes) -> bool:
+    return head.startswith(EXEC_MAGIC) or _is_pe(head)
 
 
 def _is_binary(head: bytes) -> bool:
-    """A real binary, not a text file with a stray NUL: an executable header, or mostly non-text bytes."""
-    if b"\x00" not in head:
-        return False
-    if head.startswith(EXEC_MAGIC):
-        return True
-    return len(head.translate(None, _TEXT_BYTES)) > len(head) * 0.3
+    """A real binary format by magic; anything else (even with NUL bytes) is treated as text."""
+    return head.startswith(BINARY_MAGIC) or _is_pe(head)
+
+
+def _is_code_name(rel: str, head: bytes) -> bool:
+    return rel.endswith(CODE_EXT) or head.startswith(b"#!")
 
 
 def _binary_unscanned(n: int) -> list[Finding]:
@@ -59,8 +78,9 @@ def load_files(
 ) -> tuple[list[ScanFile], list[Finding]]:
     """Read text files under root. Never follows symlinks; skips binaries.
 
-    Oversized text files and the file cap give `files.truncated` (med). Prebuilt
-    executables and oversized binaries are aggregated into one low finding.
+    Oversized text files, source files with NUL bytes and the file cap give
+    `files.truncated` (med). Files with a binary magic (executables, archives,
+    images) are aggregated into one low finding.
     """
     root = Path(root)
     files: list[ScanFile] = []
@@ -90,8 +110,11 @@ def load_files(
             except OSError:
                 continue
             if b"\x00" in data[:8192]:
-                if data.startswith(EXEC_MAGIC):
+                head = data[:8192]
+                if _is_executable(head):  # small images/archives stay silent; prebuilt executables are counted
                     binaries += 1
+                elif _is_code_name(rel, head):
+                    findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
                 continue
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
     return files, findings + _binary_unscanned(binaries)

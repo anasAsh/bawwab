@@ -50,8 +50,19 @@ TEST_PATH_RE = re.compile(
 )
 
 
-def _is_data_or_config(rel: str) -> bool:
+EXEC_EXT = PY_EXT + JS_EXT + TS_EXT
+
+
+def _is_config_code(rel: str) -> bool:
+    """A lint/format config written as code (eslint.config.mjs, .prettierrc.js): scanned, exempt-like (R27 C2)."""
+    return rel.endswith(EXEC_EXT) and bool(CONFIG_RE.match(_base(rel)))
+
+
+def _is_data(rel: str) -> bool:
+    """Data, ignore files and JSON configs: not code; scanned only when something executes them (R27 C2)."""
     base = _base(rel)
+    if rel.endswith(EXEC_EXT):
+        return False
     if rel.endswith(DATA_EXT) or base in IGNORE_FILES or CONFIG_RE.match(base):
         return True
     return rel.endswith(".json") and bool(DATA_DIR_RE.search(rel))
@@ -62,7 +73,7 @@ def _is_test(rel: str) -> bool:
 
 
 def _is_code(rel: str) -> bool:
-    return not _is_doc(rel) and _base(rel) not in LOCKFILES and not _is_data_or_config(rel)
+    return not _is_doc(rel) and _base(rel) not in LOCKFILES and not _is_data(rel)
 
 
 def _line_of(text: str, pos: int) -> int:
@@ -89,6 +100,7 @@ class Call:
     callee: str
     args: str  # source text of the arguments, with simple variable resolution appended
     first: str = ""  # the first argument only (the evaluated code for eval/exec/vm.*), resolved the same way
+    first_raw: str = ""  # the first argument's source text, unresolved
 
 
 def _resolve(args: str, names: dict[str, str]) -> str:
@@ -107,8 +119,9 @@ def _py_calls(text: str) -> list[Call] | None:
         for n in ast.walk(tree):
             if isinstance(n, ast.Call):
                 parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
-                first = _resolve(ast.unparse(n.args[0]), names) if n.args else ""
-                calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names), first))
+                raw = ast.unparse(n.args[0]) if n.args else ""
+                first = _resolve(raw, names) if raw else ""
+                calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names), first, raw))
         return calls
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None  # hostile or unparseable: caller falls back to regex
@@ -145,7 +158,7 @@ def _js_calls(text: str, lang: str) -> list[Call]:
                 named = [c for c in args.named_children if c.type != "comment"]
                 found.append((n.start_point[0] + 1, txt(fn), txt(args), txt(named[0]) if named else ""))
     return [
-        Call(line, callee, _resolve(args, names), _resolve(first, names) if first else "")
+        Call(line, callee, _resolve(args, names), _resolve(first, names) if first else "", first)
         for line, callee, args, first in sorted(found)
     ]
 
@@ -196,7 +209,7 @@ FB_EVAL_FETCH_RE = re.compile(
 
 CRED_RES = [
     r"\.ssh/", r"\bid_rsa\b", r"\.aws/credentials",
-    r"(?<![\w.])\.env\b", r"\.claude\.json", r"\.claude/\.credentials\.json", r"\.claude/settings[\w.-]*\.json",
+    r"(?<![\w.])\.env\b", r"\.claude\.json",
     r"\.npmrc\b", r"\.netrc\b", r"\.pypirc\b",
     r"security\s+find-generic-password", r"\bkeychain\b",
     r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
@@ -211,8 +224,15 @@ DOTENV_RE = re.compile(
     re.M,
 )
 CRED_RE = re.compile("|".join(CRED_RES), re.I)
-# ~/.claude/{agents,skills,commands,plugins} or a project .claude/ dir: install-dir access, not credentials (R26d).
-INSTALL_DIR_RE = re.compile(r"\.claude/")
+# References into a .claude dir, as "/.claude/<sub>" or path.join(..., ".claude", "<sub>") (R26d, R27 I5).
+CLAUDE_REF_RE = re.compile(r"""\.claude(?:/([\w.-]*)|['"]\s*,\s*['"]([\w.-]+)|(?=['"]))""")
+CLAUDE_INSTALL_SUBDIRS = {"", "agents", "skills", "commands", "plugins"}
+CLAUDE_CRED_FILE_RE = re.compile(r"^(?:\.credentials\.json|settings[\w.-]*\.json)$")
+HOME_RE = re.compile(r"~|homedir|\bHOME\b|expanduser|Path\.home|USERPROFILE|os\.environ\[['\"]HOME", re.I)
+WRITE_RE = re.compile(
+    r"\b(?:write\w*|mkdir\w*|copy\w*|cp\w*|rename\w*|symlink\w*|appendFile\w*|createWriteStream|write_text|write_bytes)\s*\("
+    r"|\bshutil\.(?:copy\w*|move)\b|\bopen\([^)\n]*['\"][wa]b?\+?['\"]"
+)
 # Names that mark a list/set/regex as a deny-list or matcher (R26c).
 DENY_WORD_RE = re.compile(r"deny|block|forbid|sensitive|protect|refus|exclu|ignor|reject|blacklist|disallow", re.I)
 REGEX_CALL_RE = re.compile(r"^(?:re\.(?:compile|search|match|fullmatch|findall|finditer|sub|split)|RegExp)$")
@@ -228,7 +248,7 @@ EXFIL_HOST_RE = re.compile(
 )
 NET_RE = re.compile(
     r"\b(?:fetch|axios|XMLHttpRequest|urlopen|urllib|httpx|requests\.\w+|http\.request|https\.request|http\.get|https\.get|curl|wget|socket)\b"
-    r"|\bgot\(|Invoke-WebRequest|\bnc\s"
+    r"|\bgot\(|Invoke-WebRequest|\bnc\s|\b(?:net|tls)\.(?:connect|createConnection)\b"
 )
 BLOB_RE = re.compile(r"""["'`]((?:[A-Za-z0-9+/]{200,}={0,2})|(?:[0-9a-fA-F]{200,}))["'`]""")
 REMOTE_RE = re.compile(r"\b(?:curl|wget|fetch|urllib|requests|Invoke-WebRequest|iwr|httpx|axios)\b|\bhttps?\.get\b")
@@ -440,7 +460,7 @@ def _unpinned_deps(f: ScanFile) -> list[Finding]:
     return out
 
 
-# ---------------------------------------------------------------- code rules
+# ---------------------------------------------------------------- comment blanking (R26a)
 
 
 def _blank(text: str, spans: list[tuple[int, int]]) -> str:
@@ -458,39 +478,6 @@ def _blank(text: str, spans: list[tuple[int, int]]) -> str:
     return "".join(out)
 
 
-_LINE_COMMENT_RE = re.compile(r"^[ \t]*(?:#|//).*$", re.M)
-
-
-@lru_cache(maxsize=512)
-def _code_text(rel: str, text: str) -> str:
-    """The text with comments (and JS regex literals) blanked out (R26a/c)."""
-    try:
-        if rel.endswith(JS_EXT + TS_EXT):
-            src = text.encode()
-            root = get_parser(_js_lang(rel)).parse(src).root_node
-            spans, stack = [], [root]
-            while stack:
-                n = stack.pop()
-                if n.type in ("comment", "html_comment", "regex"):
-                    spans.append((n.start_byte, n.end_byte))
-                else:
-                    stack.extend(n.children)
-            return _blank_bytes(src, spans).decode("utf-8", "replace")
-        if rel.endswith(PY_EXT):
-            starts = [0]
-            for line in text.splitlines(keepends=True):
-                starts.append(starts[-1] + len(line))
-            spans = []
-            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
-                if tok.type == tokenize.COMMENT:
-                    (r1, c1), (r2, c2) = tok.start, tok.end
-                    spans.append((starts[r1 - 1] + c1, starts[r2 - 1] + c2))
-            return _blank(text, spans)
-    except Exception:  # noqa: BLE001 - unparseable: conservative full-line fallback below
-        pass
-    return _blank(text, [m.span() for m in _LINE_COMMENT_RE.finditer(text)])
-
-
 def _blank_bytes(src: bytes, spans: list[tuple[int, int]]) -> bytes:
     buf = bytearray(src)
     for a, b in spans:
@@ -500,16 +487,146 @@ def _blank_bytes(src: bytes, spans: list[tuple[int, int]]) -> bytes:
     return bytes(buf)
 
 
-def _deny_context(t: str, pos: int) -> bool:
-    """True when the match sits in a deny-list / matcher literal (R26c).
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*(?:#|//).*$", re.M)
 
-    Walks out through up to three enclosing brackets (path builders such as
-    path.join are transparent); the first one with a name decides. Deny-list:
-    a regex constructor, a literal or Set/Array assigned to a name like BLOCKED /
-    sensitivePaths / ignore, or a membership call on one (denyList.add(...)),
-    or a predicate like isBlocked(...). Any other call (fs.readFileSync(...)) is
-    real use, even inside an object key named "sensitive".
+
+@lru_cache(maxsize=512)
+def _code_info(rel: str, text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
+    """(text with comments blanked, character spans of JS regex literals).
+
+    Regex literals stay in the text: they are deny-list *context*, not removed code (R27 I4).
     """
+    try:
+        if rel.endswith(JS_EXT + TS_EXT):
+            src = text.encode()
+            root = get_parser(_js_lang(rel)).parse(src).root_node
+            comments, regexes, stack = [], [], [root]
+            while stack:
+                n = stack.pop()
+                if n.type in ("comment", "html_comment"):
+                    comments.append((n.start_byte, n.end_byte))
+                elif n.type == "regex":
+                    regexes.append((n.start_byte, n.end_byte))
+                else:
+                    stack.extend(n.children)
+            blanked = _blank_bytes(src, comments).decode("utf-8", "replace")
+
+            def char(b: int) -> int:
+                return len(src[:b].decode("utf-8", "replace"))
+
+            return blanked, tuple((char(a), char(b)) for a, b in regexes)
+        if rel.endswith(PY_EXT):
+            # Offsets from the same line split tokenize uses: "\n" only. str.splitlines() also
+            # splits on \x0b \x0c \x1c-\x1e \x85     and would misplace spans (R27 C3).
+            starts = [0]
+            for line in text.split("\n"):
+                starts.append(starts[-1] + len(line) + 1)
+            spans = []
+            for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+                if tok.type == tokenize.COMMENT:
+                    (r1, c1), (r2, c2) = tok.start, tok.end
+                    spans.append((starts[r1 - 1] + c1, starts[r2 - 1] + c2))
+            out = _blank(text, spans)
+            assert len(out) == len(text)
+            return out, ()
+    except Exception:  # noqa: BLE001 - unparseable: conservative full-line fallback below
+        pass
+    return _blank(text, [m.span() for m in _LINE_COMMENT_RE.finditer(text)]), ()
+
+
+def _code_text(rel: str, text: str) -> str:
+    return _code_info(rel, text)[0]
+
+
+# ---------------------------------------------------------------- deny-list context (R26c, R27 I4)
+
+SINK_LEAVES = {
+    "open", "readFileSync", "readFile", "read_text", "read_bytes", "createReadStream", "readdirSync", "readdir",
+    "listdir", "scandir", "glob", "copyFile", "copyFileSync", "fetch", "request", "get", "post", "put", "urlopen",
+    "send", "upload", "connect", "spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "system",
+    "Popen", "run", "check_output", "check_call", "call", "expanduser", "join", "resolve",
+}
+FILE_NET_RE = re.compile(
+    NET_RE.pattern + r"|readFile|readdir|createReadStream|\bopen\(|read_text|read_bytes|listdir|\bspawn|\bexec"
+)
+
+
+def _decl_name(t: str, pos: int) -> str:
+    line_start = t.rfind("\n", 0, pos) + 1
+    m = _DECL_TAIL_RE.search(t[line_start:pos])
+    return (m.group(1) or "") if m else ""
+
+
+def _close_of(t: str, open_pos: int) -> int:
+    depth = 0
+    for j in range(open_pos, min(len(t), open_pos + 20000)):
+        ch = t[j]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return len(t)
+
+
+_SOURCE_ATTR_RE = re.compile(r"\s*\.\s*(?:source|pattern)\b")
+
+
+def _flows(t: str, name: str, calls) -> bool:
+    """The deny-list value is used as data: passed to a file/network/process sink, or iterated."""
+    leaf = name.rsplit(".", 1)[-1]
+    if not re.fullmatch(r"[A-Za-z_$][\w$]*", leaf):
+        return False
+    n = re.escape(leaf)
+    word = re.compile(rf"(?<![\w$]){n}(?![\w$])")
+    for c in calls or ():
+        if c.callee.rsplit(".", 1)[-1] in SINK_LEAVES and word.search(c.args):
+            return True
+    iter_re = re.compile(
+        rf"\bfor\b[^\n;:]*\b(?:of|in)\s+(?:Object\.\w+\(\s*)?(?:self\.)?{n}(?![\w$])"
+        rf"|(?<![\w$]){n}\s*\.\s*(?:forEach|map|flatMap|filter|reduce|values|keys|entries|items|join)\s*\("
+        rf"|\.\.\.\s*{n}(?![\w$])|\*\s*{n}(?![\w$])"
+        rf"|\b(?:list|tuple|sorted|Array\.from|Object\.(?:values|keys|entries))\(\s*{n}(?![\w$])"
+        rf"|(?<![\w$]){n}\s*\.\s*(?:source|pattern)\b"
+    )
+    return bool(iter_re.search(t))
+
+
+def _predicate_reaches_io(f: ScanFile, t: str, leaf: str) -> bool:
+    """isBlocked(...) is only a check if its own body does no file or network I/O."""
+    n = re.escape(leaf)
+    m = re.search(
+        rf"(?:function\s*\*?\s*{n}\s*\(|def\s+{n}\s*\(|(?<![\w$.]){n}\s*[:=]\s*(?:async\s+)?(?:function\b|\(|[\w$]+\s*=>))",
+        t,
+    )
+    if not m:
+        return False  # defined elsewhere: keep the (low) exemption; the R27 floor still sees any combo
+    line = _line_of(t, m.start())
+    end = line + 40
+    for lo, hi in _function_spans(f.rel, f.text) or []:
+        if lo <= line <= hi:
+            end = hi
+            break
+    body = "\n".join(t.split("\n")[line - 1 : end])
+    return bool(FILE_NET_RE.search(body))
+
+
+def _denied(f: ScanFile, t: str, pos: int, regexes, calls) -> bool:
+    """True when the match sits in a deny-list / matcher that is not itself used as data.
+
+    Context: a JS regex literal, a regex constructor, a literal or Set/Array assigned to a
+    name like BLOCKED / sensitivePaths / ignore, a membership call on one (denyList.add),
+    or a predicate like isBlocked(...). Path builders such as path.join are transparent.
+    The exemption is void when the value flows into a sink or is iterated, when a regex's
+    .source/.pattern is taken, or when the predicate itself does file/network I/O.
+    """
+    for a, b in regexes:
+        if a <= pos < b:
+            if _SOURCE_ATTR_RE.match(t, b):
+                return False
+            name = _decl_name(t, a)
+            return not (name and _flows(t, name, calls))
     depth, i, levels = 0, pos - 1, 0
     lo = max(0, pos - 4000)
     while i >= lo and levels < 3:
@@ -529,46 +646,192 @@ def _deny_context(t: str, pos: int) -> bool:
                     i -= 1
                     continue
                 if REGEX_CALL_RE.match(callee):
-                    return True
+                    if _SOURCE_ATTR_RE.match(t, _close_of(t, i)):
+                        return False
+                    return not (name and _flows(t, name, calls))
                 if callee and callee not in CONTAINER_CALLEES:
                     recv, _, leaf = callee.rpartition(".")
                     if leaf in COLLECTION_METHODS:
-                        return bool(DENY_WORD_RE.search(recv))
-                    return bool(re.match(r"(?:is|should|must)[A-Z_]", leaf) and DENY_WORD_RE.search(leaf))
+                        return bool(DENY_WORD_RE.search(recv)) and not _flows(t, recv, calls)
+                    if re.match(r"(?:is|should|must)[A-Z_]", leaf) and DENY_WORD_RE.search(leaf):
+                        return not _predicate_reaches_io(f, t, leaf)
+                    return False
                 if name:
-                    return bool(DENY_WORD_RE.search(name))
+                    return bool(DENY_WORD_RE.search(name)) and not _flows(t, name, calls)
         i -= 1
     return False
 
 
+# ---------------------------------------------------------------- .claude references (R26d, R27 I5)
+
+
+def _claude_refs(t: str):
+    """(pos, "cred" | "install") for each reference into a .claude directory."""
+    for m in CLAUDE_REF_RE.finditer(t):
+        sub = m.group(1) if m.group(1) is not None else (m.group(2) or "")
+        sub = sub.split("/", 1)[0]
+        if sub in CLAUDE_INSTALL_SUBDIRS:
+            kind = "install"
+        elif CLAUDE_CRED_FILE_RE.match(sub):
+            kind = "cred"
+        else:  # ~/.claude/projects, history.jsonl, todos/...: session data; a project .claude/x is install-dir
+            kind = "cred" if HOME_RE.search(_line_text(t, _line_of(t, m.start()))) else "install"
+        yield m.start(), kind
+
+
+# ---------------------------------------------------------------- runtime references (R26b, R27 C1/C2)
+
 _PATH_TOKEN_RE = re.compile(r"[\w.$@{}/-]*/[\w.$@{}/-]*")
-_PY_IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+([\w.]+)", re.M)
+_STRING_RE = re.compile(r"""(['"`])([^'"`\n]{1,300})\1""")
+_PY_FROM_RE = re.compile(r"^\s*from\s+([\w.]+)\s+import\s+\(?([\w\s,]+)", re.M)
+_PY_IMPORT_RE = re.compile(r"^\s*import\s+([\w.]+)", re.M)
+_DOTTED_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+(?::[\w.]+)?$")
 _STRIP_EXT_RE = re.compile(r"\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx|py)$")
+DYNAMIC_LOADERS = {
+    "require", "import", "__import__", "importlib.import_module", "import_module", "runpy.run_path",
+    "runpy.run_module", "imp.load_source", "importlib.util.spec_from_file_location", "spec_from_file_location",
+}
+_LITERAL_ARG_RE = re.compile(r"""^\s*(?:(['"])[^'"]*\1|`[^`$]*`)\s*$""")
+MANIFEST_BASES = {".mcp.json", "mcp.json", "plugin.json", "hooks.json", "marketplace.json"}
+PKG_RUN_KEYS = ("main", "module", "bin", "exports", "browser")
+PKG_RUN_SCRIPTS = INSTALL_KEYS + ("start", "prestart", "poststart", "serve", "server", "mcp")
 
 
-def _runtime_refs(files: list[ScanFile]) -> set[str]:
-    """Path stems (no extension) named by non-test files: a test-path file named here is not test-only."""
-    refs: set[str] = set()
-    for f in files:
-        if _is_test(f.rel) or _is_doc(f.rel):
+def _is_skill_doc(rel: str) -> bool:
+    return rel.endswith(".md") and (
+        _base(rel) == "SKILL.md" or bool(re.search(r"(?:^|/)(?:commands|agents)/", rel))
+    )
+
+
+def _strings_of(obj) -> list[str]:
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _strings_of(v)]
+    if isinstance(obj, list):
+        return [s for v in obj for s in _strings_of(v)]
+    return []
+
+
+def _manifest_tokens(f: ScanFile) -> list[str] | None:
+    """Strings that name what a manifest runs, or None when the file is not a manifest."""
+    base = _base(f.rel)
+    if base == "package.json":
+        try:
+            data = json.loads(f.text)
+        except ValueError:
+            return []
+        if not isinstance(data, dict):
+            return []
+        out = [s for k in PKG_RUN_KEYS for s in _strings_of(data.get(k))]
+        scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
+        out += [s for k in PKG_RUN_SCRIPTS for s in _strings_of(scripts.get(k))]
+        return out
+    if base == "pyproject.toml":
+        try:
+            data = tomllib.loads(f.text)
+        except tomllib.TOMLDecodeError:
+            return []
+        proj = data.get("project", {}) if isinstance(data.get("project"), dict) else {}
+        out = _strings_of(proj.get("scripts")) + _strings_of(proj.get("gui-scripts")) + _strings_of(proj.get("entry-points"))
+        poetry = data.get("tool", {}).get("poetry", {}) if isinstance(data.get("tool"), dict) else {}
+        return out + _strings_of(poetry.get("scripts") if isinstance(poetry, dict) else None)
+    if base in MANIFEST_BASES:
+        try:
+            return _strings_of(json.loads(f.text))
+        except ValueError:
+            return [m.group(2) for m in _STRING_RE.finditer(f.text)]
+    return None
+
+
+def _add_ref(refs: set[str], base_dir: str, tok: str) -> None:
+    tok = tok.strip().strip("\"'`")
+    for word in tok.split():  # "node test/x.js --flag"
+        word = word.strip("\"'`")
+        if not word or word.startswith("-"):
             continue
+        if _DOTTED_RE.match(word) and "/" not in word:
+            mod = word.split(":", 1)[0]
+            refs.add(mod.replace(".", "/"))
+            if not word.endswith(EXEC_EXT):
+                continue
+        for c in (word.rsplit("}/", 1)[-1], normpath(join(base_dir, word.rsplit("}/", 1)[-1]))):
+            refs.add(_STRIP_EXT_RE.sub("", c.removeprefix("./")).rstrip("/"))
+
+
+@dataclass
+class _Refs:
+    names: set[str]  # path stems (no extension) named by runtime code, manifests or skill docs
+    run: set[str]  # stems named by manifests (what actually gets launched)
+    dynamic: bool  # runtime code loads modules by computed name: any file may run
+
+
+def _runtime_refs(files: list[ScanFile]) -> _Refs:
+    refs: set[str] = set()
+    run: set[str] = set()
+    dynamic = False
+    for f in files:
         base_dir = dirname(f.rel)
+        manifest = _manifest_tokens(f)
+        if manifest is not None:
+            for tok in manifest:
+                _add_ref(run, base_dir, tok)
+            continue
+        if _is_test(f.rel) or _is_config_code(f.rel) or _is_data(f.rel) or _base(f.rel) in LOCKFILES:
+            continue
+        if _is_doc(f.rel):
+            if not _is_skill_doc(f.rel):
+                continue
+            for tok in _PATH_TOKEN_RE.findall(f.text):
+                _add_ref(refs, base_dir, tok)
+            for m in re.finditer(r"`([^`\n]{1,300})`", f.text):
+                _add_ref(refs, base_dir, m.group(1))
+            continue
         for tok in _PATH_TOKEN_RE.findall(f.text):
-            cands = [tok.rsplit("}/", 1)[-1], normpath(join(base_dir, tok))]
-            for c in cands:
-                c = _STRIP_EXT_RE.sub("", c.removeprefix("./")).rstrip("/")
-                refs.add(c)
+            _add_ref(refs, base_dir, tok)
+        for m in _STRING_RE.finditer(f.text):
+            _add_ref(refs, base_dir, m.group(2))
         if f.rel.endswith(PY_EXT):
+            pkg = base_dir.replace("/", ".")
+            for mod, names in _PY_FROM_RE.findall(f.text):
+                full = (f"{pkg}{mod}" if mod.startswith(".") and pkg else mod).lstrip(".")
+                refs.add(full.replace(".", "/"))
+                for nm in re.findall(r"\w+", names):
+                    refs.add(f"{full}.{nm}".replace(".", "/"))
             for mod in _PY_IMPORT_RE.findall(f.text):
-                refs.add(mod.lstrip(".").replace(".", "/"))
-    return refs
+                refs.add(mod.replace(".", "/"))
+        for c in _calls(f.rel, f.text) or ():
+            if c.callee in DYNAMIC_LOADERS and c.first_raw and not _LITERAL_ARG_RE.match(c.first_raw):
+                dynamic = True
+    return _Refs(refs | run, run, dynamic)
 
 
-def _test_only(rel: str, install: set[str], refs: set[str]) -> bool:
-    if not _is_test(rel) or rel in install:
-        return False
+def _named(rel: str, stems: set[str]) -> bool:
     stem = _STRIP_EXT_RE.sub("", rel)
-    return stem not in refs and not (stem.endswith("/index") and stem[: -len("/index")] in refs)
+    if rel in stems or stem in stems:
+        return True
+    for idx in ("/index", "/__init__", "/__main__"):
+        if stem.endswith(idx) and stem[: -len(idx)] in stems:
+            return True
+    return False
+
+
+FILE_READ_RE = re.compile(r"readFileSync|readFile\b|\bopen\(|read_text|read_bytes|\.read\(\)|createReadStream")
+
+
+def _evals_file_content(f: ScanFile) -> bool:
+    """eval / new Function / exec over content read from a file: data files may be code (R27 C2)."""
+    for c in _calls(f.rel, f.text) or ():
+        if c.callee in EVAL_FUNCS:
+            code = c.args if c.callee in ALL_ARGS_EVAL else c.first
+            if FILE_READ_RE.search(code):
+                return True
+    return False
+
+
+# ---------------------------------------------------------------- code rules
+
+STRONG_RULES = ("exfil.combo", "obfuscation.eval-decoded", "remote-code.eval-fetch")
 
 
 class CodeRules:
@@ -577,24 +840,47 @@ class CodeRules:
     def run(self, files: list[ScanFile], extra: list[ExtraText]) -> list[Finding]:
         out: list[Finding] = []
         install = _install_files(files)
-        refs = _runtime_refs(files) if any(_is_test(f.rel) for f in files) else set()
+        refs = _runtime_refs(files)
+        exec_data = any(
+            _evals_file_content(f) for f in files
+            if _is_code(f.rel) and not _is_test(f.rel) and not _is_config_code(f.rel)
+        )
         for f in files:
-            if not _is_code(f.rel):
+            if _is_doc(f.rel) or _base(f.rel) in LOCKFILES:
                 continue
-            found: list[Finding] = []
-            calls = _calls(f.rel, f.text)
-            if calls is None:
-                found.extend(self._fallback(f))
-            else:
-                found.extend(self._ast(f, calls))
-            found.extend(self._text(f, f.rel in install))
-            if _test_only(f.rel, install, refs):
-                # Test code: listed, never decisive, never an exfil combo (R26b).
+            if _is_data(f.rel) and not (exec_data or f.rel in install or _named(f.rel, refs.run)):
+                continue
+            exempt = (
+                (_is_test(f.rel) or _is_config_code(f.rel))
+                and f.rel not in install and not refs.dynamic and not _named(f.rel, refs.names)
+            )
+            found = self._analyse(f, f.rel in install)
+            if exempt:
+                # Test code / config: listed, never decisive on its own (R26b, R27 C2).
                 found = [
                     Finding(x.rule, Severity.LOW, x.source, x.evidence, file=x.file, line=x.line)
                     for x in found if x.rule != "exfil.combo"
                 ]
-            out.extend(found)
+            out.extend(_floor(f, found, self._strong(f)))
+        return out
+
+    def _analyse(self, f: ScanFile, is_install: bool) -> list[Finding]:
+        calls = _calls(f.rel, f.text)
+        found = self._fallback(f) if calls is None else self._ast(f, calls)
+        return found + self._text(f, calls, is_install)
+
+    def _strong(self, f: ScanFile) -> list[tuple[str, int]]:
+        """Multi-signal behaviour with no context exemption at all (R27 floor)."""
+        calls = _calls(f.rel, f.text)
+        found = self._fallback(f) if calls is None else self._ast(f, calls)
+        out = [(x.rule, x.line or 1) for x in found if x.rule in STRONG_RULES]
+        t = _code_text(f.rel, f.text)
+        cred_lines = [_line_of(t, m.start()) for m in CRED_RE.finditer(t)]
+        cred_lines += [_line_of(t, p) for p, kind in _claude_refs(t) if kind == "cred"]
+        if cred_lines:
+            net_lines = _net_lines(t)
+            if _same_scope(f, sorted(cred_lines), net_lines):
+                out.append(("exfil.combo", min(cred_lines)))
         return out
 
     def _ast(self, f: ScanFile, calls) -> list[Finding]:
@@ -624,7 +910,7 @@ class CodeRules:
                 out.append(_finding(rule, sev, f, _line_of(t, m.start())))
         return out
 
-    def _text(self, f: ScanFile, is_install: bool) -> list[Finding]:
+    def _text(self, f: ScanFile, calls, is_install: bool) -> list[Finding]:
         out = []
         raw = f.text
         m = PIPE_SHELL_RE.search(raw)
@@ -636,38 +922,82 @@ class CodeRules:
             if m:
                 line = _line_of(raw, m.start())
                 out.append(_finding("obfuscation.blob", Severity.MED, f, line, f"{len(m.group(1))}-char encoded literal"))
-        t = _code_text(f.rel, raw)  # comments and regex literals blanked
+        t, regexes = _code_info(f.rel, raw)  # comments blanked; regex literal spans for context
         dotenv = DOTENV_RE.search(t)
-        creds = [
-            m for m in CRED_RE.finditer(t)
-            if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))) and not _deny_context(t, m.start())
-        ]
-        cred_starts = {m.start() for m in CRED_RE.finditer(t)}
-        install_dir = [
-            m for m in INSTALL_DIR_RE.finditer(t)
-            if m.start() not in cred_starts and not _deny_context(t, m.start())
-        ]
-        host = EXFIL_HOST_RE.search(t)
-        if creds:
-            out.append(_finding("credential-access", Severity.HIGH, f, _line_of(t, creds[0].start())))
+        hits: list[tuple[int, bool]] = []  # (pos, denied)
+        for m in CRED_RE.finditer(t):
+            if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
+                hits.append((m.start(), _denied(f, t, m.start(), regexes, calls)))
+        installs: list[int] = []
+        for pos, kind in _claude_refs(t):
+            if kind == "cred":
+                hits.append((pos, _denied(f, t, pos, regexes, calls)))
+            elif not _denied(f, t, pos, regexes, calls):
+                installs.append(pos)
+        hits.sort()
+        real = [p for p, d in hits if not d]
+        denied = [p for p, d in hits if d]
+        net_lines = _net_lines(t)
+        if real:
+            out.append(_finding("credential-access", Severity.HIGH, f, _line_of(t, real[0])))
+        elif denied:  # deny-list mention: listed, not decisive (R27 I4)
+            out.append(_finding("credential-access", Severity.LOW, f, _line_of(t, denied[0])))
         elif dotenv:
             out.append(_finding("credential-access", Severity.LOW, f, _line_of(t, dotenv.start())))
-        if install_dir:
-            out.append(_finding("install-dir-access", Severity.LOW, f, _line_of(t, install_dir[0].start())))
+        if installs:
+            lines = [_line_of(t, p) for p in installs]
+            writes = [ln for ln in lines if WRITE_RE.search(_line_text(t, ln))]
+            if writes and _same_scope(f, writes, net_lines):
+                # Writing into Claude's install dirs next to a network call: what is written may be fetched.
+                out.append(_finding("install-dir-access", Severity.MED, f, writes[0]))
+            else:
+                out.append(_finding("install-dir-access", Severity.LOW, f, lines[0]))
+        host = EXFIL_HOST_RE.search(t)
         if host:
             out.append(_finding("exfil.host", Severity.HIGH, f, _line_of(t, host.start())))
-        if creds:
-            cred_lines = [_line_of(t, m.start()) for m in creds]
-            net_lines = [_line_of(t, m.start()) for m in NET_RE.finditer(t)]
-            net_lines += [_line_of(t, m.start()) for m in EXFIL_HOST_RE.finditer(t)]
+        if real:
+            cred_lines = [_line_of(t, p) for p in real]
             if _same_scope(f, cred_lines, net_lines):
                 out.append(_finding("exfil.combo", Severity.CRITICAL, f, cred_lines[0]))
         return out
 
 
+_IMPORT_LINE_RE = re.compile(
+    r"^\s*(?:import\s|from\s+[\w.]+\s+import\s|export\s+\*\s+from\s)"
+    r"|^\s*(?:const|let|var)\s+[\w${}\s,:]+=\s*require\(\s*['\"][^'\"]+['\"]\s*\)[\s;,]*$"
+)
+
+
+def _net_lines(t: str) -> list[int]:
+    """Lines with an outbound call or exfil host; a bare import of a network library is not a call."""
+    lines = []
+    for rx in (NET_RE, EXFIL_HOST_RE):
+        for m in rx.finditer(t):
+            ln = _line_of(t, m.start())
+            if not _IMPORT_LINE_RE.search(_line_text(t, ln)):
+                lines.append(ln)
+    return lines
+
+
+def _floor(f: ScanFile, found: list[Finding], strong: list[tuple[str, int]]) -> list[Finding]:
+    """R27: context exemptions may lower single signals, never multi-signal behaviour.
+
+    A same-function credential+network combo, eval of decoded content or eval of fetched
+    content keeps at least MED (needs approval), whatever the file's path or context.
+    """
+    out = list(found)
+    for rule, line in strong:
+        if any(x.rule == rule and x.severity >= Severity.MED for x in out):
+            continue
+        out = [x for x in out if not (x.rule == rule and x.severity < Severity.MED)]
+        out.append(_finding(rule, Severity.MED, f, line))
+    return out
+
+
 COMBO_WINDOW = 20
 
 
+@lru_cache(maxsize=512)
 def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
     """Line spans of outermost functions, or None when the file cannot be parsed."""
     try:
