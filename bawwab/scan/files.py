@@ -132,7 +132,8 @@ def load_files(
                 if size > max_file_bytes:
                     with path.open("rb") as fh:
                         head = fh.read(8192)
-                    if _is_binary(head):
+                    # A code/script name is never taken as media: bash runs line 2 of a "%PDF" script (round 3).
+                    if _is_binary(head) and not _is_code_name(rel, head):
                         binaries += 1
                     else:
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
@@ -142,10 +143,10 @@ def load_files(
                 continue
             if b"\x00" in data[:8192]:
                 head = data[:8192]
-                if _is_executable(head):  # small images/archives stay silent; prebuilt executables are counted
-                    binaries += 1
-                elif _is_code_name(rel, head):
+                if _is_code_name(rel, head):
                     findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
+                elif _is_executable(head):  # small images/archives stay silent; prebuilt executables are counted
+                    binaries += 1
                 continue
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
     return files, findings + _binary_unscanned(binaries)

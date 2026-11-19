@@ -115,12 +115,19 @@ def _py_calls(text: str) -> list[Call] | None:
         for n in ast.walk(tree):
             if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
                 names[n.targets[0].id] = ast.unparse(n.value)
+            elif isinstance(n, ast.ImportFrom) and n.module:
+                for a in n.names:
+                    names[a.asname or a.name] = f"{n.module}.{a.name}"
+            elif isinstance(n, ast.Import):
+                for a in n.names:
+                    if a.asname:
+                        names[a.asname] = a.name
         calls = []
         for n in ast.walk(tree):
             if isinstance(n, ast.Call):
                 parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
                 raw = ast.unparse(n.args[0]) if n.args else ""
-                first = _resolve(raw, names) if raw else ""
+                first = _resolve(_resolve(raw, names), names) if raw else ""
                 calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names), first, raw))
         return calls
     except (SyntaxError, ValueError, RecursionError, MemoryError):
@@ -158,7 +165,7 @@ def _js_calls(text: str, lang: str) -> list[Call]:
                 named = [c for c in args.named_children if c.type != "comment"]
                 found.append((n.start_point[0] + 1, txt(fn), txt(args), txt(named[0]) if named else ""))
     return [
-        Call(line, callee, _resolve(args, names), _resolve(first, names) if first else "", first)
+        Call(line, callee, _resolve(args, names), _resolve(_resolve(first, names), names) if first else "", first)
         for line, callee, args, first in sorted(found)
     ]
 
@@ -181,24 +188,66 @@ def _calls(rel: str, text: str) -> tuple[Call, ...] | None:
 
 EVAL_FUNCS = {"eval", "exec", "Function", "window.eval", "globalThis.eval", "vm.runInNewContext", "vm.runInThisContext", "vm.runInContext"}
 ALL_ARGS_EVAL = {"Function"}  # new Function(a, b, body): the body is the last argument
-# A decode CALL (R26a, round 2): matched against the evaluated argument with string literals emptied,
-# so eval("typeof atob") is not decoding; encoding-name literals ('base64', 'hex') are kept.
+# Decoding in the evaluated code (round 3). String literals are emptied first, so
+# eval("typeof atob") is not decoding, but decode NAMES count as identifier tokens without
+# requiring "(": const d = atob; eval(d(s)) / (0, atob)(s) / atob.call(null, s). Literals whose
+# whole body is an encoding or decode-function name are kept, so getattr(base64, 'b64decode') counts.
+DECODE_NAMES = (
+    "atob", "b64decode", "b32decode", "b16decode", "a85decode", "b85decode", "standard_b64decode",
+    "urlsafe_b64decode", "decodebytes", "decodestring", "a2b_base64", "a2b_hex", "unhexlify", "fromhex",
+    "rot13", "rot_13",
+)
 DECODE_RE = re.compile(
-    r"\b(b64decode|a2b_base64|unhexlify|fromhex|rot13|rot_13|atob|decodestring|codecs\.decode)\s*\("
-    r"|Buffer\.from\([^)]*['\"`](?:base64|hex)['\"`]|\.decode\(\s*['\"](?:base64|hex|rot13)",
+    r"\b(?:" + "|".join(DECODE_NAMES) + r")\b|\bcodecs\.decode\b|\bcodecs\.getdecoder\b"
+    r"|\.decode\(\s*['\"](?:base64|hex|rot13)",
     re.I,
 )
 _STR_LIT_RE = re.compile(r"""(['"])(?:\\.|(?!\1)[^\\\n])*\1|`(?:\\.|[^`\\$])*`""")
 _ENCODING_NAMES = {"base64", "hex", "rot13", "rot_13", "base64url"}
+_SAFE_BUFFER_ENC = re.compile(r"""^\s*(['"])(?:utf-?8|ascii|latin1|binary|utf16le|utf-16le|ucs-?2)\1\s*$""", re.I)
+
+
+def _top_args(text: str, open_pos: int) -> list[str]:
+    """Top-level comma-separated arguments of the call whose "(" is at open_pos."""
+    depth, start, out = 0, open_pos + 1, []
+    quote = None
+    for j in range(open_pos, min(len(text), open_pos + 5000)):
+        ch = text[j]
+        if quote:
+            if ch == "\\":
+                continue
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"`":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                out.append(text[start:j])
+                return out
+        elif ch == "," and depth == 1:
+            out.append(text[start:j])
+            start = j + 1
+    return out
 
 
 def _decodes(code: str) -> bool:
-    """The evaluated code contains an actual decode call, not just a decode word inside a string."""
-    def empty(m: re.Match) -> str:
-        body = m.group(0)[1:-1]
-        return m.group(0) if body.lower() in _ENCODING_NAMES else '""'
+    """The evaluated code (with one or two levels of aliases resolved) decodes something."""
+    for m in re.finditer(r"\bBuffer\.from\s*\(", code):
+        args = _top_args(code, m.end() - 1)
+        if len(args) >= 2 and not _SAFE_BUFFER_ENC.match(args[1]):
+            return True
 
-    return bool(DECODE_RE.search(_STR_LIT_RE.sub(empty, code)))
+    def keep(m: re.Match) -> str:
+        body = m.group(0)[1:-1]
+        return m.group(0) if body.lower() in _ENCODING_NAMES or body in DECODE_NAMES else '""'
+
+    return bool(DECODE_RE.search(_STR_LIT_RE.sub(keep, code)))
+
+
 FETCH_RE = re.compile(
     r"\b(fetch|requests\.\w+|urlopen|urllib\.\w+|httpx\.\w+|axios|XMLHttpRequest|http\.get|https\.get|curl|wget)\b"
 )
@@ -238,7 +287,13 @@ DOTENV_RE = re.compile(
 )
 CRED_RE = re.compile("|".join(CRED_RES), re.I)
 # References into a .claude dir, as "/.claude/<sub>" or path.join(..., ".claude", "<sub>") (R26d, R27 I5).
-CLAUDE_REF_RE = re.compile(r"""\.claude(?:/([\w.-]*)|['"]\s*,\s*['"]([\w.-]+)|(?=['"]))""")
+# ".claude/x", or ".claude" then a string join: path.join(..., '.claude', 'x'), '.claude' + '/x',
+# pathlib Path.home() / '.claude' / 'x' (round 3).
+CLAUDE_REF_RE = re.compile(r"""\.claude(?:/([\w.-]*)|['"]\s*[,/+]\s*['"]/?([\w.-]+)|(?=['"]))""")
+READ_ITER_RE = re.compile(
+    r"\b(?:readdir\w*|readFile\w*|createReadStream|opendir\w*|glob\w*|walk\w*|rglob|iterdir|scandir|listdir"
+    r"|read_text|read_bytes|open|copy\w*|cp\w*|archive|zip\w*|tar)\s*\("
+)
 CLAUDE_INSTALL_SUBDIRS = {"", "agents", "skills", "commands", "plugins"}
 CLAUDE_CRED_FILE_RE = re.compile(r"^(?:\.credentials\.json|settings[\w.-]*\.json)$")
 HOME_RE = re.compile(r"~|homedir|\bHOME\b|expanduser|Path\.home|USERPROFILE|os\.environ\[['\"]HOME", re.I)
@@ -586,24 +641,43 @@ def _close_of(t: str, open_pos: int) -> int:
 _SOURCE_ATTR_RE = re.compile(r"\s*\.\s*(?:source|pattern)\b")
 
 
+MEMBER_METHODS = {
+    "has", "includes", "test", "match", "matchAll", "some", "every", "indexOf", "lastIndexOf", "startsWith",
+    "endsWith", "find", "findIndex", "search", "fullmatch", "exec", "add", "push", "append", "extend", "update",
+    "set", "delete", "remove", "discard", "get",
+}
+_MATCH_ARG_BEFORE_RE = re.compile(
+    r"(?:\bre\.(?:search|match|fullmatch|findall|finditer)|\.(?:match|matchAll|search|test|replace)|\bfnmatch\w*)\(\s*$"
+)
+
+
 def _flows(t: str, name: str, calls) -> bool:
-    """The deny-list value is used as data: passed to a file/network/process sink, or iterated."""
+    """True unless EVERY non-declaration use of the deny-list name is a membership / match use (round 3).
+
+    Allowed: NAME.has/includes/test/some/every/startsWith/... (and building it with add/push),
+    NAME.size/.length, `x in NAME` / `any(... for x in NAME)`, or NAME as the pattern of a
+    match call. Anything else (destructure, alias, index, spread, argument, iteration,
+    .source/.pattern, export) voids the exemption.
+    """
     leaf = name.rsplit(".", 1)[-1]
     if not re.fullmatch(r"[A-Za-z_$][\w$]*", leaf):
         return False
-    n = re.escape(leaf)
-    word = re.compile(rf"(?<![\w$]){n}(?![\w$])")
-    for c in calls or ():
-        if c.callee.rsplit(".", 1)[-1] in SINK_LEAVES and word.search(c.args):
-            return True
-    iter_re = re.compile(
-        rf"\bfor\b[^\n;:]*\b(?:of|in)\s+(?:Object\.\w+\(\s*)?(?:self\.)?{n}(?![\w$])"
-        rf"|(?<![\w$]){n}\s*\.\s*(?:forEach|map|flatMap|filter|reduce|values|keys|entries|items|join)\s*\("
-        rf"|\.\.\.\s*{n}(?![\w$])|\*\s*{n}(?![\w$])"
-        rf"|\b(?:list|tuple|sorted|Array\.from|Object\.(?:values|keys|entries))\(\s*{n}(?![\w$])"
-        rf"|(?<![\w$]){n}\s*\.\s*(?:source|pattern)\b"
-    )
-    return bool(iter_re.search(t))
+    for m in re.finditer(rf"(?<![\w$.]){re.escape(leaf)}(?![\w$])", t):
+        after = t[m.end() : m.end() + 120]
+        before = t[max(0, m.start() - 120) : m.start()]
+        line = _line_text(t, _line_of(t, m.start()))
+        if re.match(r"\s*(?::[^=\n;]*)?=(?![=>])", after):
+            continue  # its own declaration / assignment target
+        mm = re.match(r"\s*\??\.\s*(\w+)\s*(\()?", after)
+        if mm and ((mm.group(2) and mm.group(1) in MEMBER_METHODS) or (not mm.group(2) and mm.group(1) in ("size", "length"))):
+            continue
+        if re.search(r"\bin\s*$", before):
+            if not re.search(r"\bfor\b[^\n]*\bin\s*$", before) or re.search(r"\b(?:any|all)\(", line):
+                continue
+        if _MATCH_ARG_BEFORE_RE.search(before):
+            continue
+        return True
+    return False
 
 
 def _predicate_reaches_io(f: ScanFile, t: str, leaf: str) -> bool:
@@ -678,17 +752,28 @@ def _denied(f: ScanFile, t: str, pos: int, regexes, calls) -> bool:
 # ---------------------------------------------------------------- .claude references (R26d, R27 I5)
 
 
-def _claude_refs(t: str):
-    """(pos, "cred" | "install") for each reference into a .claude directory."""
+def _claude_refs(t: str, f: ScanFile | None = None):
+    """(pos, "cred" | "install") for each reference into a .claude directory.
+
+    agents/skills/commands/plugins and project-relative paths are install dirs. Credential
+    and settings files, other home subpaths (projects/, history.jsonl, todos/...), and a bare
+    home ~/.claude that the same function reads or walks (round 3) are credential access.
+    """
     for m in CLAUDE_REF_RE.finditer(t):
         sub = m.group(1) if m.group(1) is not None else (m.group(2) or "")
         sub = sub.split("/", 1)[0]
-        if sub in CLAUDE_INSTALL_SUBDIRS:
-            kind = "install"
-        elif CLAUDE_CRED_FILE_RE.match(sub):
+        line_no = _line_of(t, m.start())
+        home = bool(HOME_RE.search(_line_text(t, line_no)))
+        if CLAUDE_CRED_FILE_RE.match(sub):
             kind = "cred"
+        elif sub in CLAUDE_INSTALL_SUBDIRS:
+            kind = "install"
+            if sub == "" and home and f is not None:
+                reads = [_line_of(t, r.start()) for r in READ_ITER_RE.finditer(t)]
+                if reads and _same_scope(f, [line_no], reads):
+                    kind = "cred"
         else:  # ~/.claude/projects, history.jsonl, todos/...: session data; a project .claude/x is install-dir
-            kind = "cred" if HOME_RE.search(_line_text(t, _line_of(t, m.start()))) else "install"
+            kind = "cred" if home else "install"
         yield m.start(), kind
 
 
@@ -889,11 +974,18 @@ class CodeRules:
         out = [(x.rule, x.line or 1) for x in found if x.rule in STRONG_RULES]
         t = _code_text(f.rel, f.text)
         cred_lines = [_line_of(t, m.start()) for m in CRED_RE.finditer(t)]
-        cred_lines += [_line_of(t, p) for p, kind in _claude_refs(t) if kind == "cred"]
+        cred_lines += [_line_of(t, p) for p, kind in _claude_refs(t, f) if kind == "cred"]
         if cred_lines:
             net_lines = _net_lines(f, t)
             if _same_scope(f, sorted(cred_lines), net_lines):
                 out.append(("exfil.combo", min(cred_lines)))
+        if not any(r == "exfil.combo" for r, _ in out) and _network_capable(f, t):
+            # Backstop (round 3): a real (not deny-listed) credential hit in a file that can reach
+            # the network, even when the call itself is hidden behind a wrapper or computed name.
+            _, regexes = _code_info(f.rel, f.text)
+            real = [p for p, denied in _cred_hits(f, t, regexes, calls) if not denied]
+            if real:
+                out.append(("exfil.combo", _line_of(t, real[0])))
         return out
 
     def _ast(self, f: ScanFile, calls) -> list[Finding]:
@@ -937,17 +1029,10 @@ class CodeRules:
                 out.append(_finding("obfuscation.blob", Severity.MED, f, line, f"{len(m.group(1))}-char encoded literal"))
         t, regexes = _code_info(f.rel, raw)  # comments blanked; regex literal spans for context
         dotenv = DOTENV_RE.search(t)
-        hits: list[tuple[int, bool]] = []  # (pos, denied)
-        for m in CRED_RE.finditer(t):
-            if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
-                hits.append((m.start(), _denied(f, t, m.start(), regexes, calls)))
-        installs: list[int] = []
-        for pos, kind in _claude_refs(t):
-            if kind == "cred":
-                hits.append((pos, _denied(f, t, pos, regexes, calls)))
-            elif not _denied(f, t, pos, regexes, calls):
-                installs.append(pos)
-        hits.sort()
+        hits = _cred_hits(f, t, regexes, calls)
+        installs = [
+            pos for pos, kind in _claude_refs(t, f) if kind == "install" and not _denied(f, t, pos, regexes, calls)
+        ]
         real = [p for p, d in hits if not d]
         denied = [p for p, d in hits if d]
         net = _net_calls(f, t)
@@ -984,37 +1069,127 @@ _IMPORT_LINE_RE = re.compile(
 )
 
 
-# Outbound network CALLS (round 2): a URL string or the word "fetch" in a literal is not a call.
-NET_CALLEE_RE = re.compile(
-    r"^(?:(?:window|globalThis|self)\.)?(?:fetch|got|ky|needle|axios|request|urlopen|XMLHttpRequest|WebSocket|EventSource)$"
-    r"|^(?:axios|got|ky|superagent|needle|requests|httpx|aiohttp|urllib3|dns|socket)\b"
-    r"|^(?:urllib\.request\.(?:urlopen|Request)|urllib\.urlopen|https?\.(?:request|get)|http2\.connect"
-    r"|net\.(?:connect|createConnection)|tls\.connect|dgram\.createSocket|ftplib\.FTP|smtplib\.SMTP\w*"
-    r"|http\.client\.HTTPS?Connection|asyncio\.open_connection|undici\.\w+)$"
+# Outbound network CALLS (rounds 2-3). Callees are normalised first: (0, X) and
+# X.call/.apply/.bind become X; roots go through import/require/assignment aliases
+# (const {get} = require('https'), import * as H, const f = fetch, import x as y,
+# s = requests.Session()). A URL string or the word "fetch" in a literal is not a call.
+NET_GLOBALS = {"fetch", "XMLHttpRequest", "WebSocket", "EventSource", "urlopen"}
+NET_MODULES = {
+    "http", "https", "http2", "net", "tls", "dgram", "dns", "undici", "node-fetch", "axios", "got", "ky",
+    "superagent", "needle", "request", "ws", "websocket", "requests", "httpx", "aiohttp", "urllib3", "socket",
+    "http.client", "urllib.request", "urllib2", "ftplib", "smtplib", "websockets", "pycurl",
+}
+NOT_NET_LEAVES = {"createServer", "Server", "STATUS_CODES", "HTTPStatus", "METHODS", "Agent", "globalAgent",
+                  "parse", "format", "quote", "unquote", "urlencode", "exceptions", "codes"}
+SERVER_SIDE = {"createServer", "Server", "STATUS_CODES", "METHODS", "HTTPStatus", "HTTPServer", "ThreadingHTTPServer",
+               "BaseHTTPRequestHandler", "SimpleHTTPRequestHandler", "server", "cookies", "cookiejar"}
+_MOD = r"""['"](?:node:)?([\w@/.-]+)['"]"""
+_JS_ALIAS_RES = (
+    (re.compile(r"([\w$]+)\s*=\s*require\(\s*" + _MOD + r"\s*\)"), "mod"),
+    (re.compile(r"\{([^{}]*)\}\s*=\s*require\(\s*" + _MOD + r"\s*\)"), "destructure"),
+    (re.compile(r"import\s+([\w$]+)\s*(?:,\s*\{[^}]*\})?\s*from\s*" + _MOD), "mod"),
+    (re.compile(r"import\s+\*\s+as\s+([\w$]+)\s+from\s*" + _MOD), "mod"),
+    (re.compile(r"import\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*" + _MOD), "named"),
 )
-_URL_HOST_RE = re.compile(r"\b(?:https?|wss?)://(?:[^@/'\"`\s]*@)?(\[[^\]/]*\]|[^/'\"`\s:?#]+)", re.I)
-_LOOPBACK_RE = re.compile(r"^(?:127(?:\.\d{1,3}){3}|localhost|0\.0\.0\.0|\[::1\]|::1)$", re.I)
+_JS_ASSIGN_RE = re.compile(r"(?:const|let|var)\s+([\w$]+)\s*=\s*(?:await\s+)?(?:new\s+)?([\w$.]+)\s*(?=[(;,\n]|$)", re.M)
+_PY_ASSIGN_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(?:await\s+)?([A-Za-z_][\w.]*)\s*(?=\(|$)", re.M)
+_PY_IMPORT_AS_RE = re.compile(r"^\s*import\s+([\w.]+)\s+as\s+(\w+)", re.M)
+_PY_FROM_IMPORT_RE = re.compile(r"^\s*from\s+([\w.]+)\s+import\s+\(?([^)\n]+)", re.M)
 
 
-def _outbound(args: str) -> bool:
-    hosts = _URL_HOST_RE.findall(args)
-    return not hosts or not all(_LOOPBACK_RE.match(h) for h in hosts)
+@lru_cache(maxsize=512)
+def _aliases(rel: str, text: str) -> dict[str, str]:
+    """name -> what it stands for (module path, function path or instance root)."""
+    al: dict[str, str] = {}
+    if rel.endswith(PY_EXT):
+        for mod, name in _PY_IMPORT_AS_RE.findall(text):
+            al[name] = mod
+        for mod, names in _PY_FROM_IMPORT_RE.findall(text):
+            for part in names.split(","):
+                bits = part.strip().split()
+                if bits and re.fullmatch(r"\w+", bits[0]):
+                    al[bits[-1] if len(bits) == 3 and bits[1] == "as" else bits[0]] = f"{mod}.{bits[0]}"
+        for name, val in _PY_ASSIGN_RE.findall(text):
+            al.setdefault(name, val)
+        return al
+    for rx, kind in _JS_ALIAS_RES:
+        for m in rx.finditer(text):
+            target, mod = m.group(1), m.group(2)
+            if kind == "mod":
+                al[target] = mod
+                continue
+            for part in target.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                sep = ":" if kind == "destructure" else " as "
+                src, _, dst = part.partition(sep)
+                src, dst = src.strip(), (dst.strip() or src.strip())
+                if re.fullmatch(r"[\w$]+", src) and re.fullmatch(r"[\w$]+", dst):
+                    al[dst] = f"{mod}.{src}"
+    for name, val in _JS_ASSIGN_RE.findall(text):
+        al.setdefault(name, val)
+    return al
+
+
+_ZERO_COMMA_RE = re.compile(r"^\(\s*0\s*,\s*([\w$.]+)\s*\)$")
+_GETATTR_RE = re.compile(r"""^getattr\(\s*([\w.]+)\s*,\s*['"](\w+)['"]\s*\)$""")
+
+
+def _norm_callee(callee: str, al: dict[str, str]) -> str:
+    c = callee.strip()
+    for _ in range(4):
+        prev = c
+        m = _ZERO_COMMA_RE.match(c) or _GETATTR_RE.match(c)
+        if m:
+            c = m.group(1) + ("." + m.group(2) if m.lastindex == 2 else "")
+        c = re.sub(r"\.(?:call|apply|bind)$", "", c)
+        c = re.sub(r"^(?:window|globalThis|self|global)\.", "", c)
+        root, dot, rest = c.partition(".")
+        if root in al and al[root] != root:
+            c = al[root] + (dot + rest if rest else "")
+        c = re.sub(r"^(?:node:)", "", c)
+        if c == prev:
+            break
+    return c
+
+
+def _is_net_callee(callee: str) -> bool:
+    if callee in NET_GLOBALS:
+        return True
+    parts = callee.split(".")
+    if parts[-1] in NOT_NET_LEAVES or SERVER_SIDE & set(parts):
+        return False  # a local server (and calls on it) is not an outbound call
+    return parts[0] in NET_MODULES or ".".join(parts[:2]) in NET_MODULES
+
+
+# Loopback is exempt only for a single plain literal whose host ends right there (round 3).
+_LOOPBACK_LIT_RE = re.compile(
+    r"""^\s*(['"`])(?:https?|wss?)://(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?=[:/?#]|\1)(?:(?!\1)[^\\\s\x00-\x1f$])*\1\s*$""",
+    re.I,
+)
+
+
+def _loopback_only(first_raw: str) -> bool:
+    return bool(_LOOPBACK_LIT_RE.match(first_raw)) and "@" not in first_raw
 
 
 def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
     """(line, argument text) of outbound network calls.
 
-    Parsed files: real call nodes to network APIs (or carrying an exfil host), excluding
-    calls whose URLs are all loopback. Unparsed files (shell...): the regex fallback,
-    minus bare import lines.
+    Parsed files: real call nodes to network APIs after alias normalisation (or any call
+    carrying an exfil host), except a call whose URL argument is one plain loopback literal.
+    Unparsed files (shell...): the regex fallback, minus bare import lines.
     """
     calls = _calls(f.rel, f.text)
     if calls is not None:
+        al = _aliases(f.rel, f.text)
         out = []
         for c in calls:
-            leaf = c.callee.rsplit(".", 1)[-1]
-            is_net = bool(NET_CALLEE_RE.search(c.callee)) or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
-            if (is_net and _outbound(c.args)) or EXFIL_HOST_RE.search(c.args):
+            callee = _norm_callee(c.callee, al)
+            leaf = callee.rsplit(".", 1)[-1]
+            is_net = _is_net_callee(callee) or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
+            if (is_net and not _loopback_only(c.first_raw)) or EXFIL_HOST_RE.search(c.args):
                 out.append((c.line, c.args))
         return out
     out = []
@@ -1029,6 +1204,74 @@ def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
 
 def _net_lines(f: ScanFile, t: str) -> list[int]:
     return [ln for ln, _ in _net_calls(f, t)]
+
+
+# Floor backstop (round 3): a network-capable module imported, or code loaded/looked up by
+# computed name, anywhere in the file.
+NET_IMPORT_RE = re.compile(
+    r"""(?:require\(\s*|import\s*\(\s*|from\s+|import\s+)['"]?(?:node:)?"""
+    r"""(?:https?|http2|net|tls|dgram|undici|node-fetch|axios|got|ky|requests|httpx|aiohttp"""
+    r"""|urllib(?!\.parse|\.error)|socket|http\.client|websockets?|ws)(?![\w.-]*\.parse)['"\s;,)]""",
+    re.M,
+)
+COMPUTED_LOAD_RE = re.compile(
+    r"""\brequire\(\s*(?!['"`][^'"`$]*['"`]\s*\))|\bimport\(\s*(?!['"`][^'"`$]*['"`]\s*\))"""
+    r"""|\b(?:globalThis|window|global|self)\[\s*(?!['"][^'"]*['"]\s*\])"""
+    r"""|\bgetattr\(\s*(?:__builtins__|builtins)\b|\b__import__\(|\bimportlib\.import_module\(\s*(?!['"][^'"]*['"]\s*\))"""
+)
+
+
+_INLINE_NET_RE = re.compile(
+    r"""\b(?:require|import)\(\s*['"](?:node:)?([\w@/.-]+)['"]\s*\)\s*(?:\.\s*(\w+))?"""
+)
+_BINDING_LINE_RE = re.compile(r"""\brequire\(\s*['"]|^\s*(?:import|from)\b""", re.M)
+
+
+def _net_root(value: str) -> bool:
+    parts = value.split(".")
+    return not (SERVER_SIDE & set(parts)) and (parts[0] in NET_MODULES or ".".join(parts[:2]) in NET_MODULES)
+
+
+def _network_capable(f: ScanFile, t: str) -> bool:
+    """The file can reach the network somewhere: a network-capable module bound and USED for
+    something other than running a local server, or code loaded / looked up by computed name."""
+    if COMPUTED_LOAD_RE.search(t):
+        return True
+    if not NET_IMPORT_RE.search(t):
+        return False
+    for m in _INLINE_NET_RE.finditer(t):
+        line = _line_text(t, _line_of(t, m.start()))
+        bound = re.search(r"[\w$}]\s*=\s*(?:await\s+)?(?:require|import)\(", line)
+        if _net_root(m.group(1)) and not bound and (m.group(2) or "") not in SERVER_SIDE:
+            return True  # require('https').request(...) used inline
+    al = _aliases(f.rel, f.text)
+    names = {n for n, v in al.items() if _net_root(v.removeprefix("new ").split("(")[0])}
+    if f.rel.endswith(PY_EXT):
+        names |= {m for m in NET_MODULES if re.fullmatch(r"\w+", m)}
+        if re.search(r"\burllib\.request\.\w+\s*\(", t):
+            return True
+    for n in names:
+        for m in re.finditer(rf"(?<![\w$.'\"/]){re.escape(n)}(?![\w$])", t):
+            line = _line_text(t, _line_of(t, m.start()))
+            if _BINDING_LINE_RE.search(line) and not re.search(rf"{re.escape(n)}\s*[.(\[]", line.split("=", 1)[-1] if "=" in line else ""):
+                continue  # the binding itself
+            after = t[m.end() : m.end() + 60]
+            use = re.match(r"\s*(?:\.\s*(\w+)|\(|\[)", after)
+            if use and (use.group(1) or "") not in SERVER_SIDE:
+                return True
+    return False
+
+
+def _cred_hits(f: ScanFile, t: str, regexes, calls) -> list[tuple[int, bool]]:
+    """Sorted (pos, denied) for credential paths and .claude credential references."""
+    hits = []
+    for m in CRED_RE.finditer(t):
+        if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
+            hits.append((m.start(), _denied(f, t, m.start(), regexes, calls)))
+    for pos, kind in _claude_refs(t, f):
+        if kind == "cred":
+            hits.append((pos, _denied(f, t, pos, regexes, calls)))
+    return sorted(hits)
 
 
 def _floor(f: ScanFile, found: list[Finding], strong: list[tuple[str, int]]) -> list[Finding]:
