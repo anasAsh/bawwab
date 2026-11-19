@@ -27,7 +27,10 @@ module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["real_spawn: allow the test to spawn the real background inventory"]
+markers = [
+    "real_spawn: allow the test to spawn the real background inventory",
+    "real_osv: use the real OSV client (against a fake server) instead of the no-network stub",
+]
 
 [dependency-groups]
 dev = [

@@ -191,12 +191,23 @@ scanning on its own.
   and the gate protects every one-command form of the wipe it knows.
   - A non-plugin install (no `bawwab@*` entry) has no external anchor.
   - An attacker also rewrites or removes `installed_plugins.json` (or
-    bawwab's entry), or deletes the transcripts of every session since the
-    install.
+    bawwab's entry), or rewrites, backdates or deletes the transcripts of
+    every session since the install. Backdating the mtimes (`touch -d`) or
+    editing a transcript's head (`sessionId`, `timestamp`) is anchor
+    tampering just as deletion is, and each is a single command that is not
+    Protected.
   - The wipe happens inside the first session after install. No other
-    session exists yet, so for the rest of that session the hooks see a
-    fresh install, and so does `init --skip` from that session. The next
-    session reports the state as lost.
+    session exists yet, so for the rest of that session the effect check is
+    off (no baseline), and `init --skip` from that session is accepted as a
+    first-run skip, whose result then stands: that gives permanent trust.
+    If no `init` ran in that session, the next session reports the state as
+    lost.
+  - A resumed or continued conversation (`claude --continue`, `--resume`)
+    that began before the install never counts as a session since the
+    install, because sessions are counted by their first event (R39). If
+    Claude Code keeps the session id or copies the transcript head on
+    resume, a wipe in such a conversation reads as a fresh install. Not
+    verified.
   - A reinstall resets `installedAt`. This is plausible, not verified; it
     opens a 10-minute window.
 

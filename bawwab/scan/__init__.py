@@ -11,6 +11,7 @@ from bawwab.config import Config, is_trusted, load_config
 from bawwab.fetch import FetchError, FetchOpts, fetch_target, target_from_command, target_from_url
 from bawwab.scan.files import ExtraText, ScanFile, load_files
 from bawwab.scan.identity import identity_checks
+from bawwab.scan.osv import known_malware
 from bawwab.scan.judge.backends import Backend, backend_for
 from bawwab.scan.judge.judge import judge
 from bawwab.scan.rules import run_static_rules
@@ -202,7 +203,7 @@ class _Ctx:
         return self._backend
 
 
-def _static_step(f: Fetched) -> tuple[list[ScanFile], list[ExtraText], list[Finding]]:
+def _static_step(f: Fetched, fetch_opts: FetchOpts | None = None) -> tuple[list[ScanFile], list[ExtraText], list[Finding]]:
     files: list[ScanFile] = []
     findings = list(f.findings)
     if f.root is not None:
@@ -210,6 +211,10 @@ def _static_step(f: Fetched) -> tuple[list[ScanFile], list[ExtraText], list[Find
         findings += loaded
     extra = _extra_from_tools(f.remote_tools)
     findings += identity_checks(f.meta)
+    if f.target.kind in ("npm", "pypi"):  # known malware (OSV MAL-*): an extra signal, never fail closed
+        opts = fetch_opts or FetchOpts()
+        findings += known_malware(f.target.kind, f.target.name or f.meta.name, f.resolved_version,
+                                  base=opts.osv_url, timeout=min(opts.timeout_s, 10))
     static = run_static_rules(files, extra)
     if f.target.kind == "npm":  # R31: registry installs do not run `prepare`
         static = registry_install_adjust(files, static)
@@ -248,7 +253,7 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "")
 
 
 def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0, label: str = "") -> list[Finding]:
-    files, extra, findings = _static_step(f)
+    files, extra, findings = _static_step(f, ctx.fetch_opts)
     ctx.parts.append((label, files, extra, f.remote_tools))
     findings += _scan_children(f, ctx, depth, label)
     findings += _judge_step(files, extra, findings, ctx)

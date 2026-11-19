@@ -16,6 +16,26 @@ def _dt(s) -> datetime | None:
         return None
 
 
+def _first_upload(t: Target, opts: FetchOpts, doc: dict, urls: list[dict]) -> datetime | None:
+    """When the project was first published: the earliest upload of any release (Task 10c E).
+
+    The version endpoint has no "releases", so a pinned fetch reads the project document too. If that
+    fails, the current release's upload time is used (as before): never older than the truth.
+    """
+    releases = doc.get("releases")
+    if not isinstance(releases, dict) and t.version:
+        try:
+            project = http_get_json(f"{opts.pypi_base.rstrip('/')}/pypi/{quote(t.name, safe='')}/json", opts.timeout_s)
+            releases = project.get("releases")
+        except FetchError:
+            releases = None
+    files = list(urls)
+    if isinstance(releases, dict):
+        files += [u for rel in releases.values() if isinstance(rel, list) for u in rel if isinstance(u, dict)]
+    times = sorted(d for d in (_dt(u.get("upload_time_iso_8601")) for u in files) if d)
+    return times[0] if times else None
+
+
 def fetch_pypi(t: Target, opts: FetchOpts, tmp: Path) -> tuple[Path, str, PackageMeta, list[Finding]]:
     if not t.name:
         raise FetchError("pypi target has no package name")
@@ -37,7 +57,6 @@ def fetch_pypi(t: Target, opts: FetchOpts, tmp: Path) -> tuple[Path, str, Packag
     arc.unlink(missing_ok=True)
     purls = info.get("project_urls") if isinstance(info.get("project_urls"), dict) else {}
     repo_url = next((purls[k] for k in ("Source", "Repository", "Source Code", "Homepage", "GitHub") if purls.get(k)), None)
-    times = sorted(d for d in (_dt(u.get("upload_time_iso_8601")) for u in urls) if d)
-    meta = PackageMeta(name=t.name, repo_url=repo_url or info.get("home_page") or None, created_at=times[0] if times else None)
+    meta = PackageMeta(name=t.name, repo_url=repo_url or info.get("home_page") or None, created_at=_first_upload(t, opts, doc, urls))
     root = strip_single_dir(dest) if pick.get("packagetype") == "sdist" else dest
     return root, version, meta, findings

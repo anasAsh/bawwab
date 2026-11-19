@@ -10,11 +10,13 @@ import hashlib
 from pathlib import Path
 
 _SCAN = Path(__file__).resolve().parent / "scan"
-_SOURCES = ("rules/*.py", "identity.py", "files.py", "judge/prompt.py")
+_SOURCES = ("rules/*.py", "identity.py", "files.py", "osv.py", "judge/prompt.py")
+# Bumped by hand when something outside _SOURCES changes findings (Task 10c: PyPI first-upload date).
+_REVISION = "10c"
 
 
 def _compute() -> str:
-    h = hashlib.sha256()
+    h = hashlib.sha256(f"revision {_REVISION}\n".encode())
     files = sorted({p for pat in _SOURCES for p in _SCAN.glob(pat)})
     for p in files:
         try:

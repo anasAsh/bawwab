@@ -96,6 +96,7 @@ Bawwab checks at two points:
 | Layer | Catches |
 |---|---|
 | 🔍 **Static rules** | install scripts, `curl \| sh`, eval of decoded or fetched code, credential access (`~/.ssh`, `.env`, `~/.aws`), exfiltration hosts, obfuscation, hidden Unicode, prompt-injection phrasing, tool shadowing, risky plugin hooks, typosquats |
+| ☣️ **Known malware** | npm and PyPI packages listed as malicious (`MAL-*`) in [OSV](https://osv.dev), from the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed. A failed lookup is a note, not a block. |
 | 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
 | 🕸️ **Cross-server check** | server A's text steering server B's tools |
@@ -207,6 +208,10 @@ Please use canary values and `.invalid` hosts, never live malware.
 ## License
 
 [MIT](LICENSE) © 2026 Anas Al-Hamdan
+
+The known-malware lookup queries [OSV](https://osv.dev), which publishes the
+[OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) data under the Apache License 2.0.
+See [NOTICE](NOTICE).
 
 <div align="center">
 <sub>Built with care in Amman 🇯🇴 · <i>"A good gatekeeper knows who to let in."</i></sub>

@@ -22,8 +22,8 @@ class ExtraText:
     text: str
 
 
-def _truncated(evidence: str, rel: str | None = None) -> Finding:
-    return Finding("files.truncated", Severity.MED, "static", evidence, file=rel)
+def _truncated(evidence: str, rel: str | None = None, severity: Severity = Severity.MED) -> Finding:
+    return Finding("files.truncated", severity, "static", evidence, file=rel)
 
 
 # Binary formats recognised by magic (R27 I6). Each magic starts with bytes that are not valid
@@ -95,6 +95,14 @@ def _media_magic(h: bytes) -> bool:
 def _is_binary(head: bytes) -> bool:
     """A real binary format by magic; anything else (even with NUL bytes) is treated as text."""
     return head.startswith(BINARY_MAGIC) or _is_pe(head) or _media_magic(head)
+
+
+_JS_PY_SHEBANG_RE = re.compile(rb"#![ \t]*\S*?(?:/env(?:[ \t]+-\S+)*[ \t]+)?\S*?\b(?:node|nodejs|python[\d.]*|deno|bun|tsx|ts-node)\b[^\n]*\n")
+
+
+def _shell_shebang(head: bytes) -> bool:
+    """A #! line for anything but a JS/Python runtime (a shell runs such a file line by line)."""
+    return head.startswith(b"#!") and not _JS_PY_SHEBANG_RE.match(head)
 
 
 def _is_code_name(rel: str, head: bytes) -> bool:
@@ -169,7 +177,8 @@ def load_files(
 ) -> tuple[list[ScanFile], list[Finding]]:
     """Read text files under root. Never follows symlinks; skips binaries.
 
-    Oversized text files, source files with NUL bytes and the file cap give
+    Oversized text files are scanned up to max_file_bytes and give `files.truncated` (low);
+    oversized files with NUL bytes, source files with NUL bytes and the file cap give
     `files.truncated` (med). Files with a binary magic (executables, archives,
     images) are aggregated into one low finding, unless a manifest, hook config or
     install script names them as something to run (then `files.truncated`).
@@ -219,8 +228,20 @@ def load_files(
                     if _is_binary(head) and not _is_code_name(rel, head):
                         kind = exec_kind(head) if _is_executable(head) else "media"
                         pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", kind))
-                    else:
+                    elif (b"\x00" in head or _is_binary(head) or _is_executable(head)
+                          or rel.endswith(SHELL_EXT) or _shell_shebang(head)):
+                        # NUL bytes, a script under a forged binary/media header (R27 round 3), or a
+                        # shell script / #! file: not bundled text, so the unscanned tail stays MED.
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
+                    else:
+                        # Big bundled text (Task 10c A): scan the first max_file_bytes, note the rest (LOW).
+                        with path.open("rb") as fh:
+                            part = fh.read(max_file_bytes)
+                        files.append(ScanFile(rel, part.decode("utf-8", errors="replace")))
+                        findings.append(_truncated(
+                            f"{rel} is {size} bytes (limit {max_file_bytes}); only the first {max_file_bytes} bytes scanned",
+                            rel, Severity.LOW,
+                        ))
                     continue
                 data = path.read_bytes()
             except OSError:

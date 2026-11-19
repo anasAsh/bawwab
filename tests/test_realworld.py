@@ -104,10 +104,12 @@ def test_prebuilt_binaries_one_low_aggregate(tmp_path):
     assert "--deep" in agg[0].evidence
 
 
-def test_oversized_text_still_truncated_med(tmp_path):
+def test_oversized_text_is_scanned_in_part_and_truncated_low(tmp_path):
+    # Task 10c (A), user-approved: big bundled text is scanned up to the cap, the rest is a LOW note.
     (tmp_path / "big.js").write_text("x" * 100)
     files, findings = load_files(tmp_path, max_file_bytes=10)
-    assert pairs(findings) == {("files.truncated", Severity.MED)}
+    assert pairs(findings) == {("files.truncated", Severity.LOW)}
+    assert [(f.rel, f.text) for f in files] == [("big.js", "x" * 10)]
 
 
 def test_small_image_binary_still_silent(tmp_path):

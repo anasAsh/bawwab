@@ -22,6 +22,7 @@ class FetchError(Exception):
 class FetchOpts:
     npm_registry: str = "https://registry.npmjs.org"
     pypi_base: str = "https://pypi.org"
+    osv_url: str = "https://api.osv.dev"  # known-malware lookup (Task 10c)
     timeout_s: float = 60
     remote_timeout_s: float = 15
     # Test-only escape hatch: production keeps protocol.file.allow=never.

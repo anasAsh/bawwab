@@ -1,0 +1,12 @@
+Bawwab
+Copyright (c) 2026 Anas Al-Hamdan. Licensed under the MIT License (see LICENSE).
+
+This product uses third-party data:
+
+OpenSSF Malicious Packages (https://github.com/ossf/malicious-packages)
+Copyright The OpenSSF Malicious Packages Authors.
+Licensed under the Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+
+Bawwab does not bundle this data. At scan time it queries the OSV API
+(https://api.osv.dev), which serves the OpenSSF malicious-packages reports as
+MAL-* advisories, and reports a match as a known-malicious package.

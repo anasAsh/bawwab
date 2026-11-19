@@ -27,6 +27,12 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
             raise AssertionError("test tried to spawn the background inventory; mark it real_spawn or patch it")
 
         monkeypatch.setattr("bawwab.inventory.spawn_background", _no_spawn)
+    import bawwab.scan.osv as osv
+
+    osv.clear_cache()
+    if "real_osv" not in request.keywords:
+        # No test reaches the real OSV API: registry scans see "no advisories" (Task 10c).
+        monkeypatch.setattr(osv, "_post", lambda url, body, timeout: {})
     yield
 
 

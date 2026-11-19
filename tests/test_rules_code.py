@@ -84,7 +84,8 @@ def test_max_files_truncated(tmp_path):
 def test_max_file_bytes_truncated(tmp_path):
     (tmp_path / "big.txt").write_text("x" * 100)
     files, findings = load_files(tmp_path, max_file_bytes=10)
-    assert files == [] and findings[0].rule == "files.truncated"
+    # Task 10c (A): the first max_file_bytes are scanned; the rest is noted.
+    assert [f.text for f in files] == ["x" * 10] and findings[0].rule == "files.truncated"
 
 
 def test_blob_and_unpinned_deps(tmp_path):

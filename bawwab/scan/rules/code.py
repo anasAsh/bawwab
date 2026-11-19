@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ast
+import base64
+import binascii
 import io
 import json
 import re
@@ -286,10 +288,13 @@ FB_EVAL_FETCH_RE = re.compile(
 )
 
 CRED_RES = [
-    r"\.ssh/", r"\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\b", r"\.aws/credentials", r"\.credentials\.json",
+    r"\.ssh/", r"\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\b", r"\.aws/credentials",
+    # anchored: "oauth.credentials.json" is not Claude's credentials file (Task 10c)
+    r"(?<![\w.-])\.credentials\.json",
     # Segment-joined key paths: path.join(home, '.ssh', 'id_x'), Path.home() / '.ssh' / 'id_x' (round 4, R30e).
     r"\.ssh['\"`]\s*[,/+]\s*[frbu]?['\"`]/?id_",
-    r"(?<![\w.])\.env\b", r"\.claude\.json",
+    # `options?.env` is optional chaining, not a .env file (Task 10c)
+    r"(?<![\w.?])\.env\b", r"\.claude\.json",
     r"\.npmrc\b", r"\.netrc\b", r"\.pypirc\b",
     r"security\s+find-generic-password", r"\bkeychain\b",
     r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
@@ -304,6 +309,17 @@ DOTENV_RE = re.compile(
     re.M,
 )
 CRED_RE = re.compile("|".join(CRED_RES), re.I)
+# Copies of the whole environment (Task 10c B). These are mostly an env handed to a child process;
+# they count as credential access only when the copy flows to a network call or a file write.
+# Serialising the env (json.dumps, JSON.stringify, str) stays a plain credential hit.
+ENV_COPY_RE = re.compile(
+    r"dict\(\s*os\.environ\s*\)|os\.environ\.(?:copy|items)\(\)|Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
+    re.I,
+)
+ENV_WRITE_RE = re.compile(
+    r"\b(?:write\w*|appendFile\w*|write_text|write_bytes|dump)\s*\(|\bcreateWriteStream\b"
+    r"|\bopen\([^)\n]*['\"][wax]b?\+?['\"]"
+)
 # References into a .claude dir, as "/.claude/<sub>" or path.join(..., ".claude", "<sub>") (R26d, R27 I5).
 # ".claude/x", or ".claude" then a string join: path.join(..., '.claude', 'x'), '.claude' + '/x',
 # pathlib Path.home() / '.claude' / 'x' (round 3).
@@ -327,7 +343,7 @@ PATH_CALLEES = {"path.join", "path.resolve", "path.posix.join", "os.path.join", 
 COLLECTION_METHODS = {"add", "has", "includes", "push", "test", "match", "indexOf", "some", "append", "extend", "update", "set"}
 _DECL_TAIL_RE = re.compile(r"""(?:['"]?([\w$.]+)['"]?\s*[:=]\s*)?(?:new\s+)?([\w$.]*)\s*\(?\s*$""")
 EXFIL_HOST_RE = re.compile(
-    r"webhook\.site|requestbin|pipedream|ngrok|pastebin|transfer\.sh"
+    r"webhook\.site|requestbin|pipedream\.net|(?<![\w-])pipedream(?![\w-]*\.)|ngrok|pastebin|transfer\.sh"
     r"|discord(?:app)?\.com/api/webhooks|api\.telegram\.org/bot"
     r"|https?://(?!127\.|0\.0\.0\.0)\d{1,3}(?:\.\d{1,3}){3}",
     re.I,
@@ -337,6 +353,27 @@ NET_RE = re.compile(
     r"|\bgot\(|Invoke-WebRequest|\bnc\s|\b(?:net|tls)\.(?:connect|createConnection)\b"
 )
 BLOB_RE = re.compile(r"""["'`]((?:[A-Za-z0-9+/]{200,}={0,2})|(?:[0-9a-fA-F]{200,}))["'`]""")
+_IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
+_SVG_HEAD_RE = re.compile(rb"^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--.*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]", re.S | re.I)
+
+
+def _image_b64(lit: str) -> bool:
+    """A base64 literal whose bytes start like a PNG, JPEG, GIF, WebP or SVG image (Task 10c D)."""
+    if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", lit) or len(lit) < 8:
+        return False  # hex blobs are never taken as images
+    head = lit[:1024]
+    head = head[: len(head) // 4 * 4]
+    try:
+        data = base64.b64decode(head, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return (
+        data.startswith(_IMAGE_MAGIC)
+        or data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        or bool(_SVG_HEAD_RE.match(data))
+    )
+
+
 REMOTE_RE = re.compile(r"\b(?:curl|wget|fetch|urllib|requests|Invoke-WebRequest|iwr|httpx|axios)\b|\bhttps?\.get\b")
 
 
@@ -825,6 +862,34 @@ def _glob_callee(f: ScanFile, callee: str) -> bool:
     )
 
 
+_JOIN_TAIL_RE = re.compile(r"""\s*\.\s*join\(\s*(['"])\|\1\s*\)\s*[,)]""")
+_JS_REGEX_HEAD_RE = re.compile(r"""\bRegExp\(\s*$""")
+_PY_REGEX_HEAD_RE = re.compile(
+    r"""\bre\.(?:compile|search|match|fullmatch|findall|finditer)\(\s*[rbu]*(['"])\|\1\s*\.\s*join\(\s*$"""
+)
+
+
+def _joined_regex_open(t: str, i: int) -> int | None:
+    """The "(" of RegExp([...].join('|')) / re.compile('|'.join([...])) for the array at i, when every
+    element is a plain string literal; else None."""
+    head = t[max(0, i - 200) : i]
+    close = _close_of(t, i)
+    if (m := _JS_REGEX_HEAD_RE.search(head)) is not None:
+        if not _JOIN_TAIL_RE.match(t, close):
+            return None
+        open_pos = t.rindex("(", 0, i)
+    elif (m := _PY_REGEX_HEAD_RE.search(head)) is not None:
+        if not re.match(r"\s*\)\s*[,)]", t[close:]):
+            return None
+        open_pos = t.index("(", i - len(head) + m.start())
+    else:
+        return None
+    elems = [e for e in _top_args(t, i) if e.strip()]
+    if not elems or not all(_LITERAL_ARG_RE.match(re.sub(r"^\s*[rbu]+(?=['\"])", "", e)) for e in elems):
+        return None
+    return open_pos
+
+
 def _context(f: ScanFile, t: str, pos: int, regexes) -> str | None:
     """"regex", "deny" or None (a plain reference) for a sensitive path at pos (R29).
 
@@ -851,6 +916,10 @@ def _context(f: ScanFile, t: str, pos: int, regexes) -> str | None:
                 depth -= 1
             else:
                 levels += 1
+                if ch == "[" and (r := _joined_regex_open(t, i)) is not None:
+                    # RegExp([...literals].join('|')): a regex literal in all but syntax (10a minor)
+                    if not _stringified(t, r, _close_of(t, r), regexes):
+                        return "regex"
                 line_start = t.rfind("\n", 0, i) + 1
                 prefix = t[line_start:i] + ("(" if ch == "(" else "")
                 m = _DECL_TAIL_RE.search(prefix)
@@ -1256,7 +1325,7 @@ class CodeRules:
             sev = Severity.CRITICAL if is_install else Severity.HIGH
             out.append(_finding("remote-code.pipe-shell", sev, f, _line_of(raw, m.start())))
         if not f.rel.endswith(".min.js"):
-            m = BLOB_RE.search(raw)
+            m = next((m for m in BLOB_RE.finditer(raw) if not m.group(1).isdigit() and not _image_b64(m.group(1))), None)
             if m:
                 line = _line_of(raw, m.start())
                 out.append(_finding("obfuscation.blob", Severity.MED, f, line, f"{len(m.group(1))}-char encoded literal"))
@@ -1680,19 +1749,129 @@ SSH_JOIN_RE = re.compile(
 )
 
 
+# The statement's assignment target: the last `name =` after a statement boundary on the line, with
+# no `;` between it and the copy (minified bundles hold many statements on one line).
+_ASSIGN_HEAD_RE = re.compile(
+    r"""(?:^|[;{}])\s*(?:export\s+)?(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$.]*)\s*(?::\s*[^=\n;]+?)?\s*=(?![=>])(?=[^;]*$)"""
+)
+# A filtered copy: Object.keys(process.env).filter(...), {k: v for k, v in os.environ.items() if ...}
+_FILTERED_TAIL_RE = re.compile(r"""\s*\.\s*filter\s*\(|\s+if\b[^\n]*[}\])]""")
+_FUNC_HEAD_RE = re.compile(
+    r"""\bdef\s+([A-Za-z_]\w*)|\bfunction\s*\*?\s*([\w$]+)\s*\("""
+    r"""|([\w$]+)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)"""
+    r"""|^[ \t]*(?:async\s+)?(?:static\s+)?(?!(?:if|for|while|switch|catch|return)\b)([\w$]+)\s*\([^()]*\)\s*\{""",
+    re.M,
+)
+
+
+def _scope_bounds(f: ScanFile, t: str, line: int) -> tuple[int, int]:
+    """Character range of the outermost function holding `line` (the whole file at module level)."""
+    for lo, hi in _function_spans(f.rel, f.text) or []:
+        if lo <= line <= hi:
+            a = 0
+            for _ in range(lo - 1):
+                a = t.find("\n", a) + 1
+            b = a
+            for _ in range(hi - lo + 1):
+                nb = t.find("\n", b)
+                b = len(t) if nb < 0 else nb + 1
+            return a, b
+    return 0, len(t)
+
+
+def _handed_on(t: str, name: str, a: int, b: int, skip: tuple[int, int]) -> bool:
+    """Every use of `name` in t[a:b] hands it to a child process / caller, or edits it in place."""
+    rx = re.compile(r"(?<![\w$])" + re.escape(name) + r"(?![\w$])")
+    seen = False
+    for m in rx.finditer(t, a, b):
+        if skip[0] <= m.start() < skip[1]:
+            continue
+        before, after = t[max(a, m.start() - 40) : m.start()], t[m.end() : m.end() + 40]
+        if before.endswith(".") and not before.endswith("..."):
+            continue  # a member (process.env), not this name
+        if re.match(r"\s*(?:=(?!=)|:(?!:))", after):
+            continue  # assigned to / an object key or keyword name (env=..., env: ...)
+        if re.match(r"\s*\[|\.(?:update|pop|setdefault|get)\s*\(|\.[\w$]+\s*=(?!=)", after):
+            continue  # env["X"] = ..., env.pop("X"), env.X = ...
+        if re.search(r"(?:\benv\s*[=:]\s*|\.\.\.\s*|\*\*\s*|\breturn\s+|\bdelete\s+)$", before):
+            seen = True  # env=name, env: name, {...name}, {**name}, return name
+            continue
+        if name == "env" and re.search(r"[{,]\s*$", before) and re.match(r"\s*[,}]", after):
+            seen = True  # { env } shorthand
+            continue
+        return False
+    return seen
+
+
+def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
+    """"real", "env" (LOW, still backstop-eligible) or "bound" (ignored) for a copy of the environment.
+
+    Real only when the copy flows to a network call or a file write: in the same function as one,
+    or by its variable / function name in a network call's arguments (Task 10c B, R27). Bound when
+    every use hands it to a child process (env=, env:, spread) or returns it to a caller.
+    """
+    line = _line_of(t, pos)
+    net = _net_calls(f, t)
+    if net and _same_scope(f, [line], [ln for ln, _ in net]):
+        return "real"  # R27: same function as a network call
+    line_start = t.rfind("\n", 0, pos) + 1
+    prefix = t[line_start:pos]
+    names: list[str] = []
+    heads = list(_ASSIGN_HEAD_RE.finditer(prefix))
+    if heads:
+        names.append(heads[-1].group(1))
+    name_res = [re.compile(r"(?<![\w$])" + re.escape(n) + r"(?![\w$])") for n in names]
+    for w in ENV_WRITE_RE.finditer(t):
+        if pos <= w.start() < end:
+            continue
+        wl = _line_of(t, w.start())
+        # written right here, or written by name in the same function
+        if wl == line or (any(r.search(_line_text(t, wl)) for r in name_res) and _same_scope(f, [line], [wl])):
+            return "real"
+    a, b = _scope_bounds(f, t, line)
+    returned = bool(re.search(r"\breturn\b", prefix)) or any(
+        re.search(r"\breturn\s+(?:\{\s*(?:\.\.\.|\*\*)\s*)?" + re.escape(n) + r"(?![\w$])", t[a:b]) for n in names
+    )
+    func = None
+    if returned:
+        heads = list(_FUNC_HEAD_RE.finditer(t, 0, pos))
+        if heads:
+            func = next((g for g in heads[-1].groups() if g), None)
+    for n in names + ([func] if func else []):
+        rx = re.compile(r"(?<![\w$.])" + re.escape(n.rsplit(".", 1)[-1] if n == func else n) + r"(?![\w$])")
+        if any(rx.search(args) for _, args in net):
+            return "real"
+    if _FILTERED_TAIL_RE.match(t, end):
+        return "bound"  # a filtered env dict / key list that does not reach the network or a file
+    if returned and not names:
+        return "bound"
+    if re.search(r"\benv\s*[=:]\s*(?:\{\s*(?:\.\.\.|\*\*)\s*)?(?:dict\(\s*)?[\w$.]*\(?\s*$", prefix) and not names:
+        return "bound"  # an env= / env: argument built right here
+    if names and all(_handed_on(t, n, a, b, (line_start, end)) for n in names):
+        return "bound"
+    return "env"
+
+
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     """Sorted (pos, kind) for credential paths and .claude credential references.
 
     kind is "real", "deny" (deny-list / matcher collection: LOW alone, still counts for
-    combos, the floor and the backstop) or "regex" (a regex literal: the only combo-exempt
-    context, R29).
+    combos, the floor and the backstop), "env" (a copy of the environment whose use is
+    unclear: LOW alone, backstop-eligible) or "regex" (a regex literal: the only
+    combo-exempt context, R29). A copy of the environment handed to a child process is
+    not a hit at all (Task 10c B/C).
     """
     hits = []
     seen = set()
     for m in CRED_RE.finditer(t):
         if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
             seen.add(m.start())
-            hits.append((m.start(), _context(f, t, m.start(), regexes) or "real"))
+            kind = _context(f, t, m.start(), regexes)
+            if kind is None and ENV_COPY_RE.fullmatch(m.group(0)):
+                kind = _env_dump_kind(f, t, m.start(), m.end())
+                if kind == "bound":
+                    continue
+            hits.append((m.start(), kind or "real"))
     for m in SSH_JOIN_RE.finditer(t):
         pos = m.start(1) if m.group(1) else m.start(2)
         if pos not in seen and not any(a <= pos < b for a, b in [(x.start(), x.end()) for x in CRED_RE.finditer(t, max(0, pos - 2), pos + 40)]):

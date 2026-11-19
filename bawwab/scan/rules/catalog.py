@@ -17,7 +17,7 @@ def _r(id: str, title: str, why: str, fix: str) -> tuple[str, RuleInfo]:
 
 CATALOG: dict[str, RuleInfo] = dict(
     [
-        _r("files.truncated", "Scan limit reached", "Some files were not scanned, so malicious code could hide in them.", "Review the unscanned files manually or raise the limits."),
+        _r("files.truncated", "Scan limit reached", "Some files, or the tail of a very large file, were not scanned, so malicious code could hide in them.", "Review the unscanned files manually or raise the limits."),
         _r("files.binary-unscanned", "Binary files not analysed", "Prebuilt executables cannot be read by static rules, so what they do is unknown until they run.", "Use --deep to run the package in the sandbox, or prefer packages built from source."),
         _r("rules.error", "A scan rule failed", "A rule crashed, so its findings are missing; the result is incomplete.", "Review the target manually; report the failing rule."),
         _r("install-script", "Runs code at install time", "Install hooks run automatically with your privileges before you can review anything.", "Read the script; prefer packages with no install hooks."),
@@ -45,6 +45,8 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("cross-server.reference", "One server's text mentions another server's tool", "A description in one server that names a tool of a different server can steer the AI into misusing that other tool.", "Remove one of the servers or review the text that names the other tool."),
         _r("identity.typosquat", "Name is close to a popular package", "Attackers publish packages with names one or two letters off a popular one hoping you mistype it.", "Check the exact spelling and publisher against the official project."),
         _r("identity.new-package", "Package was published very recently", "Brand-new packages have no track record and are a common vehicle for short-lived malicious releases.", "Wait, or verify the author and repository before installing."),
+        _r("identity.known-malicious", "Package is listed as known malware", "OSV lists this exact package version in a MAL- advisory from the OpenSSF malicious-packages feed: it was reported and confirmed as malicious.", "Do not install. Remove it if it is already installed and rotate any credentials it could reach."),
+        _r("identity.osv-unavailable", "Known-malware lookup failed", "Bawwab could not reach OSV to check this package against the known-malware list; the rest of the scan still ran.", "Retry when online, or check the package on osv.dev."),
         _r("identity.repo-mismatch", "Repository does not match the package name", "A package whose linked repository has an unrelated name may point to someone else's code to look legitimate.", "Open the repository and confirm it is the real source of this package."),
         _r("fetch.unsafe-entry", "Archive or repo contains an unsafe entry", "Path traversal, absolute paths, links pointing outside the package, or oversized archives are used to overwrite files or exhaust disk during extraction.", "Do not install; the unsafe entries were skipped during scanning."),
         _r("fetch.docker-unscanned", "Docker image was not scanned", "Container images are not statically scanned, so their contents are unreviewed.", "Run a deep scan in the sandbox or review the image manually."),
