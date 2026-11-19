@@ -28,13 +28,13 @@ class _Text:
     is_description: bool  # tool/prompt/resource description or remote metadata (not a skill document)
 
 
-def _is_doc_path(rel: str) -> bool:
+def _is_doc_path(rel: str, is_skill: bool = True) -> bool:
     low = rel.lower()
     if any(low.startswith(v) or f"/{v}" in low for v in VENDORED):
         return False
     parts = low.split("/")
     base = parts[-1]
-    if base in ("skill.md", "readme.md"):
+    if base == "skill.md" or (base == "readme.md" and is_skill):
         return True
     return base.endswith(".md") and any(p in ("commands", "agents") for p in parts[:-1])
 
@@ -190,8 +190,9 @@ def _source_descriptions(f: ScanFile) -> list[_Text]:
 
 def _collect(files: list[ScanFile], extra: list[ExtraText]) -> list[_Text]:
     out: list[_Text] = []
+    is_skill = any(f.rel.rsplit("/", 1)[-1].lower() == "skill.md" for f in files)
     for f in files:
-        if _is_doc_path(f.rel):
+        if _is_doc_path(f.rel, is_skill):
             out.append(_Text(f.rel, f.text, False))
     for f in files:
         out.extend(_source_descriptions(f))
@@ -214,10 +215,11 @@ OVERRIDE_RES = [
     ),
     re.compile(r"\byou\s+are\s+now\s+(?:an?|the|acting|playing|free|unrestricted|my)\b", re.I),
     re.compile(
-        r"\b(?:reveal|show|print|output|repeat|leak|ignore|override|replace|disclose|expose|change|modify|forget|disregard|bypass)"
-        r"\s+(?:\w+\s+){0,2}system\s+prompt\b",
+        r"\b(?:reveal|print|repeat|leak|ignore|disregard|bypass|override|disclose|expose)"
+        r"\s+(?:(?:your|the|all|any|its)\s+){0,2}(?:\w+\s+)?system\s+prompt\b",
         re.I,
     ),
+    re.compile(r"\b(?:bypass|override)\s+(?:your|the)\s+(?:\w+\s+)?instructions\b", re.I),
     re.compile(
         rf"\b(?:do\s+not|don{_APOS}?t|never|must\s+not|without)\s+(?:(?:ever|even)\s+)?"
         r"(?:tell(?:ing)?|inform(?:ing)?|mention(?:ing)?|notify(?:ing)?|alert(?:ing)?)\s+(?:\w+\s+)?(?:the\s+)?user\b",
@@ -231,12 +233,25 @@ _SENSITIVE_PATH = (
     r"|\.aws\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|/etc/passwd|/etc/shadow|\.kube/config|\.docker/config"
     r"|\bkeychain\b|\bcookies\.sqlite\b|\bLogin Data\b"
 )
+_EXFIL_VERB = r"(?:send|upload|post|forward|attach|append|exfiltrate|leak|email|transmit)"
+_IN_REPLY = r"\binclude\b[^.\n]{0,30}?\bin\s+(?:your|the)\s+(?:reply|response|output|request|answer|message)"
+CONCEAL_RE = re.compile(
+    rf"\b(?:do\s+not|don{_APOS}?t|never|must\s+not|without)\s+(?:(?:ever|even)\s+)?(?:tell|inform|mention|notify|alert|show)\w*\s+(?:\w+\s+)?(?:the\s+)?user\b"
+    r"|\bsilently\b|\bsecretly\b|\bwithout\s+(?:telling|informing|mentioning)\b|\bhide\s+this\b",
+    re.I,
+)
 COVERT_RES = [
+    # read-style access to a sensitive target; only counts together with a concealment phrase nearby (see _covert_ok)
     re.compile(
-        r"\b(?:read|cat|send|upload|include|attach|append|forward|post|exfiltrate|fetch|open|print|output|leak|email|dump)\b"
+        r"\b(?:read|cat|open|fetch|print|output|dump|copy|get)\b"
         rf"[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})",
         re.I,
     ),
+    re.compile(rf"\b{_EXFIL_VERB}\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})", re.I),
+    re.compile(
+        rf"(?:{_SENSITIVE_PATH})[^.\n]{{0,80}}?(?:\b{_EXFIL_VERB}\b|{_IN_REPLY}|https?://|[\w.-]+@[\w-]+\.)", re.I
+    ),
+    re.compile(rf"\binclude\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})[^.\n]{{0,40}}?\bin\s+(?:your|the)\s+(?:reply|response|output|request|answer|message)", re.I),
     re.compile(
         r"\b(?:send|upload|post|forward|email|transmit|exfiltrate|leak|include|append|attach)\b[^.\n]{0,60}?"
         r"\b(?:secrets?|credentials|passwords?|api[ _-]?keys?|private\s+keys?|tokens?|ssh\s+keys?|env(?:ironment)?\s+(?:vars|variables))\b"
@@ -247,8 +262,20 @@ COVERT_RES = [
 ]
 
 # U+200B-200F, 2060-2064, FEFF, E0000-E007F, 202A-202E, 2066-2069
-HIDDEN_RE = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\U000e0000-\U000e007f\u202a-\u202e\u2066-\u2069]")
-HTML_COMMENT_RE = re.compile(r"<!--((?:(?!-->).){0,4000})-->", re.S)
+HIDDEN_RE = re.compile("[\u061c\u200b-\u200f\u2060-\u2064\ufeff\U000e0000-\U000e007f\u202a-\u202e\u2066-\u2069]")
+
+
+def _html_comments(text: str):
+    """Yield (start, end, body) of each <!-- --> comment, in linear time."""
+    pos = 0
+    while (i := text.find("<!--", pos)) >= 0:
+        j = text.find("-->", i + 4)
+        if j < 0:
+            return
+        yield i, j + 3, text[i + 4 : j][:4000]
+        pos = j + 3
+
+
 COMMENT_VERBS = ("read", "send", "run", "call", "include", "ignore", "execute", "fetch", "upload", "delete", "write")
 VERB_RE = re.compile(r"(?<![\w-])(?:%s)(?![\w-])" % "|".join(COMMENT_VERBS), re.I)
 
@@ -264,7 +291,10 @@ SHADOW_RES = [
     re.compile(r"\bin\s+place\s+of\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
     re.compile(r"\b(?:always|must|should|first)\s+(?:call|use|invoke|run)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
     re.compile(r"\boverrid(?:e|es|ing)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
+    re.compile(r"\bnever\s+(?:use|call|invoke)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
 ]
+_STRONG_SIBLING = (1, 2, 4, 5)  # indexes of SHADOW_RES that shadow even a tool from the same package
+_REDIRECT_RE = re.compile(r"\b(?:bcc|cc|send|forward|copy\s+to)\b", re.I)
 _GENERIC = {"this", "the", "a", "an", "that", "it", "any", "each", "every", "other", "another", "your", "same", "tool", "these",
             "those", "all", "these", "its", "their", "my", "our", "which", "what", "default", "following", "above", "below", "result"}
 
@@ -288,16 +318,47 @@ def _mk(rule: str, sev: Severity, t: _Text, pos: int, end: int) -> Finding:
     return Finding(rule, sev, "static", _snip(t.text, pos, end), file=t.label, line=_line(t.text, pos))
 
 
+_RTL_LETTER = re.compile("[\u0590-\u05ff\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb1d-\ufdff\ufe70-\ufefe]")
+_ARABIC_LETTER = re.compile("[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufefe]")
+
+
+def _tag_sequence_exempt(text: str) -> set[int]:
+    """Indexes of tag characters forming an emoji subdivision flag (black flag + tags + cancel tag)."""
+    ok: set[int] = set()
+    i, n = 0, len(text)
+    while i < n:
+        if 0xE0020 <= ord(text[i]) <= 0xE007F:
+            j = i
+            while j < n and 0xE0020 <= ord(text[j]) <= 0xE007F:
+                j += 1
+            if i > 0 and text[i - 1] == "\U0001F3F4" and ord(text[j - 1]) == 0xE007F:
+                ok.update(range(i, j))
+            i = j
+        else:
+            i += 1
+    return ok
+
+
 def _hidden(t: _Text) -> Finding | None:
     counts: Counter[str] = Counter()
     first = -1
     text = t.text
+    has_rtl = _RTL_LETTER.search(text) is not None
+    tags_ok = _tag_sequence_exempt(text) if any(0xE0000 <= ord(c) <= 0xE007F for c in HIDDEN_RE.findall(text)) else set()
     for m in HIDDEN_RE.finditer(text):
         i, c = m.start(), m.group()
         if c == "\ufeff" and i == 0:
             continue  # byte-order mark
         if c == "\u200d" and i > 0 and ord(text[i - 1]) > 0x2000:
             continue  # joiner inside an emoji sequence
+        if c in "\u200c\u200d" and (
+            (i > 0 and _ARABIC_LETTER.match(text[i - 1])) or (i + 1 < len(text) and _ARABIC_LETTER.match(text[i + 1]))
+        ):
+            continue  # joiner/non-joiner is part of Arabic-script orthography
+        if c in "\u200e\u200f\u061c" and has_rtl:
+            continue  # directional marks in genuine right-to-left text
+        if i in tags_ok:
+            continue
         counts[f"U+{ord(c):04X}"] += 1
         if first < 0:
             first = i
@@ -319,12 +380,19 @@ def _first(regexes: list[re.Pattern], t: _Text, check=None) -> re.Match | None:
     return best
 
 
+def _covert_ok(m: re.Match) -> bool:
+    if m.re is not COVERT_RES[0]:
+        return True
+    s = m.string
+    return CONCEAL_RE.search(s, max(0, m.start() - 200), min(len(s), m.end() + 200)) is not None
+
+
 class TextRules:
     id = "text"
 
     def run(self, files: list[ScanFile], extra: list[ExtraText]) -> list[Finding]:
         texts = _collect(files, extra)
-        tool_names = {n for t in texts if (n := _tool_name(t.label)) and n != "(unnamed)"}
+        tool_names = {n for t in texts if (n := _tool_name(t.label)) and n not in ("(unnamed)", "(unparsed)")}
         out: list[Finding] = []
         for t in texts:
             out.extend(self._one(t, tool_names))
@@ -335,15 +403,14 @@ class TextRules:
         m = _first(OVERRIDE_RES, t, lambda m: m.re is not OVERRIDE_RES[0] or _OVERRIDE_QUALIFIER.search(m.group()))
         if m:
             out.append(_mk("injection.override", Severity.HIGH, t, m.start(), m.end()))
-        m = _first(COVERT_RES, t)
+        m = _first(COVERT_RES, t, _covert_ok)
         if m:
             out.append(_mk("injection.covert-action", Severity.HIGH, t, m.start(), m.end()))
         if (h := _hidden(t)) is not None:
             out.append(h)
-        for c in HTML_COMMENT_RE.finditer(t.text):
-            body = c.group(1)
+        for start, end, body in _html_comments(t.text):
             if VERB_RE.search(body) or any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", body) for n in tool_names if len(n) >= 3):
-                out.append(_mk("injection.html-comment", Severity.MED, t, c.start(), c.end()))
+                out.append(_mk("injection.html-comment", Severity.MED, t, start, end))
                 break
         if t.is_description:
             own = _tool_name(t.label)
@@ -358,11 +425,16 @@ class TextRules:
         n = m.group("n").rstrip(".:,;-")
         if not n or n.lower() in _GENERIC or n == own:
             return False
+        if n in others:  # a sibling tool: only a strong pattern counts
+            return any(m.re is SHADOW_RES[i] for i in _STRONG_SIBLING) or (
+                m.re is SHADOW_RES[0] and _REDIRECT_RE.search(m.string, m.start(), m.end() + 80) is not None
+            )
         return n in others or bool(m.group("w")) or "_" in n or n.startswith("mcp__")
 
 
 # ---------------------------------------------------------------- plugin manifests
 
+TOOL_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest"}  # events where a matcher applies
 NET_RE = re.compile(r"(?<![\w-])(?:curl|wget|nc|ncat|netcat)(?![\w-])|\bhttps?\b", re.I)
 
 
@@ -373,18 +445,18 @@ def _line_of_str(text: str, s: str) -> int | None:
 
 
 def _hook_commands(data: object):
-    """Yield (matcher, command) for each command hook in a hooks mapping."""
+    """Yield (event, matcher, command) for each command hook in a hooks mapping."""
     hooks = data.get("hooks") if isinstance(data, dict) else None
     if not isinstance(hooks, dict):
         return
-    for groups in hooks.values():
+    for event, groups in hooks.items():
         for g in groups if isinstance(groups, list) else []:
             if not isinstance(g, dict):
                 continue
             matcher = g.get("matcher")
             for h in g.get("hooks", []) if isinstance(g.get("hooks"), list) else []:
                 if isinstance(h, dict) and isinstance(h.get("command"), str):
-                    yield matcher, h["command"]
+                    yield event, matcher, h["command"]
 
 
 class PluginRules:
@@ -402,9 +474,9 @@ class PluginRules:
             except (ValueError, RecursionError, MemoryError):
                 continue
             if base != ".mcp.json":
-                for matcher, cmd in _hook_commands(data):
+                for event, matcher, cmd in _hook_commands(data):
                     line = _line_of_str(f.text, cmd)
-                    if matcher is None or (isinstance(matcher, str) and matcher.strip() in ("", "*")):
+                    if event in TOOL_EVENTS and (matcher is None or (isinstance(matcher, str) and matcher.strip() in ("", "*"))):
                         out.append(Finding("plugin.hook-broad", Severity.MED, "static", cmd[:200], file=f.rel, line=line))
                     if NET_RE.search(cmd):
                         out.append(Finding("plugin.hook-network", Severity.HIGH, "static", cmd[:200], file=f.rel, line=line))
