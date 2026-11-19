@@ -18,6 +18,7 @@ def _r(id: str, title: str, why: str, fix: str) -> tuple[str, RuleInfo]:
 CATALOG: dict[str, RuleInfo] = dict(
     [
         _r("files.truncated", "Scan limit reached", "Some files were not scanned, so malicious code could hide in them.", "Review the unscanned files manually or raise the limits."),
+        _r("files.binary-unscanned", "Binary files not analysed", "Prebuilt executables cannot be read by static rules, so what they do is unknown until they run.", "Use --deep to run the package in the sandbox, or prefer packages built from source."),
         _r("rules.error", "A scan rule failed", "A rule crashed, so its findings are missing; the result is incomplete.", "Review the target manually; report the failing rule."),
         _r("install-script", "Runs code at install time", "Install hooks run automatically with your privileges before you can review anything.", "Read the script; prefer packages with no install hooks."),
         _r("install-script.remote", "Install script fetches remote content", "An install hook that downloads content can deliver a payload that differs from what was reviewed.", "Do not install; vendor the download or pin it by hash."),
@@ -26,6 +27,7 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("obfuscation.eval-decoded", "Evaluates decoded content", "Decoding then executing a string is a standard way to hide a payload.", "Replace with plain code; treat the package as hostile."),
         _r("obfuscation.blob", "Large encoded literal", "Long base64/hex strings can carry hidden payloads.", "Check what the blob decodes to."),
         _r("credential-access", "Touches credentials or secrets", "Reads files or environment holding keys, tokens or sessions.", "Confirm the tool needs this; otherwise do not install."),
+        _r("install-dir-access", "Reads or writes Claude's install folders", "Uses ~/.claude/agents, skills, commands or plugins (or a project .claude/ folder). Normal for installers, but it changes what Claude loads.", "Check which files it adds there and that you want them."),
         _r("exfil.host", "References an exfiltration-style host", "Paste, webhook and tunnel services are commonly used to receive stolen data.", "Remove or justify the destination."),
         _r("exfil.combo", "Reads credentials and makes network calls", "Credential access together with outbound requests in one file is the shape of data theft.", "Do not install unless the flow is understood and benign."),
         _r("deps.unpinned", "Unpinned dependency", "A floating dependency can be swapped for a malicious release later.", "Pin an exact version or commit."),
@@ -47,6 +49,7 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("fetch.unsafe-entry", "Archive or repo contains an unsafe entry", "Path traversal, absolute paths, links pointing outside the package, or oversized archives are used to overwrite files or exhaust disk during extraction.", "Do not install; the unsafe entries were skipped during scanning."),
         _r("fetch.docker-unscanned", "Docker image was not scanned", "Container images are not statically scanned, so their contents are unreviewed.", "Run a deep scan in the sandbox or review the image manually."),
         _r("fetch.failed", "Target could not be fetched", "The package or server could not be downloaded, so nothing was reviewed.", "Check the name, version and network, then retry."),
+        _r("fetch.auth-required", "Remote server requires sign-in", "The remote server requires sign-in; its tool descriptions could not be read. Bawwab re-checks at session start.", "Sign in through Claude; Bawwab re-checks the tool descriptions at session start."),
         _r("judge.unavailable", "AI judge could not give a verdict", "The AI review failed (timeout, bad output or backend error), so only the static checks apply and the content was not semantically reviewed.", "Retry the scan, check the Claude CLI or API key, or review the content manually."),
         _r("judge.truncated", "AI judge saw truncated content", "The content was larger than the judge's input limit, so part of it was not reviewed by the AI.", "Review the omitted parts manually."),
         _r("plugin.unresolved-server", "Bundled MCP server could not be resolved", "The plugin declares an MCP server whose start command could not be traced to code, so it was not scanned.", "Review the server command in the plugin manifest manually."),

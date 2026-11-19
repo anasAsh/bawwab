@@ -261,7 +261,7 @@ def _apply_trust(f: Fetched, findings: list[Finding], cfg: Config) -> list[Findi
     return [x for x in findings if x.source in ("identity", "gate", "trust") or x.severity >= Severity.HIGH]
 
 
-TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error"}
+TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error", "fetch.auth-required"}
 
 
 def _remote_children(f: Fetched) -> bool:
@@ -346,7 +346,9 @@ def scan_target(
             tname = trust_name(t)
             prev = store.latest_snapshot(tname)
             diff_summary = None
-            if prev is not None and (prev[0] != key or prev[1] != snap):
+            # A sign-in-gated remote showed no tools: nothing to compare or baseline (R26f).
+            unread = any(x.rule == "fetch.auth-required" for x in findings)
+            if not unread and prev is not None and (prev[0] != key or prev[1] != snap):
                 rug, diff_summary = diff_snapshots(prev[1], snap)
                 findings += rug
         except Exception as e:  # noqa: BLE001 - fail closed on anything unexpected
@@ -365,7 +367,7 @@ def scan_target(
             key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
         )
         store.put_report(report, snapshot=snap)
-        if verdict == Verdict.CLEAN and (prev is None or prev[1] != snap):
+        if verdict == Verdict.CLEAN and not unread and (prev is None or prev[1] != snap):
             store.put_snapshot(tname, key, snap)
         store.audit("scan", key=key, verdict=verdict.value, mode=mode.value)
         return report

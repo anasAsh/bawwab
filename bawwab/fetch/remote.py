@@ -2,10 +2,51 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 
 from bawwab.fetch.common import FetchError
 from bawwab.types import ToolInfo
+
+
+class RemoteAuthRequired(FetchError):
+    """The server answered 401/403: it needs sign-in before its tools can be listed."""
+
+
+AUTH_STATUS = (401, 403)
+_AUTH_ERR_RE = re.compile(r"\b(?:401 Unauthorized|403 Forbidden)\b")  # httpx status text
+_INIT_PROBE = json.dumps({
+    "jsonrpc": "2.0", "id": 0, "method": "initialize",
+    "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "bawwab", "version": "0"}},
+}).encode()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def _probe_auth(url: str, timeout_s: float) -> None:
+    """Raise RemoteAuthRequired when the server rejects an unauthenticated initialize with 401/403.
+
+    Anything else (success, other status, network error) is left to the MCP client,
+    so network failures still fail closed as fetch.failed.
+    """
+    req = urllib.request.Request(
+        url, data=_INIT_PROBE, method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+    )
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(req, timeout=timeout_s):
+            return
+    except urllib.error.HTTPError as e:
+        e.close()
+        if e.code in AUTH_STATUS:
+            raise RemoteAuthRequired(f"remote server answered HTTP {e.code}; sign-in required") from None
+    except Exception:  # noqa: BLE001 - not an auth answer; the MCP client decides
+        return
 
 
 @asynccontextmanager
@@ -54,12 +95,16 @@ async def _fetch(url: str) -> tuple[str, list[ToolInfo]]:
             return await _session_dump(url, kind)
         except Exception as e:
             errors.append(f"{kind}: {type(e).__name__}: {e}")
-    raise FetchError("remote MCP server unreachable or invalid (" + "; ".join(errors)[:400] + ")")
+    detail = "; ".join(errors)[:400]
+    if _AUTH_ERR_RE.search(detail):
+        raise RemoteAuthRequired(f"remote server requires sign-in ({detail})")
+    raise FetchError("remote MCP server unreachable or invalid (" + detail + ")")
 
 
 def fetch_remote(url: str, timeout_s: float) -> tuple[str, list[ToolInfo]]:
     if not url.startswith(("http://", "https://")):
         raise FetchError("remote url must be http(s)")
+    _probe_auth(url, min(10.0, timeout_s / 2))
     try:
         return asyncio.run(asyncio.wait_for(_fetch(url), timeout_s))
     except FetchError:

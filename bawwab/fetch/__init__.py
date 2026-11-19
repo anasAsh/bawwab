@@ -22,11 +22,16 @@ def fetch_target(t: Target, opts: FetchOpts | None = None) -> Fetched:
         )
         return Fetched(t, t.version or "unversioned", None, "", "unknown", meta, [], [f], lambda: None)
     if t.kind == "remote":
-        from bawwab.fetch.remote import fetch_remote, remote_hash
+        from bawwab.fetch.remote import RemoteAuthRequired, fetch_remote, remote_hash
 
+        meta = PackageMeta(name=t.name or (t.url or ""))
         try:
             version, tools = fetch_remote(t.url or t.raw, opts.remote_timeout_s)
-            return Fetched(t, version, None, remote_hash(tools), "mcp", PackageMeta(name=t.name or (t.url or "")), tools, [], lambda: None)
+            return Fetched(t, version, None, remote_hash(tools), "mcp", meta, tools, [], lambda: None)
+        except RemoteAuthRequired as e:
+            # Not a failure to fail closed on: the server is up but needs sign-in (R26f).
+            f = Finding("fetch.auth-required", Severity.LOW, "gate", str(e)[:200], None)
+            return Fetched(t, "unversioned", None, remote_hash([]), "mcp", meta, [], [f], lambda: None)
         except FetchError:
             raise
         except Exception as e:
