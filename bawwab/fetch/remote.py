@@ -79,4 +79,4 @@ def remote_hash(tools: list[ToolInfo]) -> str:
         [{"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in tools],
         sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     )
-    return hashlib.sha256(blob.encode()).hexdigest()
+    return hashlib.sha256(blob.encode("utf-8", "surrogatepass")).hexdigest()

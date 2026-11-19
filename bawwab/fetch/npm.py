@@ -20,7 +20,10 @@ def fetch_npm(t: Target, opts: FetchOpts, tmp: Path) -> tuple[Path, str, Package
     if not t.name:
         raise FetchError("npm target has no package name")
     doc = http_get_json(f"{opts.npm_registry.rstrip('/')}/{quote(t.name, safe='@')}", opts.timeout_s)
-    version = t.version or (doc.get("dist-tags") or {}).get("latest")
+    tags = doc.get("dist-tags") if isinstance(doc.get("dist-tags"), dict) else {}
+    version = t.version or tags.get("latest")
+    if version in tags:
+        version = tags[version]
     versions = doc.get("versions") or {}
     if not version or version not in versions:
         raise FetchError(f"npm: version {version!r} of {t.name} not found")

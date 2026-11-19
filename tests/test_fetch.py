@@ -260,3 +260,63 @@ def test_remote_unreachable_raises_fetch_error():
     with pytest.raises(FetchError):
         fetch_target(Target("remote", "http://127.0.0.1:1/mcp", url="http://127.0.0.1:1/mcp"), FetchOpts(remote_timeout_s=3))
     assert time.monotonic() - t0 < 8
+
+
+def test_npm_dist_tag_version(server):
+    base, routes = server
+    _npm_setup(base, routes)
+    doc = json.loads(routes["/@a/b"])
+    doc["dist-tags"]["next"] = "1.0.0"
+    routes["/@a/b"] = json.dumps(doc).encode()
+    for tag, want in (("latest", "1.2.0"), ("next", "1.0.0"), ("1.0.0", "1.0.0")):
+        f = fetch_target(Target("npm", f"@a/b@{tag}", name="@a/b", version=tag), FetchOpts(npm_registry=base))
+        assert f.resolved_version == want
+        f.cleanup()
+    with pytest.raises(FetchError):
+        fetch_target(Target("npm", "@a/b@nope", name="@a/b", version="nope"), FetchOpts(npm_registry=base))
+
+
+def test_remote_hash_lone_surrogate():
+    from bawwab.fetch.remote import remote_hash
+    from bawwab.types import ToolInfo
+
+    assert len(remote_hash([ToolInfo("t", "bad \ud800 text")])) == 64
+
+
+def test_remote_path_any_exception_is_fetch_error(monkeypatch):
+    from bawwab.fetch import remote
+
+    monkeypatch.setattr(remote, "fetch_remote", lambda url, t: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(FetchError):
+        fetch_target(Target("remote", "http://x/", url="http://x/"), FetchOpts())
+    monkeypatch.setattr(remote, "fetch_remote", lambda url, t: ("1", []))
+    monkeypatch.setattr(remote, "remote_hash", lambda tools: (_ for _ in ()).throw(UnicodeEncodeError("u", "", 0, 1, "x")))
+    with pytest.raises(FetchError):
+        fetch_target(Target("remote", "http://x/", url="http://x/"), FetchOpts())
+
+
+def test_git_env_is_isolated_from_repo(tmp_path):
+    from bawwab.fetch import git as g
+
+    env = g._env(tmp_path / "home")
+    assert env["GIT_CONFIG_GLOBAL"] == "/dev/null" and env["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert env["HOME"] == str(tmp_path / "home")
+
+
+def test_git_repo_config_not_honoured(tmp_path):
+    marker = tmp_path / "MARKER"
+    bare = tmp_path / "r.git"
+    _git("init", "--bare", "-b", "main", str(bare))
+    work = tmp_path / "w"
+    _git("clone", str(bare), str(work))
+    (work / "hook.sh").write_text(f"#!/bin/sh\ntouch {marker}\n")
+    (work / "hook.sh").chmod(0o755)
+    (work / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {work}/hook.sh\n\tpager = touch {marker}\n[alias]\n\trev-parse = !touch {marker}\n")
+    (work / "a.txt").write_text("a")
+    _git("add", "-A", cwd=work)
+    _git("commit", "-m", "x", cwd=work)
+    _git("push", "origin", "HEAD:main", cwd=work)
+    url = f"file://{bare}"
+    f = fetch_target(Target("git", url, url=url), FetchOpts(git_allow_file=True))
+    assert len(f.resolved_version) == 40 and not marker.exists()
+    f.cleanup()

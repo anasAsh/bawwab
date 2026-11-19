@@ -85,22 +85,25 @@ def _extract_zip(file: Path, dest: Path, findings: list[Finding]) -> None:
             if target != real_dest and real_dest not in target.parents:
                 findings.append(unsafe(f"entry resolves outside destination: {zi.filename}", file=zi.filename))
                 continue
-            if zi.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            if total + zi.file_size > MAX_TOTAL_BYTES:
-                findings.append(unsafe(f"extracted size exceeds {MAX_TOTAL_BYTES} bytes; extraction stopped"))
-                return
-            target.parent.mkdir(parents=True, exist_ok=True)
-            written = 0
-            with zf.open(zi) as src, open(target, "wb") as out:
-                while chunk := src.read(65536):
-                    written += len(chunk)
-                    if total + written > MAX_TOTAL_BYTES:
-                        break
-                    out.write(chunk)
-            if total + written > MAX_TOTAL_BYTES:
-                target.unlink(missing_ok=True)
-                findings.append(unsafe(f"extracted size exceeds {MAX_TOTAL_BYTES} bytes; extraction stopped"))
-                return
-            total += written
+            try:
+                if zi.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if total + zi.file_size > MAX_TOTAL_BYTES:
+                    findings.append(unsafe(f"extracted size exceeds {MAX_TOTAL_BYTES} bytes; extraction stopped"))
+                    return
+                target.parent.mkdir(parents=True, exist_ok=True)
+                written = 0
+                with zf.open(zi) as src, open(target, "wb") as out:
+                    while chunk := src.read(65536):
+                        written += len(chunk)
+                        if total + written > MAX_TOTAL_BYTES:
+                            break
+                        out.write(chunk)
+                if total + written > MAX_TOTAL_BYTES:
+                    target.unlink(missing_ok=True)
+                    findings.append(unsafe(f"extracted size exceeds {MAX_TOTAL_BYTES} bytes; extraction stopped"))
+                    return
+                total += written
+            except (OSError, zipfile.BadZipFile, RuntimeError, EOFError) as e:
+                findings.append(unsafe(f"could not extract {zi.filename}: {type(e).__name__}: {e}", file=zi.filename))

@@ -118,3 +118,28 @@ def test_not_an_archive(tmp_path):
     d.mkdir()
     findings = extract_archive(bad, d)
     assert any(f.rule == "fetch.unsafe-entry" for f in findings)
+
+
+def test_zip_member_oserror_does_not_abort(tmp_path):
+    arc = tmp_path / "a.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("a", "file")
+        zf.writestr("a/b", "collides with file a")
+        zf.writestr("z.txt", "still extracted")
+    dest = tmp_path / "d"
+    dest.mkdir()
+    findings = extract_archive(arc, dest)
+    assert (dest / "z.txt").read_text() == "still extracted"
+    assert any(f.rule == "fetch.unsafe-entry" and f.file == "a/b" for f in findings)
+
+
+def test_zip_bomb_compressible_over_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(ex, "MAX_TOTAL_BYTES", 1024 * 1024)
+    arc = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(arc, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("big", b"\0" * (5 * 1024 * 1024))
+    dest = tmp_path / "d"
+    dest.mkdir()
+    findings = extract_archive(arc, dest)
+    assert any(f.rule == "fetch.unsafe-entry" and "exceeds" in f.evidence for f in findings)
+    assert sum(p.stat().st_size for p in dest.rglob("*") if p.is_file()) <= 1024 * 1024

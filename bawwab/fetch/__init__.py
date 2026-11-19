@@ -24,8 +24,13 @@ def fetch_target(t: Target, opts: FetchOpts | None = None) -> Fetched:
     if t.kind == "remote":
         from bawwab.fetch.remote import fetch_remote, remote_hash
 
-        version, tools = fetch_remote(t.url or t.raw, opts.remote_timeout_s)
-        return Fetched(t, version, None, remote_hash(tools), "mcp", PackageMeta(name=t.name or (t.url or "")), tools, [], lambda: None)
+        try:
+            version, tools = fetch_remote(t.url or t.raw, opts.remote_timeout_s)
+            return Fetched(t, version, None, remote_hash(tools), "mcp", PackageMeta(name=t.name or (t.url or "")), tools, [], lambda: None)
+        except FetchError:
+            raise
+        except Exception as e:
+            raise FetchError(f"remote fetch failed: {type(e).__name__}: {e}") from e
     if t.kind == "local":
         from bawwab.fetch.local import fetch_local
 
