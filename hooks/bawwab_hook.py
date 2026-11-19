@@ -75,6 +75,16 @@ def _config_changed(cwd: str) -> bool:
         return True
 
 
+def _note_session(data: object) -> None:
+    """The hook input's session_id, for the lost-state check (which excludes the current session) here and
+    in the bawwab children (inherited env). Absent: unset, so an inherited value never counts."""
+    sid = data.get("session_id") if isinstance(data, dict) else None
+    if isinstance(sid, str) and sid:
+        os.environ["BAWWAB_SESSION_ID"] = sid
+    else:
+        os.environ.pop("BAWWAB_SESSION_ID", None)
+
+
 def _quarantine_flag() -> bool:
     try:
         return _load_fingerprint().quarantine_active(_bawwab_home())
@@ -157,6 +167,7 @@ def gate() -> int:
         return 0
     if not isinstance(data, dict):
         return 0
+    _note_session(data)
     try:
         install_like = prefilter(data)
     except Exception:  # noqa: BLE001 - can't tell (e.g. NUL in a path): treat as install-like, fail closed
@@ -187,6 +198,7 @@ def post() -> int:
         return 0
     if not isinstance(data, dict) or data.get("tool_name") not in POST_TOOLS:
         return 0
+    _note_session(data)
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0
@@ -210,6 +222,10 @@ def _passthrough(sub: str, timeout: int) -> int:
         raw = sys.stdin.read()
     except OSError:
         raw = ""
+    try:
+        _note_session(json.loads(raw))
+    except ValueError:
+        _note_session(None)
     try:
         r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=timeout)
         out = r.stdout.strip()

@@ -186,6 +186,8 @@ def _installed(store: Store, cwd: Path) -> bool:
     bawwab was already installed (marker or db state)."""
     if read_marker() is not None or store.get_meta("installed_at") is not None:
         return False
+    if _open_error(store):
+        return False  # a db holding an open effects.error is not a fresh install (R38)
     if fp_module().plugin_lost(str(Path.home())):
         return False  # lost state (R37): never re-baselined as a fresh install
     ts = datetime.now(UTC).isoformat()
@@ -194,6 +196,11 @@ def _installed(store: Store, cwd: Path) -> bool:
     write_marker(ts, store.init_state())
     store.audit("install", installed_at=ts)
     return True
+
+
+def _open_error(store: Store) -> bool:
+    """An effects.error quarantine (failed check, lost or replaced state) that is not resolved or approved."""
+    return any(q["ident"] == ERROR_IDENT and not store.is_approved(q["key"]) for q in store.active_quarantine())
 
 
 def _restore_marker(store: Store) -> dict | None:
@@ -682,7 +689,8 @@ def _repair_for_init(store: Store, cwd: Path) -> None:
     if _installed(store, cwd):
         return
     marker = read_marker()
-    if _lost(store, marker):  # nothing is adopted: the full scan rebuilds the state from nothing
+    if store.get_meta("installed_at") is None and (marker is None or marker.get("corrupt")):
+        # lost state, or an effects.error with no state: nothing is adopted, the full scan rebuilds from nothing
         ts = datetime.now(UTC).isoformat()
         store.set_meta("installed_at", ts)
         write_marker(ts, store.init_state())
@@ -697,8 +705,13 @@ def _repair_for_init(store: Store, cwd: Path) -> None:
 
 
 def init_skip(cwd: Path, store: Store | None = None) -> int:
-    """`init --skip`: rows recorded at install time become "trusted without scan". Refused on lost state."""
+    """`init --skip`: rows recorded at install time become "trusted without scan". Refused on lost state and
+    while an effects.error is open (wherever it runs: the check reads the db, not the environment)."""
     store = store or open_store()
+    if _open_error(store):  # the state can't be trusted: only a scan may decide what is installed (R38)
+        raise RuntimeError("the effect check failed or bawwab's state was lost (effects.error is quarantined); "
+                           "`init --skip` is refused until it is resolved: run `bawwab init --scan` (a full "
+                           "scan) or `bawwab effects --retry`")
     if not _installed(store, cwd):
         marker = _restore_marker(store)
         problem = state_problem(store, marker)

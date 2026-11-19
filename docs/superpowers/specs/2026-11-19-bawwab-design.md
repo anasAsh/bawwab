@@ -157,15 +157,48 @@ scanning on its own.
 - **Before init:** the effect check still runs, but it treats the
   pre-install state as the provisional baseline and only flags changes made
   after install.
-- **Lost state is not a fresh install** (controller ruling R37): when the
-  hook runs as an installed plugin (`CLAUDE_PLUGIN_ROOT` set) and Claude
-  Code's `installed_plugins.json` lists bawwab as installed more than 10
-  minutes ago, but bawwab's state and every install marker are missing, the
-  state was lost. Tool calls fail closed (`effects.error`), SessionStart
-  tells the user to run `! bawwab init --scan` (nothing trusted without a
-  scan), and `init --skip` is refused. Residual: an attacker who also
-  rewrites or removes `installed_plugins.json` (or bawwab's entry in it)
-  gets the first-run prompt.
+- **Lost state is not a fresh install** (controller rulings R37, R38).
+  bawwab's state and every install marker are missing, and both of these
+  hold:
+  - Claude Code's `installed_plugins.json` (under `$CLAUDE_CONFIG_DIR` or
+    `~/.claude`) has a `bawwab@*` entry installed more than 10 minutes ago;
+  - a Claude Code session other than the current one *started* after that
+    install: its transcript under `projects/` begins later. bawwab's
+    SessionStart ran in that session, so bawwab's state existed.
+
+  Then the state was lost. Tool calls fail closed (`effects.error`),
+  SessionStart tells the user to run `! bawwab init --scan` (nothing trusted
+  without a scan), and `init --skip` is refused.
+- **CLI and hooks read the same files.** Both rules work from
+  `installed_plugins.json` and the transcripts, not from the plugin
+  environment (`CLAUDE_PLUGIN_ROOT`), so the user's `!` shell gets the same
+  answer as the hooks.
+  - The hook passes the current session id (from its input) to its bawwab
+    children.
+  - A CLI run from a `!` shell has no session id, so it treats the most
+    recently written transcript as the current session.
+- **`init --skip` is refused while any `effects.error` is open,** whether
+  from lost state, replaced state or a failed check. The check reads
+  bawwab's database, so it doesn't depend on the environment. The user
+  first runs `! bawwab init --scan` or `! bawwab effects --retry`.
+- **Late first session:** if the user installs the plugin and no other
+  session has started since, the first session gets the normal first-run
+  question, however late it is. The session that ran `/plugin install`
+  started before the install, so it doesn't count, even though it keeps
+  writing its transcript.
+- **Residuals.** In each of these cases, missing state after a wipe gets
+  the first-run prompt, not "lost". `init --scan` still scans everything,
+  and the gate protects every one-command form of the wipe it knows.
+  - A non-plugin install (no `bawwab@*` entry) has no external anchor.
+  - An attacker also rewrites or removes `installed_plugins.json` (or
+    bawwab's entry), or deletes the transcripts of every session since the
+    install.
+  - The wipe happens inside the first session after install. No other
+    session exists yet, so for the rest of that session the hooks see a
+    fresh install, and so does `init --skip` from that session. The next
+    session reports the state as lost.
+  - A reinstall resets `installedAt`. This is plausible, not verified; it
+    opens a 10-minute window.
 
 ### 1b. Effect check (added during build, user-approved 2026-11-19)
 

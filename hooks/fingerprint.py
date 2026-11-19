@@ -236,18 +236,20 @@ def is_bawwab_plugin_dir(path: str) -> bool:
 LOST_AFTER = 600  # seconds: a plugin install older than this with no bawwab state means the state was lost
 
 
+def _claude_dir(home: str) -> str:
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+
+
 def plugin_installed_at(home: str) -> float | None:
-    """When Claude Code installed bawwab as a plugin (installed_plugins.json, earliest entry), if this hook
-    runs as that installed plugin (CLAUDE_PLUGIN_ROOT set); else None."""
+    """When Claude Code installed bawwab as a plugin: the earliest installedAt of a `bawwab@*` entry (or the
+    entry at CLAUDE_PLUGIN_ROOT, when set) in installed_plugins.json; else None. Read from the file, never
+    from the process environment, so the user's `!` shell and the hooks agree."""
     from datetime import datetime, timezone
 
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if not root:
-        return None
-    root = os.path.normpath(root)
-    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+    root = os.path.normpath(root) if root else None
     try:
-        with open(os.path.join(cfg, "plugins", "installed_plugins.json")) as f:
+        with open(os.path.join(_claude_dir(home), "plugins", "installed_plugins.json")) as f:
             data = json.load(f)
     except (OSError, ValueError):
         return None
@@ -261,7 +263,7 @@ def plugin_installed_at(home: str) -> float | None:
                 continue
             path = e.get("installPath")
             ours = str(key).split("@", 1)[0] == "bawwab" or (
-                isinstance(path, str) and os.path.normpath(path) == root)
+                root is not None and isinstance(path, str) and os.path.normpath(path) == root)
             at = e.get("installedAt")
             if not ours or not isinstance(at, str):
                 continue
@@ -273,14 +275,85 @@ def plugin_installed_at(home: str) -> float | None:
     return min(times) if times else None
 
 
-def plugin_lost(home: str) -> str | None:
-    """bawwab runs as a plugin Claude Code installed more than LOST_AFTER ago: missing bawwab state is then
-    lost state (wiped), never a fresh install. The reason, or None."""
+_HEAD_LINES = 50  # transcript lines read for a session's id and first timestamp
+
+
+def _transcript_head(path: str) -> tuple[str | None, float | None]:
+    """(sessionId, time of the first event) of a Claude Code transcript; None where it doesn't say."""
+    from datetime import datetime, timezone
+
+    sid = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _ in range(_HEAD_LINES):
+                line = f.readline(1 << 20)
+                if not line:
+                    break
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(ev, dict):
+                    continue
+                if sid is None and isinstance(ev.get("sessionId"), str):
+                    sid = ev["sessionId"]
+                ts = ev.get("timestamp")
+                if isinstance(ts, str):
+                    try:
+                        t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    return sid, (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).timestamp()
+    except OSError:
+        pass
+    return sid, None
+
+
+def session_after(home: str, at: float, current: str | None = None) -> bool:
+    """Some Claude Code session other than `current` started after `at` (its transcript under the projects
+    dir begins later). bawwab's SessionStart ran in it, so bawwab's state existed. A transcript written after
+    `at` that doesn't say when it began counts (fail closed). Without `current` (the CLI from a `!` shell),
+    the most recently written session is taken as the current one."""
+    proj = os.path.join(_claude_dir(home), "projects")
+    sessions: dict[str, list] = {}  # id -> [newest mtime, started after at]
+    try:
+        dirs = [d.path for d in os.scandir(proj) if d.is_dir(follow_symlinks=False)]
+    except OSError:
+        return False
+    for d in dirs:
+        try:
+            files = [(e.path, e.name, e.stat().st_mtime) for e in os.scandir(d)
+                     if e.name.endswith(".jsonl") and e.is_file(follow_symlinks=False)]
+        except OSError:
+            continue
+        for path, name, mtime in files:
+            if mtime <= at:
+                continue  # not written since the install: began before it
+            sid, start = _transcript_head(path)
+            sid = sid or name[:-len(".jsonl")]
+            s = sessions.setdefault(sid, [0.0, False])
+            s[0] = max(s[0], mtime)
+            s[1] = s[1] or start is None or start > at
+            if s[1] and current is not None and sid != current:
+                return True
+    if current is None and sessions:
+        current = max(sessions, key=lambda k: sessions[k][0])
+    return any(after for sid, (_, after) in sessions.items() if sid != current)
+
+
+def plugin_lost(home: str, session_id: str | None = None) -> str | None:
+    """bawwab is an installed plugin (installed_plugins.json, more than LOST_AFTER ago) and another Claude
+    Code session began after the install: its SessionStart wrote bawwab's state, so missing state now is lost
+    (wiped), never a fresh install. The reason, or None (a late first session gets the first-run flow).
+    session_id defaults to BAWWAB_SESSION_ID, which the hook sets from its input."""
     at = plugin_installed_at(home)
     if at is None or time.time() - at <= LOST_AFTER:
         return None
+    if not session_after(home, at, session_id or os.environ.get("BAWWAB_SESSION_ID") or None):
+        return None
     return ("bawwab's state was lost: bawwab has been installed as a plugin since "
-            f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(at))}, but its state and install markers are missing")
+            f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(at))} and Claude Code has run since, but bawwab's "
+            "state and install markers are missing")
 
 
 def initialised(home: str, bawwab_home: str) -> bool:

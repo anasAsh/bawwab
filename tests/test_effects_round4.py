@@ -195,7 +195,9 @@ def test_heal_does_not_rewrite_markers_over_a_tampered_init_state(tmp_path, monk
 
 # ------------------------------------------------------------------ R37: lost state as an installed plugin
 
-def _as_plugin(monkeypatch, age: timedelta, name: str = "bawwab@bawwab-mkt"):
+def _as_plugin(monkeypatch, age: timedelta, name: str = "bawwab@bawwab-mkt", ran_since: bool = True):
+    """bawwab installed as a plugin `age` ago; with ran_since, another Claude Code session started after the
+    install (round 5, R38: only then is missing state "lost")."""
     home = Path.home()
     root = home / ".claude/plugins/cache/bawwab-mkt/bawwab/0.1.0"
     root.mkdir(parents=True, exist_ok=True)
@@ -204,6 +206,12 @@ def _as_plugin(monkeypatch, age: timedelta, name: str = "bawwab@bawwab-mkt"):
     path = root if name.startswith("bawwab@") else home / ".claude/plugins/cache/mkt/other/1.0"
     _w(home / ".claude/plugins/installed_plugins.json", {"version": 2, "plugins": {
         name: [{"scope": "user", "installPath": str(path), "version": "0.1.0", "installedAt": at}]}})
+    if ran_since:
+        t = datetime.now(UTC) - age + timedelta(minutes=1)
+        tr = home / ".claude/projects/-p/s-earlier.jsonl"
+        _w(tr, json.dumps({"sessionId": "s-earlier", "timestamp": t.isoformat()}) + "\n")
+        os.utime(tr, (t.timestamp(), t.timestamp()))
+        monkeypatch.setenv("BAWWAB_SESSION_ID", "s-now")
     return root
 
 
@@ -251,9 +259,17 @@ def test_recent_plugin_install_is_a_fresh_install(proj, monkeypatch):
     assert "has not scanned this machine yet" in ctx
 
 
-def test_without_plugin_root_a_missing_state_is_a_fresh_install(proj, monkeypatch):
+def test_without_plugin_root_a_missing_state_is_still_lost(proj, monkeypatch):
+    """Round 5 (R38, I1): the plugin install is read from installed_plugins.json, not the environment."""
     _as_plugin(monkeypatch, timedelta(hours=2))
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT")
+    ctx = fx.session_start(proj) or ""
+    assert "has not scanned this machine yet" not in ctx and "lost" in ctx
+
+
+def test_installed_long_ago_with_no_session_since_is_a_fresh_install(proj, monkeypatch):
+    """Round 5 (R38, I5): a late first session is a first run."""
+    _as_plugin(monkeypatch, timedelta(hours=2), ran_since=False)
     ctx = fx.session_start(proj) or ""
     assert "has not scanned this machine yet" in ctx
 

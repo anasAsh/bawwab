@@ -620,16 +620,56 @@ def _shlex_tokens(cmd: str) -> list[str]:
     return list(lex)
 
 
+class _Lit(str):
+    """A token made of operator characters that were quoted or backslash-escaped: a word, not an operator
+    (`find ~ \\( -name x \\) -delete`, `tee '(' f`)."""
+
+
+_PAREN_SUB = {"(": "\ue000", ")": "\ue001"}
+_PAREN_BACK = {v: k for k, v in _PAREN_SUB.items()}
+_PAREN_TR = str.maketrans(_PAREN_SUB)
+
+
+_QUOTED_OR_ESCAPED = re.compile(r"\\." r"|'[^']*'" r'|"(?:[^"\\]|\\.)*"', re.S)
+
+
+def _protect_parens(cmd: str) -> str:
+    """Quoted or backslash-escaped ( and ) become placeholders the tokeniser keeps inside words."""
+    if "(" not in cmd and ")" not in cmd:
+        return cmd
+
+    def sub(m: re.Match) -> str:
+        t = m.group(0)
+        if "(" not in t and ")" not in t:
+            return t
+        if t[0] == "\\":
+            return _PAREN_SUB[t[1]] if t[1] in _PAREN_SUB else t
+        return t.translate(_PAREN_TR)
+
+    return _QUOTED_OR_ESCAPED.sub(sub, cmd)
+
+
+def _restore_parens(tok: str) -> str:
+    if "\ue000" not in tok and "\ue001" not in tok:
+        return tok
+    t = tok.translate(str.maketrans(_PAREN_BACK))
+    return _Lit(t) if all(c in _PUNCT for c in t) else t
+
+
+def _is_op(tok: str) -> bool:
+    return bool(tok) and not isinstance(tok, _Lit) and all(c in _PUNCT for c in tok)
+
+
 def _tokens(cmd: str) -> list[str]:
     cmd = _strip_fd_numbers(cmd.replace("\\\n", " ")).replace("`", " ; ")
     try:
-        return _shlex_tokens(cmd)
+        return [_restore_parens(t) for t in _shlex_tokens(_protect_parens(cmd))]
     except ValueError:  # unbalanced quotes: crude split, quotes dropped
         return re.findall(r"[();<>|&\n]+|[^\s();<>|&\n]+", re.sub(r"[\"'\\]", "", cmd))
 
 
 def _words(cmd: str) -> list[str]:
-    return [t for t in _tokens(cmd) if not (t and all(c in _PUNCT for c in t))]
+    return [t for t in _tokens(cmd) if not _is_op(t)]
 
 
 @dataclass
@@ -647,7 +687,7 @@ def _segments(tokens: list[str]) -> list[_Seg]:
     i = 0
     while i < len(tokens):
         tok = tokens[i]
-        if tok and all(c in _PUNCT for c in tok):
+        if _is_op(tok):
             nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
             if "(" in tok and ("<" in tok or ">" in tok):  # <(…) / >(…): a command of its own
                 if cur.words or cur.redirs or cur.inputs:
@@ -994,7 +1034,18 @@ def _find(args: list[str], cwd: str, acc: _Acc, destructive: bool = False) -> No
     if not destructive:
         return
     starts: list[tuple[str, str]] = []  # (absolute, as find prints it)
-    for a in args:
+    i = 0
+    while i < len(args):  # find's global options come before the start paths: -H -L -P -O<n> -D <opts>
+        if args[i] in ("-H", "-L", "-P") or re.fullmatch(r"-O\d*", args[i]):
+            i += 1
+        elif args[i] == "-D":
+            i += 2
+        elif args[i] == "--":
+            i += 1
+            break
+        else:
+            break
+    for a in args[i:]:
         if a.startswith(("-", "(", "!")):
             break
         ab = _abspath(a, cwd)
@@ -1887,16 +1938,42 @@ def _claude_words(words: list[str]) -> tuple[list[str], list[str]] | None:
     return None if j is None else (words[:j], words[j + 1:])
 
 
-def _nested_claude(segs: list[_Seg]) -> bool:
+def _shell_script(words: list[str]) -> tuple[list[str], str] | None:
+    """(words before the shell, its -c script) when the segment runs `sh/bash/zsh/dash/ksh -c '<script>'`."""
+    sw = _strip_prefix(words)
+    if not sw or os.path.basename(sw[0]) not in _SHELLS:
+        return None
+    args = sw[1:]
+    for j, a in enumerate(args):
+        if not a.startswith("-") or a.startswith("--"):
+            break
+        if "c" in a[1:]:
+            script = next((x for x in args[j + 1:] if not x.startswith("-")), None)
+            return (words[: len(words) - len(sw)], script) if script is not None else None
+    return None
+
+
+_NESTED_DEPTH = 4  # sh -c inside sh -c ... (each level is a quoted string: deeper is not plausible)
+
+
+def _nested_claude(segs: list[_Seg], redirected: bool = False, assigned: dict[str, str] | None = None,
+                   depth: int = 0) -> bool:
     """A claude run in this command that would skip bawwab's hooks: no-hooks flags, bypassPermissions, an
     inline settings value, or another config dir / HOME (on the tokenised command: quotes and line
-    continuations can't hide a flag)."""
-    assigned: dict[str, str] = {}
-    redirected = False
+    continuations can't hide a flag). A `sh -c` script is read the same way, with the HOME /
+    CLAUDE_CONFIG_DIR overrides that reach it (its prefix, `env`, or an earlier export)."""
+    assigned = dict(assigned or {})
     for seg in segs:
         words = seg.words
         cw = _claude_words(words)
         if cw is None:
+            sh = _shell_script(words) if depth < _NESTED_DEPTH else None
+            if sh is not None:
+                pre, script = sh
+                inner = redirected or any(_CONFIG_REDIRECT.match(w) for w in pre)
+                if _nested_claude(_segments(_tokens(script)), inner, assigned, depth + 1):
+                    return True
+                continue
             for w in words[1:] if words[:1] in (["export"], ["declare"], ["typeset"], ["readonly"]) else words:
                 m = _ASSIGN.fullmatch(w)
                 if not m:

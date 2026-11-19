@@ -155,6 +155,7 @@ def _gate() -> int:
         return 0
     if not isinstance(data, dict):
         return 0
+    _note_session(data)
     ti = data.get("tool_input")
     raw = (str(data.get("tool_name") or ""), ti if isinstance(ti, dict) else {}, str(data.get("cwd") or os.getcwd()))
     try:  # effect check + quarantine first: while anything is quarantined, only read-only tools run
@@ -187,12 +188,22 @@ def _gate() -> int:
     return 0
 
 
+def _note_session(data: object) -> None:
+    """Hook input's session_id for the lost-state check (see hooks/bawwab_hook.py)."""
+    sid = data.get("session_id") if isinstance(data, dict) else None
+    if isinstance(sid, str) and sid:
+        os.environ["BAWWAB_SESSION_ID"] = sid
+    else:
+        os.environ.pop("BAWWAB_SESSION_ID", None)
+
+
 def _hook_cwd(arg: str | None) -> Path:
     if arg:
         return Path(arg)
     try:
         if not sys.stdin.isatty():
             data = json.loads(sys.stdin.read())
+            _note_session(data)
             if isinstance(data, dict) and isinstance(data.get("cwd"), str) and data["cwd"]:
                 return Path(data["cwd"])
     except (ValueError, OSError):
@@ -287,6 +298,7 @@ def _hook_json() -> dict | None:
         data = json.loads(sys.stdin.read())
     except (ValueError, OSError):
         return None
+    _note_session(data)
     return data if isinstance(data, dict) else None
 
 
