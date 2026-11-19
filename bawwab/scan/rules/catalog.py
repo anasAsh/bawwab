@@ -43,5 +43,8 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("fetch.unsafe-entry", "Archive or repo contains an unsafe entry", "Path traversal, absolute paths, links pointing outside the package, or oversized archives are used to overwrite files or exhaust disk during extraction.", "Do not install; the unsafe entries were skipped during scanning."),
         _r("fetch.docker-unscanned", "Docker image was not scanned", "Container images are not statically scanned, so their contents are unreviewed.", "Run a deep scan in the sandbox or review the image manually."),
         _r("fetch.failed", "Target could not be fetched", "The package or server could not be downloaded, so nothing was reviewed.", "Check the name, version and network, then retry."),
+        _r("judge.unavailable", "AI judge could not give a verdict", "The AI review failed (timeout, bad output or backend error), so only the static checks apply and the content was not semantically reviewed.", "Retry the scan, check the Claude CLI or API key, or review the content manually."),
+        _r("judge.truncated", "AI judge saw truncated content", "The content was larger than the judge's input limit, so part of it was not reviewed by the AI.", "Review the omitted parts manually."),
+        _r("judge", "Flagged by the AI judge", "An AI reviewer read the model-facing text and judged it to be steering the assistant or hiding something from you. Its evidence quotes the suspicious text.", "Read the quoted text and the file it points to; do not install unless you can explain it."),
     ]
 )
