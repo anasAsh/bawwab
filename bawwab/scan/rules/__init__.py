@@ -6,7 +6,7 @@ from typing import Protocol
 from bawwab.scan.files import ExtraText, ScanFile
 from bawwab.scan.rules.catalog import CATALOG, RuleInfo
 from bawwab.scan.rules.code import CODE_RULES
-from bawwab.types import Finding
+from bawwab.types import Finding, Severity
 
 __all__ = ["CATALOG", "ExtraText", "Rule", "RuleInfo", "ScanFile", "run_static_rules"]
 
@@ -25,5 +25,10 @@ def run_static_rules(files: list[ScanFile], extra: Sequence[ExtraText] = ()) -> 
     extra_list = list(extra)
     findings: list[Finding] = []
     for rule in ALL_RULES:
-        findings.extend(rule.run(files, extra_list))
+        try:
+            findings.extend(rule.run(files, extra_list))
+        except Exception as e:  # noqa: BLE001 - one broken rule must not hide the others
+            findings.append(
+                Finding("rules.error", Severity.MED, "gate", f"rule {rule.id} failed: {type(e).__name__}")
+            )
     return findings

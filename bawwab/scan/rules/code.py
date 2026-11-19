@@ -16,7 +16,7 @@ from bawwab.types import Finding, Severity
 
 PY_EXT = (".py",)
 JS_EXT = (".js", ".mjs", ".cjs", ".jsx")
-TS_EXT = (".ts", ".mts", ".cts")
+TS_EXT = (".ts", ".mts", ".cts", ".tsx")
 DOC_EXT = (".md", ".mdx", ".rst", ".txt", ".map")
 LOCKFILES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json",
@@ -70,22 +70,28 @@ def _resolve(args: str, names: dict[str, str]) -> str:
 def _py_calls(text: str) -> list[Call] | None:
     try:
         tree = ast.parse(text)
-    except (SyntaxError, ValueError):
-        return None
-    names: dict[str, str] = {}
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
-            names[n.targets[0].id] = ast.unparse(n.value)
-    calls = []
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Call):
-            parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
-            calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names)))
-    return calls
+        names: dict[str, str] = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+                names[n.targets[0].id] = ast.unparse(n.value)
+        calls = []
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call):
+                parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
+                calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names)))
+        return calls
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None  # hostile or unparseable: caller falls back to regex
 
 
-def _js_calls(text: str, ts: bool) -> list[Call]:
-    parser = get_parser("typescript" if ts else "javascript")
+def _js_lang(rel: str) -> str:
+    if rel.endswith(".tsx"):
+        return "tsx"
+    return "typescript" if rel.endswith(TS_EXT) else "javascript"
+
+
+def _js_calls(text: str, lang: str) -> list[Call]:
+    parser = get_parser(lang)
     src = text.encode()
     root = parser.parse(src).root_node
 
@@ -113,11 +119,14 @@ def _js_calls(text: str, ts: bool) -> list[Call]:
 @lru_cache(maxsize=512)
 def _calls(rel: str, text: str) -> tuple[Call, ...] | None:
     """Parsed calls, or None when the file is not (parseably) Python/JS/TS."""
-    if rel.endswith(PY_EXT):
-        c = _py_calls(text)
-        return tuple(c) if c is not None else None
-    if rel.endswith(JS_EXT + TS_EXT):
-        return tuple(_js_calls(text, rel.endswith(TS_EXT)))
+    try:
+        if rel.endswith(PY_EXT):
+            c = _py_calls(text)
+            return tuple(c) if c is not None else None
+        if rel.endswith(JS_EXT + TS_EXT):
+            return tuple(_js_calls(text, _js_lang(rel)))
+    except Exception:  # noqa: BLE001 - never let a hostile file crash the scan
+        return None
     return None
 
 
@@ -160,6 +169,11 @@ CRED_RES = [
     r"\bstr\(\s*os\.environ\s*\)",
     r"JSON\.stringify\(\s*process\.env\b", r"Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
 ]
+DOTENV_RE = re.compile(
+    r"\b(?:load_dotenv|dotenv_values|find_dotenv)\b|require\(\s*['\"]dotenv['\"]\s*\)"
+    r"|import\s+['\"]dotenv(?:/config)?['\"]|\bfrom\s+['\"]dotenv['\"]|^\s*(?:import|from)\s+dotenv\b",
+    re.M,
+)
 CRED_RE = re.compile("|".join(CRED_RES), re.I)
 EXFIL_HOST_RE = re.compile(
     r"webhook\.site|requestbin|pipedream|ngrok|pastebin|transfer\.sh"
@@ -183,6 +197,7 @@ class _Hook:
     file: ScanFile
     line: int
     command: str  # "" for setup.py
+    body: str = ""  # setup.py: source of the hook code only
 
 
 def _json_key_line(text: str, key: str) -> int:
@@ -201,26 +216,41 @@ def _package_scripts(f: ScanFile) -> dict[str, str]:
     return {k: v for k, v in scripts.items() if isinstance(v, str)}
 
 
-def _setup_py_hook(f: ScanFile) -> int | None:
-    """Line of an install-time construct in setup.py, or None."""
+_FUNC_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _setup_py_hook(f: ScanFile) -> tuple[int, str] | None:
+    """(line, hook-code text) for an install-time construct in setup.py, or None.
+
+    The text covers only the hook itself: run() methods of command classes and
+    module-level os.system/subprocess calls, not the whole file.
+    """
     try:
         tree = ast.parse(f.text)
-    except (SyntaxError, ValueError):
+        line = None
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and any(k.arg == "cmdclass" for k in n.keywords):
+                line = n.lineno
+                break
+        segs: list[str] = []
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ClassDef):
+                for m in n.body:
+                    if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name == "run":
+                        segs.append(ast.get_source_segment(f.text, m) or "")
+        stack = [s for s in tree.body if not isinstance(s, _FUNC_NODES)]
+        while stack:
+            n = stack.pop(0)
+            if isinstance(n, ast.Call):
+                name = ast.unparse(n.func)
+                if name == "os.system" or name.startswith("subprocess."):
+                    line = line or n.lineno
+                    segs.append(ast.get_source_segment(f.text, n) or "")
+            stack.extend(c for c in ast.iter_child_nodes(n) if not isinstance(c, _FUNC_NODES))
+        return (line, "\n".join(segs)) if line else None
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
         m = re.search(r"cmdclass\s*=|^\s*(?:os\.system|subprocess\.\w+)\(", f.text, re.M)
-        return _line_of(f.text, m.start()) if m else None
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Call) and any(k.arg == "cmdclass" for k in n.keywords):
-            return n.lineno
-    # module-level statements only: do not descend into def/class bodies
-    stack = [s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
-    while stack:
-        n = stack.pop(0)
-        if isinstance(n, ast.Call):
-            name = ast.unparse(n.func)
-            if name == "os.system" or name.startswith("subprocess."):
-                return n.lineno
-        stack.extend(c for c in ast.iter_child_nodes(n) if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
-    return None
+        return (_line_of(f.text, m.start()), f.text) if m else None
 
 
 def _install_hooks(files: list[ScanFile]) -> list[_Hook]:
@@ -233,9 +263,9 @@ def _install_hooks(files: list[ScanFile]) -> list[_Hook]:
                 if key in scripts:
                     hooks.append(_Hook(f, _json_key_line(f.text, key), scripts[key]))
         elif base == "setup.py":
-            line = _setup_py_hook(f)
-            if line:
-                hooks.append(_Hook(f, line, ""))
+            hit = _setup_py_hook(f)
+            if hit:
+                hooks.append(_Hook(f, hit[0], "", hit[1]))
     return hooks
 
 
@@ -291,9 +321,10 @@ class ManifestRules:
             if h.command:
                 if REMOTE_RE.search(h.command):
                     out.append(_finding("install-script.remote", Severity.CRITICAL, h.file, h.line, h.command[:200]))
-            elif REMOTE_RE.search(h.file.text):
-                m = REMOTE_RE.search(h.file.text)
-                out.append(_finding("install-script.remote", Severity.CRITICAL, h.file, _line_of(h.file.text, m.start())))
+            else:
+                m = REMOTE_RE.search(h.body)
+                if m:
+                    out.append(_finding("install-script.remote", Severity.CRITICAL, h.file, h.line, m.group(0)))
             for ref in _referenced_files(h, files):
                 m = REMOTE_RE.search(ref.text)
                 if m:
@@ -421,16 +452,78 @@ class CodeRules:
             if m:
                 line = _line_of(t, m.start())
                 out.append(_finding("obfuscation.blob", Severity.MED, f, line, f"{len(m.group(1))}-char encoded literal"))
-        cred = CRED_RE.search(t)
+        dotenv = DOTENV_RE.search(t)
+        creds = [
+            m for m in CRED_RE.finditer(t)
+            if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start())))
+        ]
         host = EXFIL_HOST_RE.search(t)
-        if cred:
-            line = _line_of(t, cred.start())
-            out.append(_finding("credential-access", Severity.HIGH, f, line))
+        if creds:
+            out.append(_finding("credential-access", Severity.HIGH, f, _line_of(t, creds[0].start())))
+        elif dotenv:
+            out.append(_finding("credential-access", Severity.LOW, f, _line_of(t, dotenv.start())))
         if host:
             out.append(_finding("exfil.host", Severity.HIGH, f, _line_of(t, host.start())))
-        if cred and (host or NET_RE.search(t)):
-            out.append(_finding("exfil.combo", Severity.CRITICAL, f, _line_of(t, cred.start())))
+        if creds:
+            cred_lines = [_line_of(t, m.start()) for m in creds]
+            net_lines = [_line_of(t, m.start()) for m in NET_RE.finditer(t)]
+            net_lines += [_line_of(t, m.start()) for m in EXFIL_HOST_RE.finditer(t)]
+            if _same_scope(f, cred_lines, net_lines):
+                out.append(_finding("exfil.combo", Severity.CRITICAL, f, cred_lines[0]))
         return out
+
+
+COMBO_WINDOW = 20
+
+
+def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
+    """Line spans of outermost functions, or None when the file cannot be parsed."""
+    try:
+        if rel.endswith(PY_EXT):
+            tree = ast.parse(text)
+            spans = [
+                (n.lineno, n.end_lineno or n.lineno)
+                for n in ast.walk(tree)
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+        elif rel.endswith(JS_EXT + TS_EXT):
+            root = get_parser(_js_lang(rel)).parse(text.encode()).root_node
+            kinds = {
+                "function_declaration", "function_expression", "function", "arrow_function",
+                "method_definition", "generator_function", "generator_function_declaration",
+            }
+            spans, stack = [], [root]
+            while stack:
+                n = stack.pop()
+                if n.type in kinds:
+                    spans.append((n.start_point[0] + 1, n.end_point[0] + 1))
+                else:  # outermost only: nested callbacks belong to their enclosing function
+                    stack.extend(n.children)
+        else:
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    spans.sort(key=lambda sp: (sp[0], -sp[1]))
+    outer: list[tuple[int, int]] = []
+    for sp in spans:
+        if not outer or sp[0] > outer[-1][1]:
+            outer.append(sp)
+    return outer
+
+
+def _same_scope(f: ScanFile, cred_lines: list[int], net_lines: list[int]) -> bool:
+    """Credential access and an outbound call in the same function (module level is one scope)."""
+    spans = _function_spans(f.rel, f.text)
+    if spans is None:
+        return any(abs(c - n) <= COMBO_WINDOW for c in cred_lines for n in net_lines)
+
+    def scope(line: int) -> int:
+        for i, (lo, hi) in enumerate(spans):
+            if lo <= line <= hi:
+                return i
+        return -1
+
+    return bool({scope(c) for c in cred_lines} & {scope(n) for n in net_lines})
 
 
 CODE_RULES = [ManifestRules(), CodeRules()]

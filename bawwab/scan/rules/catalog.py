@@ -18,6 +18,7 @@ def _r(id: str, title: str, why: str, fix: str) -> tuple[str, RuleInfo]:
 CATALOG: dict[str, RuleInfo] = dict(
     [
         _r("files.truncated", "Scan limit reached", "Some files were not scanned, so malicious code could hide in them.", "Review the unscanned files manually or raise the limits."),
+        _r("rules.error", "A scan rule failed", "A rule crashed, so its findings are missing; the result is incomplete.", "Review the target manually; report the failing rule."),
         _r("install-script", "Runs code at install time", "Install hooks run automatically with your privileges before you can review anything.", "Read the script; prefer packages with no install hooks."),
         _r("install-script.remote", "Install script fetches remote content", "An install hook that downloads content can deliver a payload that differs from what was reviewed.", "Do not install; vendor the download or pin it by hash."),
         _r("remote-code.pipe-shell", "Pipes a download into a shell", "Executes whatever the remote server returns, unreviewed.", "Download, verify a checksum, then run."),
