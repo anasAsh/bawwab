@@ -30,6 +30,8 @@ def _build() -> argparse.ArgumentParser:
     r.add_argument("id")
     e = sub.add_parser("explain", help="explain a finding")
     e.add_argument("id")
+    d = sub.add_parser("diff", help="show what changed since the trusted snapshot")
+    d.add_argument("name", help="trust name (e.g. npm:pkg) or a target spec")
     return p
 
 
@@ -91,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
             return _decide(args)
         from bawwab.store import open_store
 
+        if args.cmd == "diff":
+            from bawwab.trust import diff_since_trusted
+
+            for line in diff_since_trusted(_spec(args.name), open_store()).splitlines():
+                print(sanitise(line, 300))
+            return 0
         out = explain(args.id, open_store())
         print(out)
         return 1 if out.startswith("unknown finding id") else 0

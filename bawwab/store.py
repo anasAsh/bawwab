@@ -46,7 +46,11 @@ def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) ->
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
-_MIGRATIONS = [_migrate_1]
+def _migrate_2(conn: sqlite3.Connection) -> None:
+    _add_column(conn, "scans", "snapshot", "TEXT")
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2]
 _VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
 
@@ -148,7 +152,7 @@ class Store:
             self.audit("store.corrupt", table="scans", key=key)
             return None
 
-    def put_report(self, r: ScanReport) -> None:
+    def put_report(self, r: ScanReport, snapshot: dict | None = None) -> None:
         data = None
         with self._tx():
             self._conn.execute("DELETE FROM findings WHERE key=?", (r.key,))
@@ -173,8 +177,8 @@ class Store:
                         raise sqlite3.IntegrityError("finding id space exhausted")
             data = json.dumps(report_to_dict(r))
             self._conn.execute(
-                "INSERT OR REPLACE INTO scans(key, report, scanned_at) VALUES (?,?,?)",
-                (r.key, data, _iso(r.scanned_at)),
+                "INSERT OR REPLACE INTO scans(key, report, scanned_at, snapshot) VALUES (?,?,?,?)",
+                (r.key, data, _iso(r.scanned_at), json.dumps(snapshot) if snapshot is not None else None),
             )
 
     def get_finding(self, finding_id: str) -> tuple[Finding, str] | None:
@@ -244,11 +248,28 @@ class Store:
             )
             self._conn.execute("DELETE FROM rejections WHERE key=?", (key,))
             self._conn.execute("UPDATE pending SET status='approved' WHERE id=?", (pid,))
+            self._trust_scan_snapshot(key, now)
             self._conn.execute(
                 "INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
                 (_iso(now), "approve", json.dumps({"id": pid, "key": key, "force": force})),
             )
         return True, key
+
+    def _trust_scan_snapshot(self, key: str, now: datetime) -> None:
+        """Called inside approve's transaction: the approved key's scanned snapshot becomes trusted."""
+        from bawwab.trust import trust_name
+
+        row = self._conn.execute("SELECT report, snapshot FROM scans WHERE key=?", (key,)).fetchone()
+        if not row or not row["snapshot"]:
+            return
+        try:
+            name = trust_name(report_from_dict(json.loads(row["report"])).target)
+            json.loads(row["snapshot"])
+        except (ValueError, KeyError, TypeError):
+            return
+        self._conn.execute(
+            "INSERT INTO snapshots(name, key, snap, ts) VALUES (?,?,?,?)", (name, key, row["snapshot"], _iso(now))
+        )
 
     def reject(self, pid: str, now: datetime | None = None) -> tuple[bool, str]:
         pid = pid.strip().upper()

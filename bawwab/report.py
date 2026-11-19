@@ -55,6 +55,12 @@ def format_report(r: ScanReport, approval_id: str | None = None) -> str:
         f"  ({r.mode.value} scan)"
     )
     lines = [head]
+    if r.diff_summary:
+        raw = r.diff_summary.splitlines()
+        for l in raw[:40]:
+            lines.append("  " + sanitise(l, MAX_LINE))
+        if len(raw) > 40:
+            lines.append(f"  … ({len(raw) - 40} more lines; run `bawwab diff` for details)")
     ordered = sorted(r.findings, key=lambda f: -f.severity.rank)
     for f in ordered:
         loc = sanitise(_loc(f), 40)

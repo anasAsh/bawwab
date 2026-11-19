@@ -16,6 +16,7 @@ from bawwab.scan.rules import run_static_rules
 from bawwab.scan.rules.text import model_facing_text
 from bawwab.severity import compute_verdict
 from bawwab.store import Store, open_store, target_key
+from bawwab.trust import diff_snapshots, make_snapshot, trust_name
 from bawwab.types import Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
 
 __all__ = ["SandboxRunner", "scan_target", "synthetic_report"]
@@ -147,6 +148,7 @@ class _Ctx:
                  sandbox: SandboxRunner | None) -> None:
         self.cfg, self.mode, self._backend = cfg, mode, backend
         self.fetch_opts, self.sandbox = fetch_opts, sandbox
+        self.top: tuple[list[ScanFile], list[ExtraText]] = ([], [])
 
     @property
     def backend(self) -> Backend:
@@ -197,6 +199,8 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx) -> list[Finding]
 
 def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0) -> list[Finding]:
     files, extra, findings = _static_step(f)
+    if depth == 0:
+        ctx.top = (files, extra)
     findings += _scan_children(f, ctx, depth)
     findings += _judge_step(files, extra, findings, ctx)
     if ctx.mode == Mode.DEEP:
@@ -209,7 +213,7 @@ def _apply_trust(f: Fetched, findings: list[Finding], cfg: Config) -> list[Findi
     name = f.target.name  # only what the user asked to install; never package-declared names
     if f.target.kind not in ("npm", "pypi") or not name or not is_trusted(cfg, name):
         return findings
-    return [x for x in findings if x.source in ("identity", "gate") or x.severity >= Severity.HIGH]
+    return [x for x in findings if x.source in ("identity", "gate", "trust") or x.severity >= Severity.HIGH]
 
 
 TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error"}
@@ -253,6 +257,14 @@ def scan_target(
         ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
         try:
             findings = _analyze(f, ctx)
+            files, extra = ctx.top
+            snap = make_snapshot(files, model_facing_text(files, extra), f.remote_tools)
+            tname = trust_name(t)
+            prev = store.latest_snapshot(tname)
+            diff_summary = None
+            if prev is not None and prev[0] != key:
+                rug, diff_summary = diff_snapshots(prev[1], snap)
+                findings += rug
         except Exception as e:  # noqa: BLE001 - fail closed on anything unexpected
             from bawwab.report import sanitise
 
@@ -263,11 +275,14 @@ def scan_target(
             store.put_report(r)
             store.audit("scan", key=key, verdict=r.verdict.value, mode=mode.value)
             return r
-        # (Task 8: rug-pull / snapshot comparison goes here)
         counted = _apply_trust(f, findings, cfg)
         verdict = compute_verdict(counted, cfg.malicious, cfg.suspicious)
-        report = ScanReport(key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC))
-        store.put_report(report)
+        report = ScanReport(
+            key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
+        )
+        store.put_report(report, snapshot=snap)
+        if verdict == Verdict.CLEAN and (prev is None or prev[0] != key):
+            store.put_snapshot(tname, key, snap)
         store.audit("scan", key=key, verdict=verdict.value, mode=mode.value)
         return report
     finally:
