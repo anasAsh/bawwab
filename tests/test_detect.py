@@ -950,3 +950,82 @@ def test_failsafe_body_scan_keeps_start_cwd(home, cmd):
     (home / "evil").mkdir(exist_ok=True)
     r = detect_install(bash(cmd, cwd=str(home / ".claude")))
     assert isinstance(r, Targets) and r.targets[0].path == str(home / "evil"), r
+
+
+# ------------------------------------------------------------- R24: both readings of arithmetic regions
+
+_HIDE = "\nfoo '\nX\n'\n" + _E + "\necho '"  # hides _E iff `<<X` before it is read as a heredoc
+
+
+@pytest.mark.parametrize("prefix", [
+    "for (( i=0; i<<X; i++ )); do :; done",
+    "(( a=1; b << X ))",
+    "(( $(true) << X ))",
+    "(( ${a} << X ))",
+    '(( "a" << X ))',
+    "(( `true` << X ))",
+    "(( a << X\n ))",
+    "echo $[ a << X ]",
+])
+def test_r24_arith_region_both_readings(home, prefix):
+    # bash reads each of these as arithmetic, so `<<X` opens no heredoc and the hidden line runs
+    r = detect_install(bash(prefix + _HIDE))
+    assert isinstance(r, Protected) or (isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets]), r
+
+
+@pytest.mark.parametrize("cmd", [
+    "((cat <<X '))' ) )\n'\nX\n" + _E + "\necho '",  # nested subshells: the heredoc is real
+    '((cat <<X "))" ) )\n"\nX\n' + _E + '\necho "',
+    "((cat <<X) )\n'\nX\n" + _E + "\necho '",
+    "$( (cat <<X) )\n'\nX\n" + _E + "\necho '",
+])
+def test_r24_real_heredoc_in_paren_region(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets], r
+
+
+@pytest.mark.parametrize("cmd", [
+    "for ((i=0;i<3;i++)); do echo $i; done",
+    "(( x = 1 << 3 ))",
+    "echo $(( 2 << 4 ))",
+    "echo $[ 1 << 2 ]",
+    "let 'x = 1 << 2'",
+])
+def test_r24_benign_arith_is_none(home, cmd):
+    assert detect_install(bash(cmd)) is None
+
+
+@pytest.mark.parametrize("cmd", [
+    "\n".join(["(( a << X ))"] * 200) + "\n" + _E,
+    "\n".join(["echo $[ a << X ]"] * 200) + "\n" + _E,
+    "((\n" * 20000 + _E,  # unclosed regions: the region finder must not go quadratic
+    "$[\n" * 20000 + _E,
+    f"cat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E,  # r4/a5
+    f"(( a << X ))\ncat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E,
+])
+def test_r24_both_readings_bounded(home, cmd):
+    r, dt = _timed(cmd)
+    assert dt < 1.0, dt
+    assert _detected_or_too_complex(r) or isinstance(r, Protected), r
+
+
+def test_r24_mixed_readings_small_k(home):
+    # region 1 is arithmetic, region 2 nested subshells with a real heredoc: neither uniform reading sees _E
+    cmd = "(( a << X )); ((cat <<Y ')' ) )\n'\nY\n" + _E + "\nX\nY\n'"
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets], r
+
+
+def test_hook_prefilter_raising_takes_slow_path(monkeypatch, capsys):
+    hook = _load_hook()
+    calls: list[str] = []
+
+    def boom(data):
+        raise ValueError("embedded null byte")
+
+    monkeypatch.setattr(hook, "prefilter", boom)
+    monkeypatch.setattr(hook, "_run_gate", lambda raw: calls.append(raw) or None)
+    monkeypatch.setattr(hook.sys, "stdin", __import__("io").StringIO(json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/tmp"})))
+    assert hook.gate() == 0
+    assert len(calls) == 1

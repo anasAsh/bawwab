@@ -342,43 +342,89 @@ _HEREDOC_TOKEN_RE = re.compile(r"__bawwab_heredoc_(\d+)__")
 _HEREDOC_DELIM = re.compile(r"(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([A-Za-z0-9_.-]+))")
 
 
-_ARITH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ \t+-*/%<>=!&|^~?:,[]()$")
+_LET = re.compile(r"let[ \t]")
 
 
-def _arith_command_end(cmd: str, i: int) -> int | None:
-    """End of a `(( … ))` arithmetic command starting at i, or None if it isn't one.
+class _AllText:
+    """`as_text` value that reads every arithmetic-candidate region as ordinary text."""
 
-    Bash reads `((` as arithmetic only when it closes with `))` at the same nesting level; otherwise
-    (e.g. `((cat <<X) )`) it is nested subshells and `<<` inside is a real heredoc. A region with a quote,
-    backslash, `#`, backtick, `;`, `$(`/`${` or a newline is never treated as arithmetic: we fall back to
-    normal parsing (heredocs recognised) rather than guess how bash pairs it. Only the current line is
-    searched, so this stays linear.
+    def __contains__(self, _: object) -> bool:
+        return True
+
+
+_ALL_TEXT = _AllText()
+
+
+def _skip_quoted(cmd: str, j: int) -> int:
+    """Index just past the quoted string / backtick group / escape starting at cmd[j] (n if unclosed)."""
+    n = len(cmd)
+    c = cmd[j]
+    if c == "\\":
+        return min(j + 2, n)
+    j += 1
+    while j < n:
+        if cmd[j] == "\\" and c != "'":
+            j += 2
+            continue
+        if cmd[j] == c:
+            return j + 1
+        j += 1
+    return n
+
+
+def _arith_region_end(cmd: str, i: int, spend) -> int | None:
+    """End of the arithmetic-candidate region starting at i, or None if there is none.
+
+    Candidates are `((` (also `for ((`), `$((`, `$[` and a `let` command. This is a simple, conservative
+    quote-aware matched-pair scan: callers analyse the command under both readings (arithmetic and plain
+    text), so it does not need to match bash exactly; it only needs a sensible extent. Scanned length is
+    charged to `spend` so many unclosed candidates fail closed on the work budget instead of going quadratic.
     """
-    if i > 0 and cmd[i - 1] in "$<>":
+    n = len(cmd)
+    if cmd.startswith("$[", i):
+        close, opener, depth, j = "]", "[", 0, i + 2
+    elif cmd.startswith("((", i) or cmd.startswith("$((", i):
+        if cmd[i] == "(" and i > 0 and cmd[i - 1] in "$<>":
+            return None  # `$((` is handled at the `$`; `<((`/`>((` is process substitution
+        close, opener, depth, j = ")", "(", 0, i + (3 if cmd[i] == "$" else 2)
+    elif _LET.match(cmd, i) and (i == 0 or cmd[i - 1] in " \t\n;&|(){}"):
+        j = i + 3
+        while j < n and cmd[j] not in ";&|\n)":
+            j = _skip_quoted(cmd, j) if cmd[j] in "'\"`\\" else j + 1
+        spend(j - i)
+        return j
+    else:
         return None
-    depth = 0
-    j, n = i + 2, len(cmd)
+    start = j
     while j < n:
         c = cmd[j]
-        if c not in _ARITH_CHARS or (c == "$" and j + 1 < n and cmd[j + 1] in "({"):
-            return None
-        if c == "(":
+        if c in "'\"`\\":
+            j = _skip_quoted(cmd, j)
+            continue
+        if c == opener:
             depth += 1
-        elif c == ")":
+        elif c == close:
             if depth == 0:
+                spend(j - start)
+                if close == "]":
+                    return j + 1
                 return j + 2 if cmd.startswith("))", j) else None
             depth -= 1
         j += 1
+    spend(n - start)
     return None
 
 
-def _extract_heredocs(cmd: str) -> tuple[str, list[str], dict[int, int]]:
+def _extract_heredocs(cmd: str, as_text=(), regions: list[int] | None = None,
+                      spend=lambda n: None) -> tuple[str, list[str], dict[int, int]]:
     """Replace each real `<<DELIM … DELIM` with `< __bawwab_heredoc_N__` and return the bodies.
 
-    Only operators outside quotes, comments, `$((…))` and `((…))` count, and never `<<<`. An
-    unterminated heredoc consumes nothing: the following lines stay normal command lines (and are
-    scanned there). Its body is not recorded as text; instead the third value maps its index to the
-    offset where its (implicit, to end of input) body starts, for callers that need it as stdin.
+    Only operators outside quotes and comments count, and never `<<<`. Arithmetic-candidate regions
+    (`((…))`, `$((…))`, `$[…]`, `let …`) are read as arithmetic (no heredocs inside) unless their start
+    offset is in `as_text`, in which case they are read as ordinary text; offsets of the regions met are
+    appended to `regions`. An unterminated heredoc consumes nothing: the following lines stay normal
+    command lines (and are scanned there). Its body is not recorded as text; instead the third value maps
+    its index to the offset where its (implicit, to end of input) body starts, for callers that need it.
     """
     out: list[str] = []
     bodies: list[str] = []
@@ -386,7 +432,6 @@ def _extract_heredocs(cmd: str) -> tuple[str, list[str], dict[int, int]]:
     missing: set[tuple[bool, str]] = set()  # delimiters known not to occur from some offset on
     pending: list[tuple[bool, str, int]] = []  # (strip tabs, delimiter, body index)
     quote = None
-    arith = 0
     i, n = 0, len(cmd)
     while i < n:
         c = cmd[i]
@@ -412,21 +457,14 @@ def _extract_heredocs(cmd: str) -> tuple[str, list[str], dict[int, int]]:
             out.append(cmd[i:j])
             i = j
             continue
-        elif cmd.startswith("$((", i):
-            arith += 1
-            out.append("$((")
-            i += 3
-            continue
-        elif arith and cmd.startswith("))", i):
-            arith -= 1
-            out.append("))")
-            i += 2
-            continue
-        elif not arith and cmd.startswith("((", i) and (end := _arith_command_end(cmd, i)) is not None:
-            out.append(cmd[i:end])
-            i = end
-            continue
-        elif not arith and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):
+        elif c in "($l" and (end := _arith_region_end(cmd, i, spend)) is not None:
+            if regions is not None:
+                regions.append(i)
+            if i not in as_text:
+                out.append(cmd[i:end])
+                i = end
+                continue
+        elif cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):
             m = _HEREDOC_DELIM.match(cmd, i + 2)
             delim = next((g for g in (m.group(2), m.group(3), m.group(4)) if g is not None), None) if m else None
             if delim:
@@ -960,10 +998,29 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
         if (cmd, cwd) in acc.scanned:
             return
         acc.scanned.add((cmd, cwd))
+    # Arithmetic-candidate regions are ambiguous (bash's own rule depends on quoting and nesting), so never
+    # pick one reading: analyse with every region arithmetic, then with every region plain text, and when
+    # there are few regions also every mix of the two; the accumulator takes the union. Every pass counts
+    # against the work budget.
+    regions: list[int] = []
+    _bash_pass(cmd, cwd, acc, depth, (), regions)
+    if not regions:
+        return
+    _bash_pass(cmd, cwd, acc, depth, _ALL_TEXT)
+    k = len(regions)
+    if 2 <= k <= _MAX_MIXED_REGIONS:
+        for mask in range(1, (1 << k) - 1):
+            _bash_pass(cmd, cwd, acc, depth, frozenset(r for b, r in enumerate(regions) if mask >> b & 1))
+
+
+_MAX_MIXED_REGIONS = 3  # up to 2**3 readings; beyond that only the two uniform readings are analysed
+
+
+def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, as_text, regions: list[int] | None = None) -> None:
     acc.spend(len(cmd))
     start_cwd = cwd
     full = cmd
-    cmd, bodies, open_from = _extract_heredocs(cmd)
+    cmd, bodies, open_from = _extract_heredocs(cmd, as_text, regions, acc.spend)
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
     pipeline = ""  # text of the segments piped into the current one
 

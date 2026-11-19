@@ -73,7 +73,13 @@ def gate() -> int:
         data = json.loads(raw)
     except ValueError:
         return 0
-    if not isinstance(data, dict) or not prefilter(data):
+    if not isinstance(data, dict):
+        return 0
+    try:
+        install_like = prefilter(data)
+    except Exception:  # noqa: BLE001 - can't tell (e.g. NUL in a path): treat as install-like, fail closed
+        install_like = True
+    if not install_like:
         return 0
     try:
         out = _run_gate(raw)
