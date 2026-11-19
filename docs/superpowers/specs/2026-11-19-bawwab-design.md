@@ -2,7 +2,7 @@
 
 Date: 2026-11-19
 Status: approved (merged with the earlier "Bawwab: MCP & Skill Security Scanner" doc)
-Owner: Anas Al-Hamdan · open source · possible home: JOSA community project
+Owner: Anas Al-Hamdan · open source
 
 ## Intent
 
