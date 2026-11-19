@@ -1,5 +1,22 @@
 <div align="center">
 
+```text
+                      _____________
+                    /      |      \
+                   |       |       |
+                   |   o   |   o   |
+                   |       |       |
+                   |_______|_______|
+
+ ____      _    __        ____        ___    ____
+| __ )    / \   \ \      / /\ \      / / \  | __ )
+|  _ \   / _ \   \ \ /\ / /  \ \ /\ / / _ \ |  _ \
+| |_) | / ___ \   \ V  V /    \ V  V / ___ \| |_) |
+|____/ /_/   \_\   \_/\_/      \_/\_/_/   \_\____/
+
+        nothing gets in without the gatekeeper
+```
+
 # بوّاب · Bawwab
 
 ### The gatekeeper for your AI agent's extensions
@@ -11,6 +28,7 @@ and blocks anything suspicious until you say yes.**
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![agent](https://img.shields.io/badge/agent-Claude%20Code-d97757)
 ![tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
@@ -185,6 +203,10 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 Bawwab is an open-source community project (possible home: [JOSA](https://josa.ngo)). Issues and PRs are welcome,
 especially **bypasses**. If you can get something past the gatekeeper, open an issue with a harmless reproduction.
 Please use canary values and `.invalid` hosts, never live malware.
+
+## License
+
+[MIT](LICENSE) © 2026 Anas Al-Hamdan
 
 <div align="center">
 <sub>Built with care in Amman 🇯🇴 · <i>"A good gatekeeper knows who to let in."</i></sub>
