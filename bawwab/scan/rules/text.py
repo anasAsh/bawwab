@@ -149,9 +149,23 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
             continue
         p = pairs(o)
         desc, name = string_of(p.get("description")), string_of(p.get("name"))
+        if desc and name and _schema_param(p, string_of):
+            continue
         if desc and name:
             out.append(_Text(f"tool {name}", desc[:MAX_DESC], True))
     return out
+
+
+_SCHEMA_TYPES = {"string", "boolean", "integer", "number", "array", "object", "any", "null"}
+_TOOL_KEYS = {"inputSchema", "input_schema", "parameters", "handler", "execute", "run", "annotations", "outputSchema"}
+
+
+def _schema_param(p: dict, string_of) -> bool:
+    """A protocol / JSON-schema parameter ({name, description, type: "boolean"} or a $ref), as in the
+    Chrome DevTools protocol tables bundled into chrome-devtools-mcp, not a tool definition (R40 rescan)."""
+    if _TOOL_KEYS & set(p):
+        return False
+    return "$ref" in p or string_of(p.get("type")) in _SCHEMA_TYPES
 
 
 _FALLBACK_RE = re.compile(

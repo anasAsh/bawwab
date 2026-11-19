@@ -97,12 +97,24 @@ def _is_binary(head: bytes) -> bool:
     return head.startswith(BINARY_MAGIC) or _is_pe(head) or _media_magic(head)
 
 
-_JS_PY_SHEBANG_RE = re.compile(rb"#![ \t]*\S*?(?:/env(?:[ \t]+-\S+)*[ \t]+)?\S*?\b(?:node|nodejs|python[\d.]*|deno|bun|tsx|ts-node)\b[^\n]*\n")
+_RUNTIME_RE = re.compile(rb"(?:node|nodejs|python[\d.]*|deno|bun|tsx|ts-node)")
 
 
 def _shell_shebang(head: bytes) -> bool:
-    """A #! line for anything but a JS/Python runtime (a shell runs such a file line by line)."""
-    return head.startswith(b"#!") and not _JS_PY_SHEBANG_RE.match(head)
+    """A #! line for anything but a JS/Python runtime (a shell runs such a file line by line).
+
+    Only the interpreter's basename counts, or for `env` its program argument (review M1):
+    `#!/opt/node/../../bin/sh` is a shell script."""
+    if not head.startswith(b"#!"):
+        return False
+    words = head[2:].split(b"\n", 1)[0].split()
+    if not words:
+        return True
+    prog = words[0].rsplit(b"/", 1)[-1]
+    if prog == b"env":
+        rest = [w for w in words[1:] if not w.startswith(b"-") and b"=" not in w]
+        prog = rest[0].rsplit(b"/", 1)[-1] if rest else b""
+    return not _RUNTIME_RE.fullmatch(prog)
 
 
 def _is_code_name(rel: str, head: bytes) -> bool:
@@ -173,15 +185,16 @@ def _binary_unscanned(n: int) -> list[Finding]:
 
 
 def load_files(
-    root: Path, max_file_bytes: int = 1_000_000, max_files: int = 5000
+    root: Path, max_file_bytes: int = 1_000_000, max_files: int = 5000, max_text_bytes: int = 16_000_000
 ) -> tuple[list[ScanFile], list[Finding]]:
     """Read text files under root. Never follows symlinks; skips binaries.
 
-    Oversized text files are scanned up to max_file_bytes and give `files.truncated` (low);
-    oversized files with NUL bytes, source files with NUL bytes and the file cap give
-    `files.truncated` (med). Files with a binary magic (executables, archives,
-    images) are aggregated into one low finding, unless a manifest, hook config or
-    install script names them as something to run (then `files.truncated`).
+    Plain text (JS, Python, JSON...) is scanned in full up to max_text_bytes; above that, the
+    first and last max_file_bytes are scanned and give `files.truncated` (med) (R40). Over
+    max_file_bytes, a shell script / #! script, a forged binary header or NUL bytes give
+    `files.truncated` (med), as do source files with NUL bytes and the file cap. Files with a
+    binary magic (executables, archives, images) are aggregated into one low finding, unless a
+    manifest, hook config or install script names them as something to run (then `files.truncated`).
     """
     root = Path(root)
     files: list[ScanFile] = []
@@ -233,15 +246,28 @@ def load_files(
                         # NUL bytes, a script under a forged binary/media header (R27 round 3), or a
                         # shell script / #! file: not bundled text, so the unscanned tail stays MED.
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
+                    elif size <= max_text_bytes:
+                        # Big bundled text: scanned in full (R40).
+                        data = path.read_bytes()
+                        if b"\x00" in data:  # review M6: NUL anywhere, not only in the head
+                            findings.append(_truncated(f"{rel} is source with NUL bytes; not scanned", rel))
+                        else:
+                            files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
                     else:
-                        # Big bundled text (Task 10c A): scan the first max_file_bytes, note the rest (LOW).
+                        # Above the ceiling, padding that big is itself suspicious: head + tail, MED (R40).
                         with path.open("rb") as fh:
                             part = fh.read(max_file_bytes)
-                        files.append(ScanFile(rel, part.decode("utf-8", errors="replace")))
-                        findings.append(_truncated(
-                            f"{rel} is {size} bytes (limit {max_file_bytes}); only the first {max_file_bytes} bytes scanned",
-                            rel, Severity.LOW,
-                        ))
+                            fh.seek(max(size - max_file_bytes, max_file_bytes))
+                            tail = fh.read(max_file_bytes)
+                        if b"\x00" in part or b"\x00" in tail:
+                            findings.append(_truncated(f"{rel} is {size} bytes with NUL bytes; not scanned", rel))
+                        else:
+                            text = part.decode("utf-8", errors="replace") + "\n" + tail.decode("utf-8", errors="replace")
+                            files.append(ScanFile(rel, text))
+                            findings.append(_truncated(
+                                f"{rel} is {size} bytes (limit {max_text_bytes}); only the first and last "
+                                f"{max_file_bytes} bytes scanned", rel,
+                            ))
                     continue
                 data = path.read_bytes()
             except OSError:

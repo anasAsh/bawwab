@@ -43,25 +43,23 @@ def rule_ids(findings):
 # ---------------------------------------------------------------- (A) big bundled JS
 
 
-def test_a_oversized_text_file_is_scanned_in_part_and_low(tmp_path):
-    # chrome-devtools-mcp: out/.../third_party/index.js is 8 MB of bundled JS
+def test_a_big_text_file_is_scanned_in_full(tmp_path):
+    # chrome-devtools-mcp: out/.../third_party/index.js is 8 MB of bundled JS (R40: in full, no finding)
     big = "export const a = 1;\n" + "var x = function(){ return 42; };\n" * 2000
     (tmp_path / "out").mkdir()
     (tmp_path / "out/index.js").write_text(big)
     files, findings = load_files(tmp_path, max_file_bytes=10_000)
-    assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.LOW)]
-    assert findings[0].file == "out/index.js"
-    scanned = [f for f in files if f.rel == "out/index.js"]
-    assert scanned and 0 < len(scanned[0].text) <= 10_000
+    assert findings == []
+    assert [(f.rel, f.text) for f in files] == [("out/index.js", big)]
     assert compute_verdict(findings + run_static_rules(files)) == Verdict.CLEAN
 
 
-def test_a_oversized_node_cli_with_node_shebang_is_scanned_in_part(tmp_path):
+def test_a_big_node_cli_with_node_shebang_is_scanned_in_full(tmp_path):
     # @notionhq/notion-mcp-server: bin/cli.mjs is 1.4 MB with "#!/usr/bin/env node"
     (tmp_path / "bin").mkdir()
     (tmp_path / "bin/cli.mjs").write_text("#!/usr/bin/env node\nimport { createRequire } from 'module';\n" + "var a = 1;\n" * 3000)
     files, findings = load_files(tmp_path, max_file_bytes=10_000)
-    assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.LOW)]
+    assert findings == []
     assert [f.rel for f in files] == ["bin/cli.mjs"]
 
 

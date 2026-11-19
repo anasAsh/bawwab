@@ -296,7 +296,8 @@ CRED_RES = [
     # `options?.env` is optional chaining, not a .env file (Task 10c)
     r"(?<![\w.?])\.env\b", r"\.claude\.json",
     r"\.npmrc\b", r"\.netrc\b", r"\.pypirc\b",
-    r"security\s+find-generic-password", r"\bkeychain\b",
+    # "--use-mock-keychain" is a Chrome flag, not keychain access (R40 rescan)
+    r"security\s+find-generic-password", r"(?<![\w-])keychain(?![\w-])",
     r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
     r"\.mozilla/firefox", r"\bLogin Data\b",
     r"\bdict\(\s*os\.environ\s*\)", r"\bos\.environ\.(?:copy|items)\(\)", r"\bjson\.dumps\(\s*os\.environ\b",
@@ -353,12 +354,15 @@ NET_RE = re.compile(
     r"|\bgot\(|Invoke-WebRequest|\bnc\s|\b(?:net|tls)\.(?:connect|createConnection)\b"
 )
 BLOB_RE = re.compile(r"""["'`]((?:[A-Za-z0-9+/]{200,}={0,2})|(?:[0-9a-fA-F]{200,}))["'`]""")
-_IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a")
 _SVG_HEAD_RE = re.compile(rb"^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--.*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]", re.S | re.I)
 
 
+_SVG_ACTIVE_RE = re.compile(rb"<script|<foreignObject|\bon[a-z]+\s*=|javascript:|<iframe|<embed|<object", re.I)
+
+
 def _image_b64(lit: str) -> bool:
-    """A base64 literal whose bytes start like a PNG, JPEG, GIF, WebP or SVG image (Task 10c D)."""
+    """A base64 literal that decodes to a well-formed PNG, JPEG, GIF, WebP or a passive SVG image
+    (Task 10c D). The header structure is checked, not just the magic (review M2)."""
     if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", lit) or len(lit) < 8:
         return False  # hex blobs are never taken as images
     head = lit[:1024]
@@ -367,11 +371,21 @@ def _image_b64(lit: str) -> bool:
         data = base64.b64decode(head, validate=True)
     except (binascii.Error, ValueError):
         return False
-    return (
-        data.startswith(_IMAGE_MAGIC)
-        or data[:4] == b"RIFF" and data[8:12] == b"WEBP"
-        or bool(_SVG_HEAD_RE.match(data))
-    )
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return data[8:16] == b"\x00\x00\x00\x0dIHDR"
+    if data.startswith(b"\xff\xd8\xff"):
+        return len(data) > 5 and (0xE0 <= data[3] <= 0xEF or data[3] in (0xDB, 0xC0, 0xC2, 0xC4, 0xFE)) and data[4] < 0x10
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return any(b < 0x09 or 0x0E <= b < 0x20 or b >= 0x7F for b in data[6:13])  # binary screen descriptor
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return data[12:16] in (b"VP8 ", b"VP8L", b"VP8X")
+    if _SVG_HEAD_RE.match(data):
+        try:
+            whole = base64.b64decode(lit + "=" * (-len(lit) % 4))
+        except (binascii.Error, ValueError):
+            return False
+        return not _SVG_ACTIVE_RE.search(whole)
+    return False
 
 
 REMOTE_RE = re.compile(r"\b(?:curl|wget|fetch|urllib|requests|Invoke-WebRequest|iwr|httpx|axios)\b|\bhttps?\.get\b")
@@ -1588,6 +1602,14 @@ def _loopback_only(first_raw: str) -> bool:
 
 
 def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
+    return _net_calls_cached(f.rel, f.text, t)
+
+
+_HOST_SCAN = 4000  # an exfil host deep inside a huge argument (a bundle's IIFE) is exfil.host anyway
+
+
+@lru_cache(maxsize=8)  # holds the texts: keep it small
+def _net_calls_cached(rel: str, text: str, t: str) -> list[tuple[int, str]]:
     """(line, argument text) of outbound network calls.
 
     Parsed files: real call nodes to a network global, or to a network module bound in the
@@ -1595,6 +1617,7 @@ def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
     URL argument is one plain loopback literal. Unparsed files (shell...): the regex
     fallback, minus bare import lines.
     """
+    f = ScanFile(rel, text)
     calls = _calls(f.rel, f.text)
     if calls is not None:
         b = _bindings(f.rel, f.text)
@@ -1610,7 +1633,7 @@ def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
                 or (bound and _is_net_callee(callee) and _imported(callee, b.mods))
                 or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
             )
-            if (is_net and not _loopback_only(c.first_raw)) or EXFIL_HOST_RE.search(c.args):
+            if (is_net and not _loopback_only(c.first_raw)) or EXFIL_HOST_RE.search(c.args, 0, _HOST_SCAN):
                 out.append((c.line, c.args))
         return out
     out = []
@@ -1754,8 +1777,12 @@ SSH_JOIN_RE = re.compile(
 _ASSIGN_HEAD_RE = re.compile(
     r"""(?:^|[;{}])\s*(?:export\s+)?(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$.]*)\s*(?::\s*[^=\n;]+?)?\s*=(?![=>])(?=[^;]*$)"""
 )
-# A filtered copy: Object.keys(process.env).filter(...), {k: v for k, v in os.environ.items() if ...}
-_FILTERED_TAIL_RE = re.compile(r"""\s*\.\s*filter\s*\(|\s+if\b[^\n]*[}\])]""")
+# The `debug` package form (R41): env keys tested against a literal ^prefix regex, reduced into options.
+_PREFIX_FILTER_RE = re.compile(
+    r"""\s*\.\s*filter\s*\(\s*(?:function\s*\(\s*[\w$]+\s*\)\s*\{\s*return\s*|\(?\s*[\w$]+\s*\)?\s*=>\s*)"""
+    r"""/\^([A-Za-z][\w]*)/[gimsuy]*\.test\(\s*[\w$]+\s*\)\s*;?\s*\}?\s*\)\s*\.\s*reduce\s*\("""
+)
+_SECRETISH_RE = re.compile(r"key|token|secret|pass|pwd|auth|cred|aws|gh_|github|npm|openai|anthropic|session|cookie", re.I)
 _FUNC_HEAD_RE = re.compile(
     r"""\bdef\s+([A-Za-z_]\w*)|\bfunction\s*\*?\s*([\w$]+)\s*\("""
     r"""|([\w$]+)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)"""
@@ -1779,36 +1806,156 @@ def _scope_bounds(f: ScanFile, t: str, line: int) -> tuple[int, int]:
     return 0, len(t)
 
 
-def _handed_on(t: str, name: str, a: int, b: int, skip: tuple[int, int]) -> bool:
-    """Every use of `name` in t[a:b] hands it to a child process / caller, or edits it in place."""
-    rx = re.compile(r"(?<![\w$])" + re.escape(name) + r"(?![\w$])")
-    seen = False
-    for m in rx.finditer(t, a, b):
-        if skip[0] <= m.start() < skip[1]:
-            continue
-        before, after = t[max(a, m.start() - 40) : m.start()], t[m.end() : m.end() + 40]
-        if before.endswith(".") and not before.endswith("..."):
-            continue  # a member (process.env), not this name
-        if re.match(r"\s*(?:=(?!=)|:(?!:))", after):
-            continue  # assigned to / an object key or keyword name (env=..., env: ...)
-        if re.match(r"\s*\[|\.(?:update|pop|setdefault|get)\s*\(|\.[\w$]+\s*=(?!=)", after):
-            continue  # env["X"] = ..., env.pop("X"), env.X = ...
-        if re.search(r"(?:\benv\s*[=:]\s*|\.\.\.\s*|\*\*\s*|\breturn\s+|\bdelete\s+)$", before):
-            seen = True  # env=name, env: name, {...name}, {**name}, return name
-            continue
-        if name == "env" and re.search(r"[{,]\s*$", before) and re.match(r"\s*[,}]", after):
-            seen = True  # { env } shorthand
-            continue
+# Process launchers (R41): an env copy is bound only in the env slot of one of these.
+LAUNCH_LEAVES = {
+    "Popen", "spawn", "spawnSync", "execFile", "execFileSync", "fork", "execa", "execaSync", "execaCommand",
+    "execaCommandSync", "execaNode", "launch", "StdioClientTransport", "create_subprocess_exec",
+    "create_subprocess_shell", "crossSpawn", "posix_spawn", "posix_spawnp",
+}
+LAUNCH_MODULE_LEAVES = {"run", "call", "check_call", "check_output", "exec", "execSync", "getoutput", "getstatusoutput"}
+_CALLEE_TAIL_RE = re.compile(r"((?:new\s+)?[A-Za-z_$][\w$.]*)\s*$")
+_NOT_CALLEES = {"if", "while", "for", "return", "switch", "catch", "and", "or", "not", "in", "typeof", "await", "yield"}
+_ENV_KEY_RE = re.compile(r"""(?<![\w$.])['"]?env['"]?\s*(?:=(?![=>])|:(?!:))\s*""")
+_BIND_DEPTH = 3
+
+
+def _launcher(f: ScanFile, callee: str) -> bool:
+    norm = _norm_callee(re.sub(r"^new\s+", "", callee.strip()), _aliases(f.rel, f.text))
+    parts = norm.split(".")
+    if parts[-1] in LAUNCH_LEAVES or re.fullmatch(r"os\.(?:exec|spawn)\w*", norm):
+        return True
+    return parts[-1] in LAUNCH_MODULE_LEAVES and parts[0] in ("subprocess", "child_process", "execa")
+
+
+def _enclosing_call(t: str, q: int) -> tuple[int, str] | None:
+    """(index of "(", callee) of the innermost call around q, skipping objects, arrays and grouping parens."""
+    depth, i, lo = 0, q - 1, max(0, q - 6000)
+    while i >= lo:
+        ch = t[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth:
+                depth -= 1
+            elif ch == "(":
+                m = _CALLEE_TAIL_RE.search(t[max(0, i - 120) : i])
+                if m and m.group(1).rsplit(".", 1)[-1] not in _NOT_CALLEES:
+                    return i, m.group(1)
+        i -= 1
+    return None
+
+
+def _in_env_slot(t: str, o: int, q: int) -> bool:
+    """q is inside the value of an `env=` / `env:` argument of the call opened at o."""
+    keys = list(_ENV_KEY_RE.finditer(t, o + 1, q))
+    if not keys:
         return False
-    return seen
+    depth = 0
+    for ch in t[keys[-1].end() : q]:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth < 0:
+                return False
+        elif ch == "," and depth == 0:
+            return False
+    return True
+
+
+def _launch_slot(f: ScanFile, t: str, q: int, shorthand: bool = False) -> bool:
+    c = _enclosing_call(t, q)
+    return c is not None and _launcher(f, c[1]) and (shorthand or _in_env_slot(t, c[0], q))
+
+
+def _func_at(t: str, q: int) -> str | None:
+    heads = list(_FUNC_HEAD_RE.finditer(t, 0, q))
+    return next((g for g in heads[-1].groups() if g), None) if heads else None
+
+
+def _use_bound(f: ScanFile, t: str, q: int, qend: int, name: str, depth: int) -> str:
+    """"skip" (not a use: assigned, key, member, in-place edit, truthiness test), "ok" (handed to a
+    process launcher's env, directly or through a return / assignment) or "bad" (anything else)."""
+    before, after = t[max(0, q - 60) : q], t[qend : qend + 60]
+    if before.endswith(".") and not before.endswith("..."):
+        return "skip"  # a member (process.env), not this name
+    if re.match(r"\s*=(?![=>])", after) or (re.match(r"\s*:(?!:)", after) and re.search(r"[{,(]\s*$", before)):
+        return "skip"  # assigned to / an object key or keyword name
+    if re.match(r"\s*\[[^\]\n]*\]\s*=(?!=)|\.(?:update|pop|setdefault)\s*\(|\.[\w$]+\s*=(?!=)", after):
+        return "skip"  # env["X"] = ..., env.pop("X"), env.X = ...
+    if re.search(r"\bdelete\s+$", before):
+        return "skip"
+    if re.match(r"\s*(?:\?(?![.?])|&&|\|\|)", after) or re.search(r"(?:\bif\s*\(?\s*!?|!\s*|\bnot\s+)$", before):
+        return "skip"  # chromeEnv ? {...} : {}
+    if _launch_slot(f, t, q):
+        return "ok"
+    if name == "env" and re.search(r"[{,]\s*$", before) and re.match(r"\s*[,}]", after) and _launch_slot(f, t, q, shorthand=True):
+        return "ok"  # spawn(cmd, args, { env })
+    if depth >= _BIND_DEPTH:
+        return "bad"
+    if re.search(r"\breturn\s+$|\breturn\s*\{[^{}]*?(?:\.\.\.|\*\*)\s*$", before):
+        func = _func_at(t, q)
+        return "ok" if func and _calls_bound(f, t, func, depth + 1) else "bad"
+    line_start = t.rfind("\n", 0, q) + 1
+    heads = list(_ASSIGN_HEAD_RE.finditer(t[line_start:q]))
+    if heads and re.fullmatch(r"\s*", t[line_start + heads[-1].end() : q]):
+        n2 = heads[-1].group(1)
+        a, b = _scope_bounds(f, t, _line_of(t, q))
+        return "ok" if _name_bound(f, t, n2, a, b, (line_start, qend), depth + 1) else "bad"
+    return "bad"
+
+
+@lru_cache(maxsize=8)
+def _blanked_for(rel: str, t: str) -> str | None:
+    tb = _strings_blanked(rel, t)
+    return tb if len(tb) == len(t) else None
+
+
+def _in_code(f: ScanFile, t: str, pos: int, name: str) -> bool:
+    """The name at pos is code, not inside a string or docstring (prose naming a helper is no call site)."""
+    tb = _blanked_for(f.rel, t)
+    return tb is None or tb.startswith(name, pos)
+
+
+def _name_bound(f: ScanFile, t: str, name: str, a: int, b: int, skip: tuple[int, int], depth: int) -> bool:
+    """Every use of `name` in t[a:b] ends in a process launcher's env slot, and there is one."""
+    rx = re.compile(r"(?<![\w$])" + re.escape(name) + r"(?![\w$])")
+    ok = False
+    for m in rx.finditer(t, a, b):
+        if skip[0] <= m.start() < skip[1] or not _in_code(f, t, m.start(), name):
+            continue
+        kind = _use_bound(f, t, m.start(), m.end(), name, depth)
+        if kind == "bad":
+            return False
+        ok = ok or kind == "ok"
+    return ok
+
+
+def _calls_bound(f: ScanFile, t: str, func: str, depth: int) -> bool:
+    """Every call of `func` in the file ends in a process launcher's env slot, and there is one."""
+    ok = False
+    for m in re.finditer(r"(?<![\w$])" + re.escape(func) + r"(?=\s*\()", t):
+        if re.search(r"(?:\bdef|\bfunction\s*\*?)\s*$", t[max(0, m.start() - 20) : m.start()]):
+            continue
+        if m.start() > 0 and t[m.start() - 1] == "." and not t[: m.start()].endswith("..."):
+            continue
+        if not _in_code(f, t, m.start(), func):
+            continue
+        close = _close_of(t, t.index("(", m.end()))
+        kind = _use_bound(f, t, m.start(), close, func, depth)
+        if kind == "bad":
+            return False
+        ok = ok or kind == "ok"
+    return ok
 
 
 def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
     """"real", "env" (LOW, still backstop-eligible) or "bound" (ignored) for a copy of the environment.
 
-    Real only when the copy flows to a network call or a file write: in the same function as one,
-    or by its variable / function name in a network call's arguments (Task 10c B, R27). Bound when
-    every use hands it to a child process (env=, env:, spread) or returns it to a caller.
+    Real when the copy flows to a network call or a file write: in the same function as one, or by
+    its variable / function name in a network call's arguments (Task 10c B, R27). Bound only when
+    it lands in the env slot of a process launcher at every use and call site (R41), or in the
+    `debug` package's ^prefix key filter. Anything else is "env".
     """
     line = _line_of(t, pos)
     net = _net_calls(f, t)
@@ -1832,24 +1979,23 @@ def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
     returned = bool(re.search(r"\breturn\b", prefix)) or any(
         re.search(r"\breturn\s+(?:\{\s*(?:\.\.\.|\*\*)\s*)?" + re.escape(n) + r"(?![\w$])", t[a:b]) for n in names
     )
-    func = None
-    if returned:
-        heads = list(_FUNC_HEAD_RE.finditer(t, 0, pos))
-        if heads:
-            func = next((g for g in heads[-1].groups() if g), None)
+    func = _func_at(t, pos) if returned else None
     for n in names + ([func] if func else []):
-        rx = re.compile(r"(?<![\w$.])" + re.escape(n.rsplit(".", 1)[-1] if n == func else n) + r"(?![\w$])")
+        rx = re.compile(r"(?<![\w$.])" + re.escape(n) + r"(?![\w$])")
         if any(rx.search(args) for _, args in net):
             return "real"
-    if _FILTERED_TAIL_RE.match(t, end):
-        return "bound"  # a filtered env dict / key list that does not reach the network or a file
-    if returned and not names:
-        return "bound"
-    if re.search(r"\benv\s*[=:]\s*(?:\{\s*(?:\.\.\.|\*\*)\s*)?(?:dict\(\s*)?[\w$.]*\(?\s*$", prefix) and not names:
-        return "bound"  # an env= / env: argument built right here
-    if names and all(_handed_on(t, n, a, b, (line_start, end)) for n in names):
-        return "bound"
-    return "env"
+    if (m := _PREFIX_FILTER_RE.match(t, end)) is not None and not _SECRETISH_RE.search(m.group(1)):
+        return "bound"  # debug: Object.keys(process.env).filter(k => /^debug_/i.test(k)).reduce(...)
+    if names:
+        return "bound" if _name_bound(f, t, names[0], a, b, (line_start, end), 0) else "env"
+    # the copy itself, unnamed: an env= argument right here, or returned
+    q = pos
+    for opener in ("Object.fromEntries(", "dict(", "{**", "{..."):
+        k = prefix.rfind(opener)
+        if k >= 0 and re.fullmatch(r"\s*", prefix[k + len(opener) :]):
+            q = line_start + k  # bind the wrapping expression, not the inner call
+            break
+    return "bound" if _use_bound(f, t, q, end, "", 0) == "ok" else "env"
 
 
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:

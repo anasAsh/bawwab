@@ -307,7 +307,9 @@ def _baseline_cached(f: Fetched, t: Target, key: str, store: Store) -> None:
 
 
 def _cacheable(r: ScanReport) -> bool:
-    return not any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
+    # A known-malware lookup that failed must run again next time (R41, I1).
+    return not any((f.source == "gate" and f.rule in TRANSIENT_RULES) or f.rule == "identity.osv-unavailable"
+                   for f in r.findings)
 
 
 def _fetch_key(t: Target) -> str:

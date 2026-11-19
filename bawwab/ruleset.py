@@ -12,7 +12,7 @@ from pathlib import Path
 _SCAN = Path(__file__).resolve().parent / "scan"
 _SOURCES = ("rules/*.py", "identity.py", "files.py", "osv.py", "judge/prompt.py")
 # Bumped by hand when something outside _SOURCES changes findings (Task 10c: PyPI first-upload date).
-_REVISION = "10c"
+_REVISION = "10c-r1"
 
 
 def _compute() -> str:

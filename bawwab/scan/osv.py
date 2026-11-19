@@ -7,6 +7,8 @@ Results are cached per ecosystem:name@version for the life of the process; failu
 """
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from bawwab.types import Finding, Severity
@@ -14,6 +16,7 @@ from bawwab.types import Finding, Severity
 OSV_URL = "https://api.osv.dev"
 ECOSYSTEMS = {"npm": "npm", "pypi": "PyPI"}
 MAX_PAGES = 10
+DEFAULT_BUDGET_S = 5.0  # one total deadline for all pages (review M5)
 _CACHE: dict[str, tuple[tuple[str, str], ...]] = {}
 _CACHE_MAX = 1024
 
@@ -46,14 +49,19 @@ def _mal_ids(v: dict) -> list[str]:
     return [i for i in ids if isinstance(i, str) and i.startswith("MAL-")]
 
 
-def _query(ecosystem: str, name: str, version: str | None, base: str, timeout: float) -> tuple[tuple[str, str], ...]:
+def _query(ecosystem: str, name: str, version: str | None, base: str, timeout: float,
+           budget: float) -> tuple[tuple[str, str], ...]:
     body: dict = {"package": {"name": name, "ecosystem": ecosystem}}
     if version:
         body["version"] = version
     hits: list[tuple[str, str]] = []
     url = base.rstrip("/") + "/v1/query"
+    deadline = time.monotonic() + budget
     for _ in range(MAX_PAGES):
-        data = _post(url, body, timeout)
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise OsvError(f"no answer within {budget:g}s")
+        data = _post(url, body, min(timeout, left))
         for v in data.get("vulns") or []:
             if isinstance(v, dict) and (ids := _mal_ids(v)):
                 hits.append((ids[0], str(v.get("summary") or "")[:160]))
@@ -64,7 +72,8 @@ def _query(ecosystem: str, name: str, version: str | None, base: str, timeout: f
     return tuple(hits)
 
 
-def known_malware(kind: str, name: str, version: str | None, *, base: str = OSV_URL, timeout: float = 10) -> list[Finding]:
+def known_malware(kind: str, name: str, version: str | None, *, base: str = OSV_URL, timeout: float = 10,
+                  budget: float = DEFAULT_BUDGET_S) -> list[Finding]:
     """identity.known-malicious (CRITICAL) for a MAL-* advisory; identity.osv-unavailable (LOW) on failure."""
     ecosystem = ECOSYSTEMS.get(kind)
     if ecosystem is None or not name:
@@ -74,7 +83,7 @@ def known_malware(kind: str, name: str, version: str | None, *, base: str = OSV_
     hits = _CACHE.get(key)
     if hits is None:
         try:
-            hits = _query(ecosystem, name, version, base, timeout)
+            hits = _query(ecosystem, name, version, base, timeout, budget)
         except OsvError as e:
             return [Finding("identity.osv-unavailable", Severity.LOW, "identity",
                             f"known-malware lookup (OSV) failed: {str(e)[:160]}")]
