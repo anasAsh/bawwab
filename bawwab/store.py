@@ -414,6 +414,10 @@ class Store:
         q = "SELECT * FROM effect_state WHERE scope IN (%s)" % ",".join("?" * len(scopes))
         return {r["ident"]: dict(r) for r in self._conn.execute(q, scopes)}
 
+    def effect_rows_by_ident(self, ident: str) -> dict | None:
+        r = self._conn.execute("SELECT * FROM effect_state WHERE ident=?", (ident,)).fetchone()
+        return dict(r) if r else None
+
     def all_effect_rows(self) -> dict[str, dict]:
         return {r["ident"]: dict(r) for r in self._conn.execute("SELECT * FROM effect_state")}
 

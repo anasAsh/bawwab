@@ -16,6 +16,8 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / "xdg"))
     monkeypatch.delenv("BAWWAB_CHILD", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)  # the install marker is also written there
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)  # an extra project scope
     (root / "home").mkdir()
     if "real_spawn" not in request.keywords:
         def _no_spawn(cwd):

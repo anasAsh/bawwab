@@ -164,15 +164,23 @@ def _under(p: str, root: str) -> bool:
     return p == root or p.startswith(root.rstrip("/") + "/")
 
 
+_MARKER = ".bawwab-initialised"  # bawwab's install marker (~/.claude, $CLAUDE_PLUGIN_DATA): state like bawwab home
+# Interpreter code that drives bawwab's own state from inside (approve, init --skip, quarantine...).
+_BAWWAB_CODE = re.compile(
+    r"\bimport\s+bawwab\b|\bfrom\s+bawwab\b|\bbawwab\.[a-z_]+|\binit_skip\b|\bapprove\s*\(|bawwab\.db\b"
+    r"|quarantine\.flag|\.bawwab-initialised"
+)
+
+
 def _bawwab_path(p: str) -> bool:
-    if _under(p, _bawwab_root()):
+    if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER:
         return True
     return os.path.basename(p) == "bawwab.json" and os.path.basename(os.path.dirname(p)) == ".claude"
 
 
 def _bawwab_mentions() -> tuple[str, ...]:
     home = os.path.normpath(str(bawwab_home()))
-    out = [home, ".claude/bawwab.json"]
+    out = [home, ".claude/bawwab.json", _MARKER]
     user = str(Path.home())
     if _under(home, user) and home != user:
         rel = os.path.relpath(home, user)
@@ -963,12 +971,19 @@ def _extract(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
 
 
 def _bawwab_decision(words: list[str]) -> bool:
-    """A user-only bawwab command: approve, reject, or init without --scan (init --skip trusts everything)."""
+    """A user-only bawwab command: approve, reject, or init without --scan (init --skip trusts everything);
+    also any bawwab call whose subcommand can't be read ($var, $(...), `...` split off by the parser)."""
+    if len(words) == 1 and os.path.basename(words[0]) in ("bawwab", "bawwab.cli", "bawwab.cli:main"):
+        return True
     seen = False
     for i, w in enumerate(words):
         b = os.path.basename(w)
         if b in ("bawwab", "bawwab.cli", "bawwab.cli:main"):
             seen = True
+        elif i == 0 and w.startswith("$") and any(x in ("init", "approve", "reject") for x in words[1:]):
+            return True  # B=bawwab; $B init --skip
+        elif seen and ("$" in w or "`" in w):
+            return True  # the subcommand can't be read: x=init; bawwab $x --skip
         elif seen and w in ("approve", "reject"):
             return True
         elif seen and w == "init":
@@ -1008,7 +1023,7 @@ def _script_index(exe: str, args: list[str]) -> int | None:
 
 def _sensitive_text(text: str, cwd: str) -> bool:
     """Mentions a Claude config / install dir / bawwab path, literally or relative to cwd."""
-    if _mentions_sensitive(text):
+    if _mentions_sensitive(text) or _BAWWAB_CODE.search(text):
         return True
     for c in re.findall(r"[A-Za-z0-9_./~${}+@-]+", text):
         if "." not in c and "/" not in c:

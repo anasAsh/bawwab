@@ -5,11 +5,12 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import shutil
 import time
 from pathlib import Path
 
-from bawwab.agents import EffectItem, InstalledItem
+from bawwab.agents import CATEGORIES, EffectItem, InstalledItem
 from bawwab.agents import claude_code_watch as watch
 from bawwab.fetch.target import target_from_command, target_from_url
 from bawwab.gate.detect import _read_json
@@ -125,38 +126,38 @@ def _load(p: Path) -> object:
         raise UnreadableConfig(f"{p}: invalid JSON") from e
 
 
-def _settings_files(cwd: Path) -> list[tuple[str, str, Path]]:
-    """(ident label, scope, path)."""
-    c = str(cwd)
-    return [
-        ("user", "user", claude_home() / "settings.json"),
-        ("user-local", "user", claude_home() / "settings.local.json"),
-        (f"project:{c}", c, cwd / ".claude" / "settings.json"),
-        (f"project-local:{c}", c, cwd / ".claude" / "settings.local.json"),
-    ]
-
-
 def _tree_hash(root: Path) -> str:
-    """Content hash of a directory (or file): relative paths and bytes; stat data past the size caps."""
+    """Content hash of a directory (or file), resolving a symlinked root: relative paths and bytes (link
+    targets for nested links); stat data past the size caps."""
     h = hashlib.sha256()
-    if root.is_file() or root.is_symlink():
-        files = [root]
-        base = root.parent
-    else:
+    if root.is_symlink():
+        try:
+            h.update(f"ROOTLINK\0{os.readlink(root)}\n".encode())
+        except OSError:
+            pass
+    if root.is_dir():  # follows a symlinked root: the target tree is what runs
         files, base = [], root
         for dp, dns, fns in os.walk(root):
             dns[:] = sorted(d for d in dns if d != ".git")
             files += [Path(dp) / fn for fn in sorted(fns)]
+            files += [Path(dp) / d for d in dns if os.path.islink(os.path.join(dp, d))]
+    else:
+        files, base = [root], root.parent
     budget = _MAX_HASH_BYTES
     for i, p in enumerate(files):
         rel = os.path.relpath(p, base)
         try:
-            st = os.lstat(p)
+            st = os.stat(p)
         except OSError:
+            h.update(f"X\0{rel}\n".encode())
             continue
-        if os.path.islink(p):
-            h.update(f"L\0{rel}\0{os.readlink(p)}\n".encode())
-            continue
+        if p != root and os.path.islink(p):
+            try:
+                h.update(f"L\0{rel}\0{os.readlink(p)}\n".encode())
+            except OSError:
+                pass
+            if p.is_dir():
+                continue
         if i < _MAX_HASH_FILES and st.st_size <= budget:
             try:
                 data = p.read_bytes()
@@ -166,7 +167,7 @@ def _tree_hash(root: Path) -> str:
             h.update(f"F\0{rel}\0{len(data)}\n".encode())
             h.update(data)
         else:
-            h.update(f"S\0{rel}\0{st.st_size}\0{st.st_mtime_ns}\n".encode())
+            h.update(f"S\0{rel}\0{st.st_size}\0{st.st_mtime_ns}\0{st.st_ctime_ns}\n".encode())
     return h.hexdigest()
 
 
@@ -185,6 +186,74 @@ def _doc_files(base: Path) -> list[Path]:
 
 def _local(p: Path) -> Target:
     return Target("local", str(p), name=str(p), path=str(p))
+
+
+def _servers_items(scope_ident: str, scope: str, data: object, file: Path, prefix: tuple, src: str,
+                   base: Path) -> list[EffectItem]:
+    out = []
+    for name, spec in _servers(data).items():
+        t = _server_target(spec, base) if isinstance(spec, dict) else None
+        out.append(EffectItem(f"{_P}mcp:{scope_ident}:{name}", "servers", spec, scope,
+                              f"MCP server {name} ({src})", t, str(file), (*prefix, name)))
+    return out
+
+
+def _project_entry_items(projects: dict, key: str, cwd: Path) -> list[EffectItem]:
+    p = os.path.realpath(key)
+    return _servers_items(f"project:{p}", p, projects.get(key), claude_json(), ("projects", key, "mcpServers"),
+                          "~/.claude.json (project)", Path(p))
+
+
+def _hook_id(value: dict) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def _settings_items(label: str, scope: str, path: Path, data: object, projs: list[str],
+                    mcpjson: dict[str, EffectItem]) -> list[EffectItem]:
+    if not isinstance(data, dict):
+        return []
+    out: list[EffectItem] = []
+    hooks = data.get("hooks")
+    for event, groups in (hooks.items() if isinstance(hooks, dict) else []):
+        for g in groups if isinstance(groups, list) else []:
+            if not isinstance(g, dict):
+                continue
+            for h in g.get("hooks") if isinstance(g.get("hooks"), list) else []:
+                value = {"event": event, "matcher": g.get("matcher"), "hook": h}
+                cmd = h.get("command") if isinstance(h, dict) else None
+                out.append(EffectItem(f"{_P}hook:{label}:{event}:{_hook_id(value)}", "hooks", value, scope,
+                                      f"{event} hook `{cmd or h}` ({path})", None, str(path), ("hooks", event)))
+    for k in EXEC_KEYS:
+        if k in data:
+            out.append(EffectItem(f"{_P}setting:{label}:{k}", "exec_settings", data[k], scope,
+                                  f"setting {k} ({path})", None, str(path), (k,)))
+    mk = data.get("extraKnownMarketplaces")
+    for name, v in (mk.items() if isinstance(mk, dict) else []):
+        out.append(EffectItem(f"{_P}setting:{label}:extraKnownMarketplaces:{name}", "exec_settings", v, scope,
+                              f"marketplace {name} ({path})", None, str(path), ("extraKnownMarketplaces", name)))
+    ep = data.get("enabledPlugins")
+    for spec, on in (ep.items() if isinstance(ep, dict) else []):
+        out.append(EffectItem(f"{_P}setting:{label}:enabledPlugins:{spec}", "toggles", on, scope,
+                              f"enabledPlugins {spec}={json.dumps(on)} ({path})", None, str(path),
+                              ("enabledPlugins", spec), requires=(f"{_P}plugin:{spec}",)))
+    # .mcp.json servers this setting switches on: the project's own (project settings) or every project dir's
+    dirs = projs if scope == "user" else [scope]
+    servers = [i for i, it in mcpjson.items() if it.scope in dirs]
+    if "enableAllProjectMcpServers" in data:
+        v = data["enableAllProjectMcpServers"]
+        out.append(EffectItem(f"{_P}setting:{label}:enableAllProjectMcpServers", "toggles", v, scope,
+                              f"enableAllProjectMcpServers={json.dumps(v)} ({path})", None, str(path),
+                              ("enableAllProjectMcpServers",), requires=tuple(sorted(servers))))
+    if "enabledMcpjsonServers" in data:
+        v = data["enabledMcpjsonServers"]
+        names = v if isinstance(v, list) else []
+        req = tuple(sorted(f"{_P}mcp:mcpjson:{d}:{n}" for d in dirs for n in names if isinstance(n, str)
+                           if f"{_P}mcp:mcpjson:{d}:{n}" in mcpjson))
+        missing = [n for n in names if not any(f"{_P}mcp:mcpjson:{d}:{n}" in mcpjson for d in dirs)]
+        out.append(EffectItem(f"{_P}setting:{label}:enabledMcpjsonServers", "toggles", v, scope,
+                              f"enabledMcpjsonServers={json.dumps(v)} ({path})", None, str(path),
+                              ("enabledMcpjsonServers",), requires=req + tuple(f"missing:{n}" for n in missing)))
+    return out
 
 
 class ClaudeCodeAdapter:
@@ -215,68 +284,45 @@ class ClaudeCodeAdapter:
 
     # --- effect check
     def effect_items(self, cwd: Path) -> list[EffectItem]:
-        cwd = Path(cwd)
-        c = str(cwd)
+        home = str(Path.home())
+        projs = watch.project_dirs(str(cwd), home)
         out: list[EffectItem] = []
-        # MCP servers
         cj = _load(claude_json())
         projects = cj.get("projects") if isinstance(cj, dict) else None
-        proj = projects.get(c) if isinstance(projects, dict) else None
-        mj = _load(cwd / ".mcp.json")
-        for scope_ident, scope, data, file, prefix, src in (
-            ("user", "user", cj, claude_json(), ("mcpServers",), "~/.claude.json"),
-            (f"project:{c}", c, proj, claude_json(), ("projects", c, "mcpServers"), "~/.claude.json (project)"),
-            (f"mcpjson:{c}", c, mj, cwd / ".mcp.json", ("mcpServers",), ".mcp.json"),
-        ):
-            for name, spec in _servers(data).items():
-                t = _server_target(spec, cwd) if isinstance(spec, dict) else None
-                out.append(EffectItem(f"{_P}mcp:{scope_ident}:{name}", "servers", spec, scope,
-                                      f"MCP server {name} ({src})", t, str(file), (*prefix, name)))
-        # settings: hooks, code-running keys, marketplaces
-        for label, scope, path in _settings_files(cwd):
-            data = _load(path)
-            if not isinstance(data, dict):
-                continue
-            hooks = data.get("hooks")
-            for event, groups in (hooks.items() if isinstance(hooks, dict) else []):
-                for g in groups if isinstance(groups, list) else []:
-                    if not isinstance(g, dict):
-                        continue
-                    for h in g.get("hooks") if isinstance(g.get("hooks"), list) else []:
-                        value = {"event": event, "matcher": g.get("matcher"), "hook": h}
-                        hid = hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()[:12]
-                        cmd = h.get("command") if isinstance(h, dict) else None
-                        out.append(EffectItem(f"{_P}hook:{label}:{event}:{hid}", "hooks", value, scope,
-                                              f"{event} hook `{cmd or h}` ({path})", None, str(path),
-                                              ("hooks", event)))
-            for k in EXEC_KEYS:
-                if k in data:
-                    out.append(EffectItem(f"{_P}setting:{label}:{k}", "exec_settings", data[k], scope,
-                                          f"setting {k} ({path})", None, str(path), (k,)))
-            mk = data.get("extraKnownMarketplaces")
-            for name, v in (mk.items() if isinstance(mk, dict) else []):
-                out.append(EffectItem(f"{_P}setting:{label}:extraKnownMarketplaces:{name}", "exec_settings", v,
-                                      scope, f"marketplace {name} ({path})", None, str(path),
-                                      ("extraKnownMarketplaces", name)))
+        out += _servers_items("user", "user", cj, claude_json(), ("mcpServers",), "~/.claude.json", Path(cwd))
+        for k in watch.project_keys(projects, str(cwd), home):
+            out += _project_entry_items(projects, k, Path(cwd))
+        for p in projs:
+            out += _servers_items(f"mcpjson:{p}", p, _load(Path(p) / ".mcp.json"), Path(p) / ".mcp.json",
+                                  ("mcpServers",), ".mcp.json", Path(p))
+        settings = [("user", "user", claude_home() / "settings.json"),
+                    ("user-local", "user", claude_home() / "settings.local.json")]
+        for p in projs:
+            settings += [(f"project:{p}", p, Path(p) / ".claude" / "settings.json"),
+                         (f"project-local:{p}", p, Path(p) / ".claude" / "settings.local.json")]
+        mcpjson = {it.ident: it for it in out if it.ident.startswith(f"{_P}mcp:mcpjson:")}
+        for label, scope, path in settings:
+            out += _settings_items(label, scope, path, _load(path), projs, mcpjson)
         km_file = claude_home() / "plugins" / "known_marketplaces.json"
         km = _load(km_file)
         for name, v in (km.items() if isinstance(km, dict) else []):
             value = {k: x for k, x in v.items() if k != "lastUpdated"} if isinstance(v, dict) else v
             out.append(EffectItem(f"{_P}marketplace:{name}", "exec_settings", value, "user",
                                   f"marketplace {name} (known_marketplaces.json)", None, str(km_file), (name,)))
-        # plugins
         ip = _load(_plugins_file())
         plugins = ip.get("plugins") if isinstance(ip, dict) else None
         for spec, entries in (plugins.items() if isinstance(plugins, dict) else []):
             ents = entries if isinstance(entries, list) else []
-            value = [{k: e.get(k) for k in _PLUGIN_FIELDS} if isinstance(e, dict) else e for e in ents]
-            e = _plugin_entry(ents, cwd) or next((x for x in ents if isinstance(x, dict)
-                                                  and isinstance(x.get("installPath"), str) and x["installPath"]), None)
+            e = _plugin_entry(ents, Path(cwd)) or next((x for x in ents if isinstance(x, dict)
+                                                        and isinstance(x.get("installPath"), str)
+                                                        and x["installPath"]), None)
             t = _local(Path(e["installPath"])) if e else None
+            value = {"entries": [{k: x.get(k) for k in _PLUGIN_FIELDS} if isinstance(x, dict) else x for x in ents],
+                     "content": _tree_hash(Path(t.path)) if t else None}
             out.append(EffectItem(f"{_P}plugin:{spec}", "plugins", value, "user", f"plugin {spec}", t,
                                   str(_plugins_file()), ("plugins", spec), t.path if t else None))
-        # skills, commands, agents
-        for scope_ident, scope, base in (("user", "user", claude_home()), (f"project:{c}", c, cwd / ".claude")):
+        bases = [("user", "user", claude_home())] + [(f"project:{p}", p, Path(p) / ".claude") for p in projs]
+        for scope_ident, scope, base in bases:
             for d in _skill_dirs(base / "skills"):
                 out.append(EffectItem(f"{_P}skill:{scope_ident}:{d.name}", "skills", _tree_hash(d), scope,
                                       f"skill {d.name} ({d})", _local(d), path=str(d)))
@@ -288,8 +334,19 @@ class ClaudeCodeAdapter:
                                           f"{kind[:-1]} {rel} ({f})", _local(f), path=str(f)))
         return out
 
+    def install_items(self, cwd: Path) -> list[EffectItem]:
+        """effect_items plus every project's ~/.claude.json servers: the install-time snapshot."""
+        out = self.effect_items(cwd)
+        seen = {it.ident for it in out}
+        cj = _load(claude_json())
+        projects = cj.get("projects") if isinstance(cj, dict) else None
+        for k in (projects if isinstance(projects, dict) else {}):
+            if isinstance(k, str):
+                out += [it for it in _project_entry_items(projects, k, Path(cwd)) if it.ident not in seen]
+        return out
+
     def semantic_state(self, cwd: Path) -> dict:
-        state: dict = {"servers": {}, "plugins": {}, "hooks": {}, "exec_settings": {}, "skills": {}}
+        state: dict = {c: {} for c in CATEGORIES}
         for it in self.effect_items(cwd):
             state[it.category][it.ident] = it.value
         return state
@@ -332,7 +389,8 @@ def _move_to_quarantine(p: Path) -> tuple[bool, str]:
 
 def _remove_json(file: Path, keypath: list, item: dict) -> tuple[bool, str]:
     try:
-        data = json.loads(file.read_text())
+        original = file.read_text()
+        data = json.loads(original)
     except (OSError, ValueError) as e:
         return False, f"could not read {file}: {type(e).__name__}"
     parent = data
@@ -353,7 +411,7 @@ def _remove_json(file: Path, keypath: list, item: dict) -> tuple[bool, str]:
         shutil.copy2(file, backup)
         os.chmod(backup, 0o600)
         tmp = file.with_name(f".{file.name}.bawwab-{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(data, indent=2) + "\n")
+        tmp.write_text(_dump_like(original, data))
         try:
             os.chmod(tmp, os.stat(file).st_mode & 0o777)
         except OSError:
@@ -364,6 +422,16 @@ def _remove_json(file: Path, keypath: list, item: dict) -> tuple[bool, str]:
     return True, f"removed it from {file} (backup: {backup})"
 
 
+def _dump_like(original: str, data: object) -> str:
+    """JSON in the original file's style: its indentation (spaces or tab, or compact), raw unicode."""
+    m = re.search(r"\n([ \t]+)\S", original)
+    if m is None:
+        return json.dumps(data, ensure_ascii=False, separators=(",", ":") if "\n" not in original.strip() else None)
+    indent = m.group(1)
+    text = json.dumps(data, ensure_ascii=False, indent="\t" if indent.startswith("\t") else len(indent))
+    return text + ("\n" if original.endswith("\n") else "")
+
+
 def _remove_hook(hooks: dict, event: str, item: dict) -> bool:
     """Remove the one hook whose (event, matcher, hook) hashes to the quarantined item's ident."""
     groups = hooks.get(event)
@@ -371,9 +439,7 @@ def _remove_hook(hooks: dict, event: str, item: dict) -> bool:
     for g in groups if isinstance(groups, list) else []:
         hs = g.get("hooks") if isinstance(g, dict) else None
         for h in list(hs) if isinstance(hs, list) else []:
-            value = {"event": event, "matcher": g.get("matcher"), "hook": h}
-            hid = hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()[:12]
-            if hid == want:
+            if _hook_id({"event": event, "matcher": g.get("matcher"), "hook": h}) == want:
                 hs.remove(h)
                 if not hs:
                     groups.remove(g)

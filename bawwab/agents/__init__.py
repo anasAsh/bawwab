@@ -25,9 +25,11 @@ class InstalledItem:
     spec: dict = field(default_factory=dict)
 
 
-CATEGORIES = ("servers", "plugins", "hooks", "exec_settings", "skills")
+CATEGORIES = ("servers", "plugins", "hooks", "exec_settings", "skills", "toggles")
 # Config that runs commands but has nothing to download and scan: quarantined unless approved.
-UNSCANNABLE = ("hooks", "exec_settings")
+# Toggles (enabledPlugins, enableAllProjectMcpServers, enabledMcpjsonServers) are accepted when what they
+# switch on (`requires`) is accepted.
+UNSCANNABLE = ("hooks", "exec_settings", "toggles")
 
 
 def value_hash(value: object) -> str:
@@ -48,6 +50,7 @@ class EffectItem:
     file: str | None = None  # JSON file the entry lives in
     keypath: tuple = ()  # keys of the entry inside that file
     path: str | None = None  # a skill dir / command or agent file / plugin install dir
+    requires: tuple = ()  # toggles: idents that must be accepted for an enable to be accepted
 
     @property
     def hash(self) -> str:
@@ -58,6 +61,7 @@ class EffectItem:
         return {
             "ident": self.ident, "category": self.category, "scope": self.scope, "label": self.label,
             "file": self.file, "keypath": list(self.keypath), "path": self.path, "hash": self.hash,
+            "requires": list(self.requires),
             "target": None if t is None else {"kind": t.kind, "raw": t.raw, "name": t.name, "version": t.version,
                                                "url": t.url, "path": t.path},
         }
@@ -72,6 +76,10 @@ class AgentAdapter(Protocol):
     def list_installed(self, cwd: Path) -> list[InstalledItem]: ...
 
     def semantic_state(self, cwd: Path) -> dict: ...
+
+    def effect_items(self, cwd: Path) -> list[EffectItem]: ...
+
+    def install_items(self, cwd: Path) -> list[EffectItem]: ...
 
     def remove(self, item: dict) -> tuple[bool, str]: ...
 

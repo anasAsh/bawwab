@@ -48,6 +48,8 @@ def _build() -> argparse.ArgumentParser:
     sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
     fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
     fx.add_argument("--cwd", help="project directory (default: the current directory)")
+    fx.add_argument("--retry", action="store_true",
+                    help="after a failed check or lost state: repair, rebuild by scanning, clear the error (user)")
     return p
 
 
@@ -62,15 +64,9 @@ def _spec(spec: str) -> str:
 
 
 def _start_full_scan(cwd: Path) -> None:
-    from bawwab import inventory as inv
-    from bawwab.effects import ensure_provisional
-    from bawwab.store import open_store
+    from bawwab.effects import start_full_scan
 
-    store = open_store()
-    ensure_provisional(store, cwd)
-    if store.init_state() == "none":
-        store.set_init_state("scanned")
-    inv.spawn_background(cwd, full=True)
+    start_full_scan(cwd)
     print("bawwab: full scan started in the background. Results arrive as warnings; anything not clean is "
           "quarantined (tools are blocked) until the user approves or rejects it.")
 
@@ -83,7 +79,11 @@ def _init(args) -> int:
     if args.skip:
         from bawwab.effects import init_skip
 
-        n = init_skip(cwd)
+        try:
+            n = init_skip(cwd)
+        except RuntimeError as e:
+            print(f"error: {sanitise(str(e), 300)}", file=sys.stderr)
+            return 1
         print(f"bawwab: {n} installed items accepted as trusted without scan; only later changes are checked. "
               "Run `bawwab scan --all` to scan them at any time.")
         return 0
@@ -160,8 +160,8 @@ def _gate() -> int:
         from bawwab.effects import pre_tool_decision
 
         out = pre_tool_decision(raw[0], Path(raw[2]))
-    except Exception:  # noqa: BLE001 - refresh records its own failures as a quarantine; this is a bawwab bug
-        out = None
+    except Exception as e:  # noqa: BLE001 - a bawwab bug: blocks only if the config changed or is quarantined
+        out = _effects_bug(raw[0], Path(raw[2]), e, post=False)
     if out is not None:
         print(json.dumps(out))
         return 0
@@ -209,20 +209,23 @@ def _inventory(args) -> int:
         cwd = _hook_cwd(args.cwd)
         if args.background:
             return inv.background(cwd, full=args.full)
+        from bawwab.effects import session_start
         from bawwab.store import open_store
 
         store = open_store()
+        ctx = session_start(cwd, store=store)
         if store.init_state() == "none":  # first run: ask the user before scanning anything
-            from bawwab.effects import ask_context, ensure_provisional
-
-            ensure_provisional(store, cwd)
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
-                                                     "additionalContext": ask_context(cwd)}}))
+            if ctx:
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
             return 0
         inv.spawn_background(cwd)
         warnings = store.take_warnings()
+        parts = [ctx] if ctx else []
         if warnings:
-            print(json.dumps(inv.hook_output("SessionStart", warnings)))
+            parts.append(inv.hook_output("SessionStart", warnings)["hookSpecificOutput"]["additionalContext"])
+        if parts:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                                     "additionalContext": "\n\n".join(parts)}}))
     except Exception:  # noqa: BLE001 - never break session start
         pass
     return 0
@@ -244,6 +247,40 @@ def _notify() -> int:
     return 0
 
 
+def _effects_bug(tool: str, cwd: Path, e: Exception, post: bool) -> dict | None:
+    """An unexpected error in the effect check: fail closed when the watched config changed (or a quarantine
+    is known), else stay out of the way (a non-install call is never blocked by a bawwab error)."""
+    try:
+        from bawwab import effects
+        from bawwab.paths import bawwab_home
+
+        fpm = effects.fp_module()
+        home, bh = str(Path.home()), str(bawwab_home())
+        if not fpm.initialised(home, bh):
+            return None
+        changed = fpm.check(str(cwd), home, bh) == "changed"
+        known = fpm.quarantine_active(bh)
+    except Exception:  # noqa: BLE001 - can't tell: fail closed
+        changed, known = True, True
+    if not changed and not (known and not post):
+        return None
+    reason = f"bawwab: the effect check failed ({sanitise(f'{type(e).__name__}: {e}', 200)}); tool calls are " \
+             "blocked (fail closed) until the user runs `! bawwab effects --retry`"
+    if changed:
+        try:
+            from bawwab import effects
+
+            effects._mark_failed(reason)
+        except Exception:  # noqa: BLE001
+            pass
+    if post:
+        return {"decision": "block", "reason": reason}
+    if tool in ("Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"):
+        return None
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
 def _hook_json() -> dict | None:
     try:
         data = json.loads(sys.stdin.read())
@@ -263,8 +300,8 @@ def _post() -> int:
         from bawwab.effects import post_tool_decision
 
         out = post_tool_decision(Path(str(data.get("cwd") or os.getcwd())))
-    except Exception:  # noqa: BLE001 - refresh records its own failures as a quarantine
-        out = None
+    except Exception as e:  # noqa: BLE001 - a bawwab bug: blocks only if the config changed
+        out = _effects_bug(str(data.get("tool_name") or ""), Path(str(data.get("cwd") or os.getcwd())), e, post=True)
     if out is not None:
         print(json.dumps(out))
     return 0
@@ -274,7 +311,10 @@ def _effects(args) -> int:
     from bawwab import effects
 
     cwd = Path(args.cwd) if args.cwd else Path.cwd()
-    effects.refresh(cwd, force=True)
+    if args.retry:
+        effects.retry(cwd)
+    else:
+        effects.refresh(cwd, force=True)
     entries = effects.quarantined()
     if not entries:
         print("bawwab: nothing is quarantined")

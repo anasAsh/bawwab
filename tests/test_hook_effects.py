@@ -61,8 +61,11 @@ def _prime(cwd: Path) -> None:
     m.save(str(_bh()), str(cwd), m.fingerprint(str(cwd), h), m.semantic_digest(str(cwd), h))
 
 
-def _setup(tmp_path: Path) -> Path:
+def _setup(tmp_path: Path, marker: bool = True) -> Path:
+    """A home with config; marker=True: bawwab's install marker exists (its first SessionStart happened)."""
     home = Path.home()
+    if marker:
+        _w(home / ".claude/.bawwab-initialised", {"installed_at": "2026-11-19T00:00:00+00:00", "init_state": "none"})
     _w(home / ".claude.json", {"numStartups": 1, "mcpServers": {}})
     for i in range(20):
         _w(home / f".claude/skills/s{i}/SKILL.md", "x")
@@ -116,11 +119,19 @@ def test_quarantine_flag_blocks_all_but_read_only(tmp_path):
     assert _calls(log) == ["gate"] * 3
 
 
-def test_broken_bawwab_never_blocks_ordinary_call_on_change(tmp_path):
+def test_before_first_session_start_the_effect_check_is_inactive(tmp_path):
+    proj = _setup(tmp_path, marker=False)
+    env, log = _fake_bawwab(tmp_path, "sys.exit(1)")
+    r = run(call("Bash", proj, command="ls"), "gate", env=env)
+    assert r.stdout == "" and _calls(log) == []
+
+
+def test_broken_bawwab_after_change_fails_closed(tmp_path):
     proj = _setup(tmp_path)  # no stored fingerprint: "changed"
     env, log = _fake_bawwab(tmp_path, "sys.exit(1)")
     r = run(call("Bash", proj, command="ls"), "gate", env=env)
-    assert r.stdout == "" and _calls(log) == ["gate"]
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert _calls(log) == ["gate"] and (_bh() / "effects.error").exists()
 
 
 def test_post_only_on_change_and_only_for_writing_tools(tmp_path):
@@ -170,8 +181,10 @@ def test_timeout_marks_effects_error(tmp_path, monkeypatch, capsys):
 
 def test_real_bawwab_end_to_end_and_hot_path_speed(tmp_path):
     """Real `bawwab gate`: the first call stores the fingerprint; then unchanged calls stay < 100 ms."""
-    proj = _setup(tmp_path)
+    proj = _setup(tmp_path, marker=False)
     ls = call("Bash", proj, command="ls")
+    r = run(json.dumps({"cwd": str(proj)}), "inventory")  # first SessionStart: baseline + marker, asks
+    assert "bawwab init --scan" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"], r.stderr
     r = run(ls, "gate")
     assert r.returncode == 0 and r.stdout == "", r.stderr
     assert (_bh() / "fp").exists()

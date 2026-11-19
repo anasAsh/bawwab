@@ -1,17 +1,23 @@
 """Effect check (spec §1b): watch what actually changed in the agent's config and install dirs.
 
 The PreToolUse gate parses commands, but it can't fully understand bash. This module compares the semantic
-state (servers, plugins, hooks, code-running settings, skills/commands/agents) with the accepted state; a
-new or changed item is accepted when its content was approved or scanned clean, and is otherwise
+state (servers, plugins, hooks, code-running settings, toggles, skills/commands/agents) with the accepted
+state; a new or changed item is accepted when its content was approved or scanned clean, and is otherwise
 quarantined: every tool call except read-only ones is denied until the user approves or rejects it.
 
-First run (spec §1a) lives here too: the provisional baseline, `init --scan`/`--skip`, `scan --all`.
+First run (spec §1a) lives here too. The provisional baseline is taken ONLY at the first SessionStart (the
+install time), never by the effect check, and an install marker outside $BAWWAB_HOME
+(~/.claude/.bawwab-initialised, and $CLAUDE_PLUGIN_DATA/.bawwab-initialised) records the install time and
+init state: bawwab state that goes missing during a session fails closed (effects.error) until the user runs
+`! bawwab effects --retry` or `! bawwab init --scan`.
 """
 from __future__ import annotations
 
 import fcntl
 import importlib.util
 import json
+import os
+import shutil
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -31,6 +37,12 @@ MAX_SHOWN_FINDINGS = 5
 SECONDS_PER_ITEM = 20
 _FP_FILE = Path(__file__).resolve().parent.parent / "hooks" / "fingerprint.py"
 _fp_mod = None
+_ACCEPTED = ("provisional", "unscanned", "accepted", "approved")
+
+
+class EffectsFailed(Exception):
+    """The effect check could not run after a change, and not even its failure could be recorded in the db
+    (the hook-visible marker and flag were written instead)."""
 
 
 # ------------------------------------------------------------------ files shared with the hook
@@ -51,24 +63,45 @@ def flag_path() -> Path:
 
 
 def error_marker() -> Path:
-    """Written by the hook when the effect check timed out; turned into an effects.error quarantine."""
+    """Written by the hook (or here, when the db is unusable) when the effect check failed after a change."""
     return bawwab_home() / "effects.error"
+
+
+def lock_path() -> Path:
+    return bawwab_home() / "effects.lock"
+
+
+def _db_path() -> Path:
+    return bawwab_home() / "bawwab.db"
 
 
 def _sync_flag(store: Store) -> None:
     try:
-        if store.active_quarantine():
+        n = len(store.active_quarantine())
+        if n:
             flag_path().parent.mkdir(parents=True, exist_ok=True)
             flag_path().touch()
         else:
             flag_path().unlink(missing_ok=True)
+        fp_module().set_quarantine(str(bawwab_home()), n)
+    except OSError:
+        pass
+
+
+def _mark_failed(reason: str) -> None:
+    """Fail closed without the db: the marker and flag the hook (stdlib) checks."""
+    try:
+        bawwab_home().mkdir(parents=True, exist_ok=True, mode=0o700)
+        error_marker().write_text(reason[:200])
+        flag_path().touch()
     except OSError:
         pass
 
 
 @contextmanager
 def _lock():
-    p = bawwab_home() / "effects.lock"
+    """Exclusive effect-check lock. Any failure to take it (e.g. the path is a directory) raises."""
+    p = lock_path()
     p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with open(p, "a") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
@@ -78,13 +111,95 @@ def _lock():
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
+# ------------------------------------------------------------------ install marker
+
+_CORRUPT = {"corrupt": True}
+
+
+def read_marker() -> dict | None:
+    """The install marker: None when absent; {"corrupt": True} when unreadable or the copies disagree."""
+    found = []
+    for p in fp_module().marker_paths(str(Path.home())):
+        try:
+            with open(p) as f:
+                d = json.load(f)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return dict(_CORRUPT)
+        if not isinstance(d, dict) or not isinstance(d.get("installed_at"), str):
+            return dict(_CORRUPT)
+        found.append(d)
+    if not found:
+        return None
+    if any(d.get("installed_at") != found[0].get("installed_at") for d in found):
+        return dict(_CORRUPT)
+    return found[0]
+
+
+def write_marker(installed_at: str, init_state: str) -> None:
+    data = json.dumps({"installed_at": installed_at, "init_state": init_state})
+    for p in fp_module().marker_paths(str(Path.home())):
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            tmp = f"{p}.{os.getpid()}.tmp"
+            with open(tmp, "w") as f:
+                f.write(data)
+            os.replace(tmp, p)
+        except OSError:
+            pass
+
+
+def set_init_state(store: Store, v: str) -> None:
+    store.set_init_state(v)
+    write_marker(store.get_meta("installed_at") or datetime.now(UTC).isoformat(), v)
+
+
+def state_problem(store: Store, marker: dict | None) -> str | None:
+    """Why bawwab's state can't be trusted (it was wiped, replaced or edited), or None."""
+    if marker is None:
+        return None
+    if marker.get("corrupt"):
+        return "the install marker (~/.claude/.bawwab-initialised) is unreadable"
+    installed = store.get_meta("installed_at")
+    if installed is None:
+        return "bawwab's state (~/.bawwab) is missing or was reset"
+    if installed != marker["installed_at"]:
+        return "bawwab's state does not match the install marker"
+    if marker.get("init_state") not in (None, store.init_state()):
+        return "bawwab's init state was changed outside bawwab"
+    return None
+
+
+def _installed(store: Store, cwd: Path) -> bool:
+    """First install: record the install time, take the provisional baseline, write the marker. False if
+    bawwab was already installed (marker or db state)."""
+    if read_marker() is not None or store.get_meta("installed_at") is not None:
+        return False
+    ts = datetime.now(UTC).isoformat()
+    take_install_baseline(store, cwd)
+    store.set_meta("installed_at", ts)
+    write_marker(ts, store.init_state())
+    store.audit("install", installed_at=ts)
+    return True
+
+
+def _restore_marker(store: Store) -> dict | None:
+    marker = read_marker()
+    installed = store.get_meta("installed_at")
+    if marker is None and installed is not None:  # marker deleted, db intact: put it back
+        write_marker(installed, store.init_state())
+        store.audit("install.marker_restored")
+        marker = read_marker()
+    return marker
+
+
 # ------------------------------------------------------------------ semantic state
 
-def effect_items(cwd: Path) -> list[EffectItem]:
-    """All adapters' items; a watched file caught mid-write is re-read (then the error propagates)."""
+def _retry_unreadable(fn):
     for attempt in range(3):
         try:
-            return [it for a in ADAPTERS for it in a.effect_items(Path(cwd))]
+            return fn()
         except UnreadableConfig:
             if attempt == 2:
                 raise
@@ -92,34 +207,30 @@ def effect_items(cwd: Path) -> list[EffectItem]:
     return []  # pragma: no cover
 
 
+def effect_items(cwd: Path) -> list[EffectItem]:
+    """All adapters' items; a watched file caught mid-write is re-read (then the error propagates)."""
+    return _retry_unreadable(lambda: [it for a in ADAPTERS for it in a.effect_items(Path(cwd))])
+
+
 def semantic_state(cwd: Path) -> dict:
-    state: dict = {"servers": {}, "plugins": {}, "hooks": {}, "exec_settings": {}, "skills": {}}
+    state: dict = {}
     for a in ADAPTERS:
         for cat, items in a.semantic_state(Path(cwd)).items():
             state.setdefault(cat, {}).update(items)
     return state
 
 
-def _scopes(cwd: Path) -> tuple[str, str]:
-    return "user", str(cwd)
+def _scopes(cwd: Path) -> tuple[str, ...]:
+    return ("user", *fp_module()._watch_tables()[0].project_dirs(str(cwd), str(Path.home())))
 
 
-def ensure_provisional(store: Store, cwd: Path, items: list[EffectItem] | None = None) -> int:
-    """Before init, the first state seen for a scope (user, or this project) is its provisional baseline."""
-    if store.init_state() != "none":
-        return 0
-    todo = [s for s in _scopes(cwd) if store.get_meta(f"provisional:{s}") is None]
-    if not todo:
-        return 0
-    items = effect_items(cwd) if items is None else items
-    n = 0
+def take_install_baseline(store: Store, cwd: Path) -> int:
+    """The provisional baseline: the state at install time (this project, the user, and every project's
+    ~/.claude.json servers). Only the first SessionStart (or init) takes it, never the effect check."""
+    items = _retry_unreadable(lambda: [it for a in ADAPTERS for it in a.install_items(Path(cwd))])
     for it in items:
-        if it.scope in todo:
-            store.put_effect(it.ident, it.hash, it.scope, "provisional", only_new=True)
-            n += 1
-    for s in todo:
-        store.set_meta(f"provisional:{s}", datetime.now(UTC).isoformat())
-    return n
+        store.put_effect(it.ident, it.hash, it.scope, "provisional", only_new=True)
+    return len(items)
 
 
 # ------------------------------------------------------------------ evaluation
@@ -129,7 +240,8 @@ def _synthetic_key(it: EffectItem) -> str:
 
 
 def _unscannable_report(it: EffectItem) -> ScanReport:
-    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting"}.get(it.category, "effects.unscannable")
+    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting", "toggles": "effects.toggle"}.get(
+        it.category, "effects.unscannable")
     what = json.dumps(it.value, sort_keys=True, default=str)
     reason = f"{it.label} was added or changed outside a scanned install: {what}"
     return synthetic_report(sanitise(reason, 400), _synthetic_key(it), Target("local", it.ident, name=it.label),
@@ -146,8 +258,19 @@ def _scan_item(it: EffectItem, scan, cfg, store: Store) -> ScanReport:
         cleanup()
 
 
-def _evaluate(it: EffectItem, scan, cfg, store: Store) -> tuple[bool, ScanReport]:
+def _accepted_now(store: Store, ident: str, current: dict[str, str]) -> bool:
+    row = store.effect_rows_by_ident(ident)
+    return row is not None and row["status"] in _ACCEPTED and current.get(ident) == row["hash"]
+
+
+def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) -> tuple[bool, ScanReport]:
     """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean."""
+    if it.category == "toggles":
+        r = _unscannable_report(it)
+        if store.is_rejected(r.key):
+            return False, r
+        off = it.value is False or it.value in ([], None)
+        return off or store.is_approved(r.key) or all(_accepted_now(store, i, current) for i in it.requires), r
     if it.category in UNSCANNABLE or it.target is None:
         r = _unscannable_report(it)
         return store.is_approved(r.key) and not store.is_rejected(r.key), r
@@ -178,29 +301,36 @@ def _quarantine(store: Store, it: EffectItem, r: ScanReport) -> str:
     return qid
 
 
+def _toggles_last(items: list[EffectItem]) -> list[EffectItem]:
+    return sorted(items, key=lambda it: it.category == "toggles")
+
+
 def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
-    """Compare the semantic state with the accepted one. Returns the quarantine ids created."""
+    """Compare the semantic state with the accepted one. Returns the quarantine ids created.
+
+    Never takes a baseline: an item that has no accepted row is new and is scanned (or quarantined)."""
     from bawwab.config import load_config
 
     cwd = Path(cwd)
     scan = scan or scan_target
     store = store or open_store()
     items = effect_items(cwd)
-    ensure_provisional(store, cwd, items)
     cfg = load_config(cwd)
     accepted = store.effect_rows(_scopes(cwd))
     active = {(q["ident"], q["hash"]): q for q in store.active_quarantine()}
     current = {it.ident: it.hash for it in items}
     new_ids: list[str] = []
-    for it in items:
+    for it in _toggles_last(items):
         row = accepted.get(it.ident)
         if (row and row["hash"] == it.hash) or (it.ident, it.hash) in active:
             continue
-        ok, r = _evaluate(it, scan, cfg, store)
+        ok, r = _evaluate(it, scan, cfg, store, current)
         if ok:
             store.put_effect(it.ident, it.hash, it.scope, "accepted", r.key)
             store.audit("effects.accept", ident=it.ident, key=r.key)
         else:
+            if row is not None:
+                store.drop_effect(it.ident)  # the old content is no longer what is installed
             new_ids.append(_quarantine(store, it, r))
     for ident in set(accepted) - set(current):
         store.drop_effect(ident)
@@ -220,8 +350,8 @@ def _in_view(q: dict, cwd: Path) -> bool:
 
 
 def _error_quarantine(store: Store, reason: str) -> str | None:
-    if any(q["ident"] == ERROR_IDENT for q in store.active_quarantine()):
-        return None
+    if any(q["ident"] == ERROR_IDENT and not store.is_approved(q["key"]) for q in store.active_quarantine()):
+        return None  # one open effects.error at a time (an approved one no longer counts)
     ts = datetime.now(UTC).isoformat()
     r = synthetic_report(sanitise(f"the effect check failed: {reason}", 300), f"effect:{ERROR_IDENT}#{ts}",
                          Target("local", ERROR_IDENT, name="effect check"), rule=ERROR_IDENT)
@@ -231,36 +361,67 @@ def _error_quarantine(store: Store, reason: str) -> str | None:
     return qid
 
 
+def _fail_closed(store: Store | None, reason: str) -> list[str]:
+    """Record a failed check as an effects.error quarantine; without a usable db, raise EffectsFailed."""
+    try:
+        store = store or open_store()
+        qid = _error_quarantine(store, reason)
+        _sync_flag(store)
+        return [qid] if qid else []
+    except Exception as e:  # noqa: BLE001
+        _mark_failed(reason)
+        raise EffectsFailed(reason) from e
+
+
+def _active(store: Store | None) -> bool:
+    """Bawwab has been installed (first SessionStart): an install marker, or install state in the db."""
+    if read_marker() is not None:
+        return True
+    if not _db_path().exists():
+        return False
+    return (store or open_store()).get_meta("installed_at") is not None
+
+
 def refresh(cwd: Path, scan=None, store: Store | None = None, force: bool = False) -> list[str]:
     """Fingerprint first; the semantic comparison (and scans) only when something really changed.
 
-    Never raises for a failed check: that is recorded as an effects.error quarantine (fail closed), and the
-    stored fingerprint is left alone so the next call checks again.
+    Before the first SessionStart this does nothing. Missing/replaced state, or a check that fails after a
+    change, is recorded as an effects.error quarantine (fail closed) and the stored fingerprint is left
+    alone; when even that can't be recorded, EffectsFailed is raised (marker and flag written).
     """
-    store = store or open_store()
+    if not _active(store):
+        return []
     fpm = fp_module()
     bh, home, c = str(bawwab_home()), str(Path.home()), str(cwd)
-    new: list[str] = []
-    with _lock():
+    try:
+        store = store or open_store()
+        new: list[str] = []
         _take_error_marker(store, new)
+        marker = _restore_marker(store)
+        problem = state_problem(store, marker)
+    except EffectsFailed:
+        raise
+    except Exception as e:  # noqa: BLE001 - the db itself is unusable
+        return _fail_closed(None, sanitise(f"{type(e).__name__}: {e}", 200))
+    if problem:
+        return new + _fail_closed(store, problem)
+    try:
         stored = fpm.load(bh, c)
         fp = fpm.fingerprint(c, home)
         if not force and stored is not None and stored[0] == fp:
-            _sync_flag(store)
             return new
         digest = fpm.semantic_digest(c, home)
         if not force and stored is not None and stored[1] == digest:
             fpm.save(bh, c, fp, digest)
-            _sync_flag(store)
             return new
-        try:
+    except Exception as e:  # noqa: BLE001 - can't tell what changed: check fails closed
+        return new + _fail_closed(store, sanitise(f"{type(e).__name__}: {e}", 200))
+    try:
+        with _lock():
             new += check_effects(Path(cwd), scan, store)
-        except Exception as e:  # noqa: BLE001 - fail closed
-            qid = _error_quarantine(store, sanitise(f"{type(e).__name__}: {e}", 200))
-            new += [qid] if qid else []
-            _sync_flag(store)
-            return new
-        fpm.save(bh, c, fp, digest)
+            fpm.save(bh, c, fp, digest)
+    except Exception as e:  # noqa: BLE001 - fail closed
+        return new + _fail_closed(store, sanitise(f"{type(e).__name__}: {e}", 200))
     return new
 
 
@@ -277,6 +438,39 @@ def _take_error_marker(store: Store, new: list[str]) -> None:
         new.append(qid)
     m.unlink(missing_ok=True)
     _sync_flag(store)
+
+
+def retry(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
+    """`bawwab effects --retry` (user): repair what can be repaired, clear effects.error, check again.
+
+    Lost state is rebuilt by scanning: with no accepted rows, every installed item is new (scanned)."""
+    lp = lock_path()
+    if lp.is_symlink() or (lp.exists() and not lp.is_file()):  # e.g. replaced by a directory: wedges the lock
+        if lp.is_dir() and not lp.is_symlink():
+            shutil.rmtree(lp, ignore_errors=True)
+        else:
+            lp.unlink(missing_ok=True)
+    store = store or open_store()
+    marker = read_marker()
+    installed = store.get_meta("installed_at")
+    if marker is None or marker.get("corrupt") or installed != marker.get("installed_at"):
+        ts = installed or (marker or {}).get("installed_at") or datetime.now(UTC).isoformat()
+        if marker and not marker.get("corrupt") and marker.get("installed_at"):
+            ts = marker["installed_at"]
+        store.set_meta("installed_at", ts)
+        state = (marker or {}).get("init_state") if marker and not marker.get("corrupt") else None
+        if state in ("none", "scanned", "skipped") and state != store.init_state():
+            store.set_init_state(state)
+        write_marker(ts, store.init_state())
+        store.audit("effects.rebuild", installed_at=ts)
+    elif marker.get("init_state") != store.init_state():
+        write_marker(installed, store.init_state())
+    error_marker().unlink(missing_ok=True)
+    for q in store.active_quarantine():
+        if q["ident"] == ERROR_IDENT:
+            store.set_quarantine(q["qrow"], status="resolved")
+    _sync_flag(store)
+    return refresh(cwd, scan, store, force=True)
 
 
 # ------------------------------------------------------------------ quarantine
@@ -370,30 +564,73 @@ def quarantine_text(entries: list[dict]) -> str:
     return head + "\n" + "\n".join(_summary(q) for q in entries)
 
 
+def _deny(reason: str) -> dict:
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+_FAILED_TEXT = ("⛔ bawwab: the effect check failed and bawwab's state could not be updated, so tool calls are "
+                "blocked (fail closed). Tell the user to run `! bawwab effects --retry`.")
+
+
 def pre_tool_decision(tool_name: str, cwd: Path, scan=None, store: Store | None = None) -> dict | None:
     """PreToolUse: run the effect check if the fingerprint moved, then deny while anything is quarantined."""
-    store = store or open_store()
-    refresh(cwd, scan, store)
+    try:
+        refresh(cwd, scan, store)
+    except EffectsFailed as e:
+        return None if tool_name in READ_ONLY_TOOLS else _deny(f"{_FAILED_TEXT} ({sanitise(str(e), 200)})")
     if tool_name in READ_ONLY_TOOLS:
         return None
-    entries = quarantined(store)
-    if not entries:
+    try:
+        if store is None and not _db_path().exists():
+            return None
+        entries = quarantined(store or open_store())
+    except Exception as e:  # noqa: BLE001 - can't list it: a known quarantine still blocks
+        if fp_module().quarantine_active(str(bawwab_home())):
+            return _deny(f"{_FAILED_TEXT} ({type(e).__name__})")
         return None
-    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                   "permissionDecisionReason": quarantine_text(entries)}}
+    return _deny(quarantine_text(entries)) if entries else None
 
 
 def post_tool_decision(cwd: Path, scan=None, store: Store | None = None) -> dict | None:
     """PostToolUse: block (tell Claude at once) when this call's effects put something in quarantine."""
-    store = store or open_store()
-    new = refresh(cwd, scan, store)
+    try:
+        new = refresh(cwd, scan, store)
+    except EffectsFailed as e:
+        return {"decision": "block", "reason": f"{_FAILED_TEXT} ({sanitise(str(e), 200)})"}
     if not new:
         return None
-    entries = quarantined(store)
+    entries = quarantined(store or open_store())
     return {"decision": "block", "reason": quarantine_text(entries)} if entries else None
 
 
 # ------------------------------------------------------------------ first run
+
+def session_start(cwd: Path, scan=None, store: Store | None = None) -> str | None:
+    """SessionStart: first install takes the provisional baseline and asks; later sessions run the effect
+    check (changes made between sessions) and report the quarantine. Returns additionalContext or None."""
+    store = store or open_store()
+    if _installed(store, cwd):
+        return ask_context(cwd)
+    marker = _restore_marker(store)
+    problem = state_problem(store, marker)
+    parts: list[str] = []
+    if problem:
+        _fail_closed(store, problem)
+        parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed) until the user runs "
+                     "`! bawwab effects --retry` (rebuilds the state by scanning) or `! bawwab init --scan`.")
+    else:
+        try:
+            refresh(cwd, scan, store)
+        except EffectsFailed:
+            pass
+        if store.init_state() == "none":
+            parts.append(ask_context(cwd))
+    entries = quarantined(store)
+    if entries:
+        parts.append(quarantine_text(entries))
+    return "\n\n".join(parts) or None
+
 
 def ask_context(cwd: Path) -> str:
     from bawwab.inventory import list_installed
@@ -418,49 +655,86 @@ def ask_context(cwd: Path) -> str:
     )
 
 
+def _repair_for_init(store: Store, cwd: Path) -> None:
+    """init after lost state: adopt the marker's install time; clear effects.error (the scan rebuilds)."""
+    if _installed(store, cwd):
+        return
+    marker = read_marker()
+    if state_problem(store, marker) and marker and not marker.get("corrupt"):
+        store.set_meta("installed_at", marker["installed_at"])
+    for q in store.active_quarantine():
+        if q["ident"] == ERROR_IDENT:
+            store.set_quarantine(q["qrow"], status="resolved")
+    error_marker().unlink(missing_ok=True)
+    _sync_flag(store)
+
+
 def init_skip(cwd: Path, store: Store | None = None) -> int:
+    """`init --skip`: rows recorded at install time become "trusted without scan". Refused on lost state."""
     store = store or open_store()
-    ensure_provisional(store, cwd)
+    if not _installed(store, cwd):
+        problem = state_problem(store, _restore_marker(store))
+        if problem:
+            raise RuntimeError(f"{problem}; run `bawwab effects --retry` or `bawwab init --scan`")
     n = store.promote_provisional("unscanned")
-    store.set_init_state("skipped")
+    set_init_state(store, "skipped")
     return n
 
 
+def start_full_scan(cwd: Path, store: Store | None = None) -> None:
+    from bawwab import inventory as inv
+
+    store = store or open_store()
+    _repair_for_init(store, cwd)
+    if store.init_state() != "scanned":
+        set_init_state(store, "scanned")
+    inv.spawn_background(cwd, full=True)
+
+
 def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
-    """`init --scan` / `scan --all` (background child): the Task 10 inventory, then every item is accepted
-    (clean or approved) or quarantined. Pre-existing hooks and settings, which have nothing to scan, are
-    kept as "trusted without scan"."""
+    """`init --scan` / `scan --all` (background child): the Task 10 inventory, then every item in view and
+    every provisional (install-time) row is evaluated: accepted when clean or approved, else quarantined.
+    Nothing is promoted without a scan (hooks and settings, which have nothing to scan, need approval)."""
     from bawwab.config import load_config
     from bawwab.inventory import run_inventory
 
     cwd = Path(cwd)
     scan = scan or scan_target
     store = store or open_store()
-    ensure_provisional(store, cwd)
-    if store.init_state() == "none":
-        store.set_init_state("scanned")
+    _repair_for_init(store, cwd)
+    if store.init_state() != "scanned":
+        set_init_state(store, "scanned")
     warnings = run_inventory(cwd, scan=scan, store=store)
     cfg = load_config(cwd)
-    rows = store.effect_rows(_scopes(cwd))
+    rows = store.all_effect_rows()
+    view = set(_scopes(cwd))
+    items: dict[str, EffectItem] = {}
+    dirs = [Path(cwd)] + [Path(r["scope"]) for r in rows.values()
+                          if r["status"] == "provisional" and r["scope"] != "user" and Path(r["scope"]).is_dir()]
+    for d in dict.fromkeys(dirs):
+        for a in ADAPTERS:
+            for it in _retry_unreadable(lambda a=a, d=d: a.install_items(d)):
+                items.setdefault(it.ident, it)
+    current = {i: it.hash for i, it in items.items()}
     new_ids: list[str] = []
     # no lock while scanning (minutes): the hooks' effect checks must not wait on a background scan
-    for it in effect_items(cwd):
+    for it in _toggles_last(list(items.values())):
         row = rows.get(it.ident)
-        same = row is not None and row["hash"] == it.hash
-        if (it.category in UNSCANNABLE or it.target is None) and same:
-            if row["status"] == "provisional":
-                store.put_effect(it.ident, it.hash, it.scope, "unscanned", row["key"])
-            continue
+        if row is None and it.scope not in view:
+            continue  # another project's item that was never baselined: its own effect check handles it
         if _is_quarantined(store, it):
             continue
-        ok, r = _evaluate(it, scan, cfg, store)
+        ok, r = _evaluate(it, scan, cfg, store, current)
         if ok:
             store.put_effect(it.ident, it.hash, it.scope, "accepted", r.key)
             continue
         with _lock():  # an effect check may have quarantined it meanwhile
             if not _is_quarantined(store, it):
+                store.drop_effect(it.ident)
                 new_ids.append(_quarantine(store, it, r))
-    store.promote_provisional("unscanned")  # other scopes' provisional rows: not scanned here
+    for ident, r in store.all_effect_rows().items():
+        if r["status"] == "provisional":
+            store.drop_effect(ident)  # gone since install: nothing left to trust
     store.audit("effects.full_scan", cwd=str(cwd), warnings=len(warnings), quarantined=len(new_ids))
     _sync_flag(store)
     return new_ids

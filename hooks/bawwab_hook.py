@@ -7,13 +7,16 @@ Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify)
 (hooks/fingerprint.py) let ordinary calls through with no output and without importing
 bawwab. `bawwab gate` runs when the call is install-like, when the watched config really
 changed, or (for any non-read-only tool) while something is quarantined. If it fails, an
-install-like call or a quarantine is denied (fail closed); an ordinary call is not.
+install-like call, a quarantine or a changed config is denied (fail closed); an ordinary
+call with no config change is not.
 
 `post` (PostToolUse, Bash|Write|Edit|MultiEdit|NotebookEdit): when the fingerprint moved,
 `bawwab post` runs the effect check and blocks if something new was quarantined.
 
-A timed-out effect check leaves $BAWWAB_HOME/effects.error, which bawwab turns into a
-quarantine (fail closed).
+When the watched config changed and the effect check fails for any reason (timeout,
+crash, bad output), the hook leaves $BAWWAB_HOME/effects.error and the quarantine flag and
+denies/blocks; bawwab turns the marker into a quarantine, cleared by `bawwab effects --retry`.
+Before bawwab's first SessionStart (no install marker, no state) the effect check is inactive.
 
 `inventory` (SessionStart) and `notify` (UserPromptSubmit) never block: any failure exits 0 silently.
 `notify` first checks for $BAWWAB_HOME/warnings.flag and does nothing (no bawwab import) when it is absent.
@@ -60,15 +63,23 @@ def _bawwab_home() -> str:
 
 
 def _config_changed(cwd: str) -> bool:
-    """Effect-check fingerprint: False only when nothing that matters changed (any doubt: True)."""
+    """Effect-check fingerprint: False only when nothing that matters changed, or bawwab was never
+    initialised (no install marker and no state). Any doubt: True."""
     try:
-        return _load_fingerprint().check(cwd, os.path.expanduser("~"), _bawwab_home()) == "changed"
+        fp = _load_fingerprint()
+        home, bh = os.path.expanduser("~"), _bawwab_home()
+        if not fp.initialised(home, bh):
+            return False
+        return fp.check(cwd, home, bh) == "changed"
     except Exception:  # noqa: BLE001 - can't tell: let bawwab look
         return True
 
 
 def _quarantine_flag() -> bool:
-    return os.path.exists(os.path.join(_bawwab_home(), "quarantine.flag"))
+    try:
+        return _load_fingerprint().quarantine_active(_bawwab_home())
+    except Exception:  # noqa: BLE001
+        return os.path.exists(os.path.join(_bawwab_home(), "quarantine.flag"))
 
 
 def _mark_effects_error(reason: str) -> None:
@@ -122,14 +133,17 @@ def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
     return out, None
 
 
+_FAIL = ("bawwab: the effect check could not run after Claude's configuration changed ({}); tool calls are "
+         "blocked until the user runs `! bawwab effects --retry` (fail closed)")
+
+
 def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> str | None:
     out, err = _run_child("gate", raw)
     if err is None:
         return out
-    if effects and err == "timed out":
-        _mark_effects_error(f"effect check timed out after {CHILD_TIMEOUT_S} s")
-        return _deny("bawwab: the effect check timed out; tool calls are blocked until the user runs "
-                     "`! bawwab effects` and decides (fail closed)")
+    if effects:  # the watched config changed and nothing checked it: fail closed, whatever the error
+        _mark_effects_error(f"effect check failed: {err}")
+        return _deny(_FAIL.format(err))
     if deny_on_error:
         return _deny(f"bawwab error: gate unavailable ({err})")
     return None
@@ -156,7 +170,10 @@ def gate() -> int:
         # a broken bawwab never blocks an ordinary call; it does block installs and an active quarantine
         out = _run_gate(raw, deny_on_error=bool(install_like or blocked), effects=changed)
     except Exception as e:  # noqa: BLE001
-        out = _deny(f"bawwab error: gate unavailable ({type(e).__name__})") if (install_like or blocked) else None
+        if changed:
+            _mark_effects_error(f"effect check failed: {type(e).__name__}")
+        out = _deny(f"bawwab error: gate unavailable ({type(e).__name__})") if (install_like or blocked or changed) \
+            else None
     if out:
         print(out)
     return 0
@@ -173,12 +190,13 @@ def post() -> int:
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0
-    out, err = _run_child("post", raw)
-    if err == "timed out":
-        _mark_effects_error(f"effect check timed out after {CHILD_TIMEOUT_S} s")
-        out = json.dumps({"decision": "block", "reason": (
-            "bawwab: the effect check timed out; tool calls are blocked until the user runs "
-            "`! bawwab effects` and decides (fail closed)")})
+    try:
+        out, err = _run_child("post", raw)
+    except Exception as e:  # noqa: BLE001
+        out, err = None, type(e).__name__
+    if err is not None:
+        _mark_effects_error(f"effect check failed: {err}")
+        out = json.dumps({"decision": "block", "reason": _FAIL.format(err)})
     if out:
         print(out)
     return 0

@@ -54,6 +54,7 @@ def _cj(home: Path) -> dict:
 def _baseline(proj, scan=None):
     """First check: before init, the current state becomes the provisional baseline."""
     scan = scan or FakeScan()
+    fx.session_start(proj)  # the install-time (provisional) baseline: only SessionStart takes it
     assert fx.refresh(proj, scan=scan) == []
     assert scan.calls == []
     return scan
@@ -71,7 +72,7 @@ def test_semantic_state_shape(env):
         {"type": "command", "command": "echo hi"}]}]}, "statusLine": {"type": "command", "command": "x"}})
     _w(proj / ".claude/commands/deploy.md", "deploy")
     st = fx.semantic_state(proj)
-    assert set(st) == {"servers", "plugins", "hooks", "exec_settings", "skills"}
+    assert set(st) == {"servers", "plugins", "hooks", "exec_settings", "skills", "toggles"}
     assert "claude-code:mcp:user:a" in st["servers"]
     assert "claude-code:skill:user:s1" in st["skills"]
     assert f"claude-code:command:project:{proj}:deploy.md" in st["skills"]

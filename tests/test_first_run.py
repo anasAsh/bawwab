@@ -116,14 +116,14 @@ def test_full_scan_accepts_clean_quarantines_rest(proj, capsys):
     ids = fx.full_scan(proj, scan=scan)
     store = open_store()
     assert store.init_state() == "scanned"
-    assert len(ids) == 1
+    assert len(ids) == 2
     q = fx.quarantined(store)
-    assert [x["ident"] for x in q] == ["claude-code:mcp:user:b"]
+    assert [x["ident"] for x in q][0] == "claude-code:mcp:user:b"
+    assert ":hook:" in q[1]["ident"]  # nothing is trusted without a scan: the install-time hook needs approval
     rows = store.all_effect_rows()
     assert rows["claude-code:mcp:user:a"]["status"] == "accepted"
     assert rows["claude-code:skill:user:s1"]["status"] == "accepted"
-    hook = next(i for i in rows if ":hook:" in i)
-    assert rows[hook]["status"] == "unscanned"  # pre-existing hook: nothing to scan
+    assert not any(":hook:" in i for i in rows)
     assert any("is SUSPICIOUS" in w for w in store.take_warnings())  # the Task 10 inventory ran too
 
 
