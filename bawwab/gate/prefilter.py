@@ -14,7 +14,8 @@ _FILE_TOOLS = ("Write", "Edit", "MultiEdit")
 # A shell glob may hide ".claude" from the substring check (cp x ~/.c*/skills/).
 # claude reached through $(…), `…` or $VAR: detected by its subcommand.
 _CLAUDE_SUBCMD = re.compile(
-    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
+    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)"
+    r"|plugins?\s+(?:install|i|enable|disable|uninstall|remove|rm|update|marketplace))\b"
 )
 # ...and only when a path could reach a hidden dir (~, $HOME, a ".x" component) or names an install dir.
 _GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")

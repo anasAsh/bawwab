@@ -73,7 +73,8 @@ _INDEX_ENV = {
 _EXEC_SETTINGS = ("statusLine", "apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper", "env")
 _PROTECTED_KEYS = ("hooks", "disableAllHooks", "extraKnownMarketplaces", "enableAllProjectMcpServers")
 _CLAUDE_SUBCMD = re.compile(
-    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
+    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)"
+    r"|plugins?\s+(?:install|i|enable|disable|uninstall|remove|rm|update|marketplace))\b"
 )
 
 
@@ -86,6 +87,7 @@ class _TooComplex(Exception):
 
 
 _MAX_DEPTH = 3
+_MAX_TARGETS = 64
 
 
 class _Acc:
@@ -105,6 +107,8 @@ class _Acc:
 
     def add(self, t: Target, pinnable: bool = False) -> None:
         if t not in self.targets:
+            if len(self.targets) >= _MAX_TARGETS:
+                raise _TooComplex  # no real command installs this many things; scanning them all would not end
             self.targets.append(t)
         self.pinnable = self.pinnable or pinnable
 
@@ -554,6 +558,12 @@ def _segments(tokens: list[str]) -> list[_Seg]:
         tok = tokens[i]
         if tok and all(c in _PUNCT for c in tok):
             nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if "(" in tok and ("<" in tok or ">" in tok):  # <(…) / >(…): a command of its own
+                if cur.words or cur.redirs or cur.inputs:
+                    segs.append(cur)
+                cur = _Seg([], [], [], False)
+                i += 1
+                continue
             if ">" in tok:
                 cur.redirs.append(nxt)
                 i += 2
@@ -1024,8 +1034,19 @@ def _sensitive_text(text: str, cwd: str) -> bool:
 # package name. Protected reasons come from the line and (b) units; (a) units only add targets.
 
 _RAW_SEP = re.compile(r"\$\(|\$\{|[;&|(){}`]")
-_RAW_CUT_B = re.compile(r"\$\(|\$\{|[;&|(){}`#]")
-_RAW_CUT_A = re.compile(r"\$\(|\$\{|[;&|(){}`'\"#]")
+_RAW_CUT_B = re.compile(r"\$\(|\$\{|[;&|(){}`]|(?<![^\s;&|(){}`])#")  # `#` inside a word is no comment
+_RAW_CUT_A = re.compile(r"\$\(|\$\{|[;&|(){}`'\"]|(?<![^\s;&|(){}`'\"])#")
+# Protected reasons any raw piece may add, wherever it was cut from: writes, moves and removals of Claude
+# config/install paths or the bawwab home, disabling bawwab, new marketplaces, Claude Desktop imports, bawwab
+# approvals. Unresolvable-command reasons only come from line and (b) units, read from the command word.
+_RAW_NARROW = ("shell write into install dir", "shell write to Claude config", "bawwab state change",
+               "moves Claude config", "disables bawwab", "new marketplace", "import of MCP servers from Claude",
+               "bawwab approval via tool call")
+_RAW_RESTART = {"claude", "mv", "rm", "cp", "rsync", "ln", "install", "dd", "tee", "sed", "gsed", "perl",
+                "truncate", "patch", "touch", "unlink", "shred", "sponge", "chmod", "chown", "chattr", "mkdir",
+                "rmdir", "curl", "wget", "git", "tar", "bsdtar", "unzip", "npx", "bunx", "node"}
+# `$(cmd <<'EOF'` with a non-shell cmd: the body is literal text (Claude Code's commit-message idiom)
+_RAW_QUIET_OPEN = re.compile(r"\$\(\s*([\w./-]+)\b[^\n]*?<<(-?)\s*(['\"])([^'\"\n]+)\3")
 _RAW_BRACED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")  # ${HOME} -> $HOME before `${` becomes a cut
 _RAW_DOLLAR_QUOTE = re.compile(r"\$(?=['\"])")
 _RAW_DOLLAR = re.compile(r"\$(?![A-Za-z_{(])")  # a `$` that starts no parameter (`$'…'`, `$"…"`, a stray one)
@@ -1108,14 +1129,21 @@ def _raw(text: str, cwd: str, acc: _Acc) -> None:
     seen: set[tuple[str, bool, tuple[str, ...]]] = set()
     text = _RAW_BRACED.sub(r"$\1", text.replace("\\\n", ""))
     lines = text.split("\n")
+    quiet_until: tuple[bool, str] | None = None  # inside a literal heredoc body: (strip tabs, delimiter)
     for li, line in enumerate(lines):
+        quiet = quiet_until is not None
+        if quiet_until is not None and (line.lstrip("\t") if quiet_until[0] else line) == quiet_until[1]:
+            quiet_until = None
+        elif quiet_until is None and (m := _RAW_QUIET_OPEN.search(line)) and \
+                os.path.basename(m.group(1)) not in _SHELLS and not _is_interpreter(os.path.basename(m.group(1)), []):
+            quiet_until = (m.group(2) == "-", m.group(4))
         if not line.strip():
             continue
-        units = [(_RAW_DOLLAR_QUOTE.sub("", _raw_line_unit(lines, li, acc)), True)]  # cl$'a'ude is claude
+        units = [(_RAW_DOLLAR_QUOTE.sub("", _raw_line_unit(lines, li, acc)), not quiet)]  # cl$'a'ude is claude
         seps, marks = _quoted_cuts(line)
         for s in seps:  # each unit ends at the next cut, so the units of a line add up to O(len(line))
             unit = _raw_clean(line[s:_raw_cut(_RAW_CUT_B, line, s)])
-            units.append((unit.replace("'", "").replace('"', ""), True))
+            units.append((unit.replace("'", "").replace('"', ""), not quiet))
             units.append((_raw_clean(line[s:_raw_cut(_RAW_CUT_A, line, s)]), False))
         for s in marks:
             units.append((_raw_clean(line[s:_raw_cut(_RAW_CUT_A, line, s)]), False))
@@ -1152,6 +1180,7 @@ def _raw_line_unit(lines: list[str], li: int, acc: _Acc) -> str:
 
 
 def _raw_unit(unit: str, cwds: _RawCwd, relevant: list[str], acc: _Acc, protect: bool, is_relevant) -> None:
+    """protect=False: only targets and the narrow Protected reasons are kept."""
     sink = acc if protect else _Acc()
     for seg in _segments(_tokens(unit)):
         words = _raw_words(seg.words)
@@ -1160,12 +1189,35 @@ def _raw_unit(unit: str, cwds: _RawCwd, relevant: list[str], acc: _Acc, protect:
             relevant = [c for c in cwds.all() if is_relevant(c)]
             continue
         for c in relevant:
-            _raw_seg(seg.redirs, words, c, sink)
+            _raw_seg(seg.redirs, words, c, sink, _via_xargs(seg.words, words))
+            # the command word may sit anywhere in a piece cut at the wrong place: restart at each candidate
+            for i in range(1, len(words)):
+                if os.path.basename(words[i]) in _RAW_RESTART:
+                    scratch = _Acc()
+                    _raw_seg([], _raw_words(words[i:]), c, scratch, False)
+                    _raw_merge(scratch, acc, narrow=True)
     if sink is not acc:
-        for t in sink.targets:
-            acc.add(t, sink.pinnable)
-            if t in sink.overlays:
-                acc.overlays.setdefault(t, sink.overlays[t])
+        _raw_merge(sink, acc, narrow=True)
+
+
+def _raw_merge(src: _Acc, acc: _Acc, narrow: bool) -> None:
+    for t in src.targets:
+        acc.add(t, src.pinnable)
+        if t in src.overlays:
+            acc.overlays.setdefault(t, src.overlays[t])
+    for reason in src.protected:
+        if not narrow or reason.startswith(_RAW_NARROW):
+            acc.protect(reason)
+
+
+_XARGS_CLAUDE = "claude via xargs with piped arguments"
+
+
+def _via_xargs(raw_words: list[str], words: list[str]) -> bool:
+    """`words` (prefix-stripped `raw_words`) run under xargs, which appends arguments the command line
+    does not show."""
+    n = len(raw_words) - len(words)
+    return n > 0 and any(os.path.basename(w) == "xargs" for w in raw_words[:n])
 
 
 def _raw_words(words: list[str]) -> list[str]:
@@ -1178,7 +1230,7 @@ def _raw_words(words: list[str]) -> list[str]:
             return words
 
 
-def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc) -> None:
+def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bool) -> None:
     """One simple command of a raw unit, through the per-segment recognisers only."""
     for r in redirs:
         p = _abspath(r, cwd)
@@ -1193,15 +1245,11 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc) -> None:
         acc.protect("bawwab approval via tool call")
     ci = _claude_index(words)
     if ci is not None:
+        if xargs:
+            acc.protect(_XARGS_CLAUDE)
         _claude(words[ci:], cwd, acc)
         return
-    fb = next((i + 1 for i in range(1, len(words)) if os.path.basename(words[i]) == "claude"
-               and any(w in ("mcp", "plugin", "plugins") for w in words[i + 1:])), None)
-    if fb is not None:  # claude behind an unknown wrapper, or claude named in prose: targets only
-        scratch = _Acc()
-        _claude(words[fb:], cwd, scratch)
-        for t in scratch.targets:
-            acc.add(t, scratch.pinnable)
+    # claude later in the words (unknown wrapper, prose) is handled by _raw_unit's restarts
     if (exe in ("mcp", "plugin", "plugins") or words[0].startswith("$")) and \
             _CLAUDE_SUBCMD.search(" ".join(words)):
         acc.protect("unrecognised claude invocation")
@@ -1292,6 +1340,20 @@ def _inert_region(cmd: str, start: int, spend) -> bool:
     return _NOT_INERT.search(inner) is None
 
 
+def _literal_output(words: list[str]) -> str:
+    """What `echo …` / `printf FMT …` print, roughly (escapes \\n \\t decoded; also kept raw), else ""."""
+    if not words or os.path.basename(words[0]) not in ("echo", "printf"):
+        return ""
+    args = words[1:]
+    while args and re.fullmatch(r"-[neE]+", args[0]) and os.path.basename(words[0]) == "echo":
+        args = args[1:]
+    if args[:1] == ["--"]:
+        args = args[1:]
+    text = " ".join(args)
+    decoded = text.replace("\\n", "\n").replace("\\t", "\t")
+    return text if decoded == text else decoded + "\n" + text
+
+
 def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, list[str], dict[int, int]]) -> None:
     """One structured pass over `cmd`, given its heredoc extraction under one reading of the regions."""
     acc.spend(len(cmd))
@@ -1300,6 +1362,7 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
     cmd, bodies, open_from = extracted
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
     pipeline = ""  # text of the segments piped into the current one
+    prev_words: list[str] = []  # prefix-stripped words of the previous segment
 
     def heredoc_index(tok: str) -> int | None:
         m = _HEREDOC_TOKEN_RE.fullmatch(tok)
@@ -1330,6 +1393,7 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             if seg.inputs:
                 written[p] = stdin_text
         words = _strip_prefix(raw_words)
+        up_words, prev_words = (prev_words if seg.piped else []), words
         if not words:
             continue
         if _bawwab_decision(words):
@@ -1338,6 +1402,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
         args = words[1:]
         ci = _claude_index(words)
         if ci is not None:
+            if _via_xargs(raw_words, words):
+                acc.protect(_XARGS_CLAUDE)
             _claude(words[ci:], cwd, acc)
             continue
         # claude behind an unknown wrapper: scan its arguments too (the rest of the segment is still checked).
@@ -1369,7 +1435,9 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             if exe in _SHELLS:
                 stdin_scan = "\n".join(body_of(t) for t in dict.fromkeys(seg.inputs)
                                        if (k := heredoc_index(t)) is None or k not in open_from)
-                for text in (stdin_scan, script_files):
+                literal = _literal_output(up_words) if script_i is None else ""
+                acc.spend(len(literal))
+                for text in (stdin_scan, script_files, literal):
                     if text.strip():
                         _bash(text, cwd, acc, depth + 1)
             if script_path and install_dir(script_path):
@@ -1584,5 +1652,8 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
             except _TooComplex:
                 return Protected("command too complex to analyse")
     elif inp.tool_name in ("Write", "Edit", "MultiEdit"):
-        _file_tool(inp, acc)
+        try:
+            _file_tool(inp, acc)
+        except _TooComplex:  # e.g. more than _MAX_TARGETS servers in one config write
+            return Protected("change too complex to analyse")
     return acc.result()
