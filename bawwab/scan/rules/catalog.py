@@ -40,5 +40,8 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("identity.typosquat", "Name is close to a popular package", "Attackers publish packages with names one or two letters off a popular one hoping you mistype it.", "Check the exact spelling and publisher against the official project."),
         _r("identity.new-package", "Package was published very recently", "Brand-new packages have no track record and are a common vehicle for short-lived malicious releases.", "Wait, or verify the author and repository before installing."),
         _r("identity.repo-mismatch", "Repository does not match the package name", "A package whose linked repository has an unrelated name may point to someone else's code to look legitimate.", "Open the repository and confirm it is the real source of this package."),
+        _r("fetch.unsafe-entry", "Archive or repo contains an unsafe entry", "Path traversal, absolute paths, links pointing outside the package, or oversized archives are used to overwrite files or exhaust disk during extraction.", "Do not install; the unsafe entries were skipped during scanning."),
+        _r("fetch.docker-unscanned", "Docker image was not scanned", "Container images are not statically scanned, so their contents are unreviewed.", "Run a deep scan in the sandbox or review the image manually."),
+        _r("fetch.failed", "Target could not be fetched", "The package or server could not be downloaded, so nothing was reviewed.", "Check the name, version and network, then retry."),
     ]
 )
