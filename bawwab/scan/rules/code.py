@@ -181,11 +181,24 @@ def _calls(rel: str, text: str) -> tuple[Call, ...] | None:
 
 EVAL_FUNCS = {"eval", "exec", "Function", "window.eval", "globalThis.eval", "vm.runInNewContext", "vm.runInThisContext", "vm.runInContext"}
 ALL_ARGS_EVAL = {"Function"}  # new Function(a, b, body): the body is the last argument
+# A decode CALL (R26a, round 2): matched against the evaluated argument with string literals emptied,
+# so eval("typeof atob") is not decoding; encoding-name literals ('base64', 'hex') are kept.
 DECODE_RE = re.compile(
-    r"\b(b64decode|a2b_base64|unhexlify|fromhex|rot13|rot_13|atob|decodestring|codecs\.decode)\b"
+    r"\b(b64decode|a2b_base64|unhexlify|fromhex|rot13|rot_13|atob|decodestring|codecs\.decode)\s*\("
     r"|Buffer\.from\([^)]*['\"`](?:base64|hex)['\"`]|\.decode\(\s*['\"](?:base64|hex|rot13)",
     re.I,
 )
+_STR_LIT_RE = re.compile(r"""(['"])(?:\\.|(?!\1)[^\\\n])*\1|`(?:\\.|[^`\\$])*`""")
+_ENCODING_NAMES = {"base64", "hex", "rot13", "rot_13", "base64url"}
+
+
+def _decodes(code: str) -> bool:
+    """The evaluated code contains an actual decode call, not just a decode word inside a string."""
+    def empty(m: re.Match) -> str:
+        body = m.group(0)[1:-1]
+        return m.group(0) if body.lower() in _ENCODING_NAMES else '""'
+
+    return bool(DECODE_RE.search(_STR_LIT_RE.sub(empty, code)))
 FETCH_RE = re.compile(
     r"\b(fetch|requests\.\w+|urlopen|urllib\.\w+|httpx\.\w+|axios|XMLHttpRequest|http\.get|https\.get|curl|wget)\b"
 )
@@ -824,7 +837,7 @@ def _evals_file_content(f: ScanFile) -> bool:
     for c in _calls(f.rel, f.text) or ():
         if c.callee in EVAL_FUNCS:
             code = c.args if c.callee in ALL_ARGS_EVAL else c.first
-            if FILE_READ_RE.search(code):
+            if FILE_READ_RE.search(_STR_LIT_RE.sub('""', code)):
                 return True
     return False
 
@@ -878,7 +891,7 @@ class CodeRules:
         cred_lines = [_line_of(t, m.start()) for m in CRED_RE.finditer(t)]
         cred_lines += [_line_of(t, p) for p, kind in _claude_refs(t) if kind == "cred"]
         if cred_lines:
-            net_lines = _net_lines(t)
+            net_lines = _net_lines(f, t)
             if _same_scope(f, sorted(cred_lines), net_lines):
                 out.append(("exfil.combo", min(cred_lines)))
         return out
@@ -889,7 +902,7 @@ class CodeRules:
             leaf = c.callee.rsplit(".", 1)[-1]
             if c.callee in EVAL_FUNCS:
                 code = c.args if c.callee in ALL_ARGS_EVAL else c.first
-                if DECODE_RE.search(code):
+                if _decodes(code):
                     out.append(_finding("obfuscation.eval-decoded", Severity.CRITICAL, f, c.line))
                 elif FETCH_RE.search(code):
                     out.append(_finding("remote-code.eval-fetch", Severity.HIGH, f, c.line))
@@ -937,7 +950,8 @@ class CodeRules:
         hits.sort()
         real = [p for p, d in hits if not d]
         denied = [p for p, d in hits if d]
-        net_lines = _net_lines(t)
+        net = _net_calls(f, t)
+        net_lines = [ln for ln, _ in net]
         if real:
             out.append(_finding("credential-access", Severity.HIGH, f, _line_of(t, real[0])))
         elif denied:  # deny-list mention: listed, not decisive (R27 I4)
@@ -947,8 +961,10 @@ class CodeRules:
         if installs:
             lines = [_line_of(t, p) for p in installs]
             writes = [ln for ln in lines if WRITE_RE.search(_line_text(t, ln))]
-            if writes and _same_scope(f, writes, net_lines):
-                # Writing into Claude's install dirs next to a network call: what is written may be fetched.
+            exfil_lines = [ln for ln, args in net if EXFIL_HOST_RE.search(args)]
+            if writes and _same_scope(f, writes, exfil_lines):
+                # Writing into Claude's install dirs next to a call to an exfil-style host. A plain
+                # update check to a vendor host is not exfiltration (round 2).
                 out.append(_finding("install-dir-access", Severity.MED, f, writes[0]))
             else:
                 out.append(_finding("install-dir-access", Severity.LOW, f, lines[0]))
@@ -968,15 +984,51 @@ _IMPORT_LINE_RE = re.compile(
 )
 
 
-def _net_lines(t: str) -> list[int]:
-    """Lines with an outbound call or exfil host; a bare import of a network library is not a call."""
-    lines = []
+# Outbound network CALLS (round 2): a URL string or the word "fetch" in a literal is not a call.
+NET_CALLEE_RE = re.compile(
+    r"^(?:(?:window|globalThis|self)\.)?(?:fetch|got|ky|needle|axios|request|urlopen|XMLHttpRequest|WebSocket|EventSource)$"
+    r"|^(?:axios|got|ky|superagent|needle|requests|httpx|aiohttp|urllib3|dns|socket)\b"
+    r"|^(?:urllib\.request\.(?:urlopen|Request)|urllib\.urlopen|https?\.(?:request|get)|http2\.connect"
+    r"|net\.(?:connect|createConnection)|tls\.connect|dgram\.createSocket|ftplib\.FTP|smtplib\.SMTP\w*"
+    r"|http\.client\.HTTPS?Connection|asyncio\.open_connection|undici\.\w+)$"
+)
+_URL_HOST_RE = re.compile(r"\b(?:https?|wss?)://(?:[^@/'\"`\s]*@)?(\[[^\]/]*\]|[^/'\"`\s:?#]+)", re.I)
+_LOOPBACK_RE = re.compile(r"^(?:127(?:\.\d{1,3}){3}|localhost|0\.0\.0\.0|\[::1\]|::1)$", re.I)
+
+
+def _outbound(args: str) -> bool:
+    hosts = _URL_HOST_RE.findall(args)
+    return not hosts or not all(_LOOPBACK_RE.match(h) for h in hosts)
+
+
+def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
+    """(line, argument text) of outbound network calls.
+
+    Parsed files: real call nodes to network APIs (or carrying an exfil host), excluding
+    calls whose URLs are all loopback. Unparsed files (shell...): the regex fallback,
+    minus bare import lines.
+    """
+    calls = _calls(f.rel, f.text)
+    if calls is not None:
+        out = []
+        for c in calls:
+            leaf = c.callee.rsplit(".", 1)[-1]
+            is_net = bool(NET_CALLEE_RE.search(c.callee)) or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
+            if (is_net and _outbound(c.args)) or EXFIL_HOST_RE.search(c.args):
+                out.append((c.line, c.args))
+        return out
+    out = []
     for rx in (NET_RE, EXFIL_HOST_RE):
         for m in rx.finditer(t):
             ln = _line_of(t, m.start())
-            if not _IMPORT_LINE_RE.search(_line_text(t, ln)):
-                lines.append(ln)
-    return lines
+            line = _line_text(t, ln)
+            if not _IMPORT_LINE_RE.search(line):
+                out.append((ln, line))
+    return out
+
+
+def _net_lines(f: ScanFile, t: str) -> list[int]:
+    return [ln for ln, _ in _net_calls(f, t)]
 
 
 def _floor(f: ScanFile, found: list[Finding], strong: list[tuple[str, int]]) -> list[Finding]:

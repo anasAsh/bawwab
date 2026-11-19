@@ -48,6 +48,32 @@ def test_thunderbird_like_server_only_low():
     assert compute_verdict(findings) == Verdict.CLEAN
 
 
+class _NoFindingsJudge:
+    def complete(self, system, user, schema, timeout_s):
+        return '{"findings":[]}'
+
+
+def _gif(path: Path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"GIF89a\x80\x02\xe0\x01\xf7\x00\x00" + b"\x00" * size)
+
+
+@pytest.mark.parametrize("name", ["thunderbird_mcp", "ui_ux_skill", "codex_bridge", "do_mcp"])
+def test_full_scan_of_realworld_fixtures_is_clean_or_low(name, tmp_path):
+    """Whole pipeline (fetch_local, static rules, fake judge, store) on each real-world model."""
+    from bawwab.fetch import parse_target
+
+    root = tmp_path / name
+    shutil.copytree(FIX / "realworld" / name, root)
+    if name == "thunderbird_mcp":
+        _gif(root / "docs" / "demo.gif", 2_000_000)  # the real repo ships a 2 MB demo GIF
+    if name == "do_mcp":
+        root = _with_binaries(tmp_path / "bin")
+    r = scan_target(parse_target(str(root)), store=Store(tmp_path / "t.db"), cfg=Config(), backend=_NoFindingsJudge())
+    assert all(f.severity == Severity.LOW for f in r.findings), sorted((f.rule, f.severity.name, f.file) for f in r.findings)
+    assert r.verdict == Verdict.CLEAN
+
+
 def test_ui_ux_skill_data_files_clean():
     findings = scan_dir(FIX / "realworld" / "ui_ux_skill")
     assert all(f.severity == Severity.LOW for f in findings), sorted(pairs(findings))

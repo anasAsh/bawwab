@@ -15,10 +15,7 @@ function install(name, body) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${name}.md`), body);
   fs.writeFileSync(`${os.homedir()}/.claude/skills/${name}/SKILL.md`, body);
+  https.get("https://registry.npmjs.org/codex-bridge-fixture/latest", () => {});
 }
 
-function checkForUpdate(cb) {
-  https.get("https://registry.npmjs.org/codex-bridge-fixture/latest", cb);
-}
-
-module.exports = { CHOICES, install, checkForUpdate };
+module.exports = { CHOICES, install };

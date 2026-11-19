@@ -54,9 +54,40 @@ def _is_executable(head: bytes) -> bool:
     return head.startswith(EXEC_MAGIC) or _is_pe(head)
 
 
+def _ctrl(b: int) -> bool:
+    """A control byte that is neither whitespace nor allowed in JS/Python source outside strings."""
+    return b < 0x09 or 0x0E <= b < 0x20 or b == 0x7F
+
+
+def _media_magic(h: bytes) -> bool:
+    """Media, document, font and database formats (round 2).
+
+    Every accepted header either starts with a byte that cannot begin JS/Python source,
+    or is checked together with a NUL byte that JS and Python reject outside strings,
+    so a forged header cannot also be a runnable script.
+    """
+    return (
+        h.startswith((b"GIF87a", b"GIF89a")) and any(_ctrl(b) for b in h[6:13])  # GIF: binary dimensions
+        or h.startswith(b"%PDF-")
+        or h.startswith(b"RIFF") and h[8:12] in (b"WEBP", b"WAVE", b"AVI ") and b"\x00" in h[4:8] + h[12:20]
+        or h.startswith(b"\x00\x00\x01\x00") or h.startswith(b"\x00\x00\x02\x00")  # ICO / CUR
+        or h.startswith(b"BM") and h[6:10] == b"\x00\x00\x00\x00"  # BMP reserved fields
+        or h.startswith((b"II*\x00", b"MM\x00*"))  # TIFF
+        or h.startswith((b"wOFF", b"wOF2")) and h[12:14] == b"\x00\x00"  # WOFF reserved
+        or h.startswith(b"\x00\x01\x00\x00\x00")  # TrueType
+        or h.startswith(b"OTTO") and h[4:5] == b"\x00"  # OpenType numTables high byte
+        or h[:1] == b"\x00" and h[4:8] == b"ftyp"  # MP4 / MOV / HEIC
+        or h.startswith(b"ID3") and h[4:5] == b"\x00"  # MP3 with ID3v2
+        or h.startswith((b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"))  # MPEG audio frame
+        or h.startswith(b"OggS\x00") or h.startswith(b"fLaC\x00")
+        or h.startswith(b"SQLite format 3\x00")
+        or h.startswith(b"\x1aE\xdf\xa3")  # Matroska / WebM
+    )
+
+
 def _is_binary(head: bytes) -> bool:
     """A real binary format by magic; anything else (even with NUL bytes) is treated as text."""
-    return head.startswith(BINARY_MAGIC) or _is_pe(head)
+    return head.startswith(BINARY_MAGIC) or _is_pe(head) or _media_magic(head)
 
 
 def _is_code_name(rel: str, head: bytes) -> bool:
