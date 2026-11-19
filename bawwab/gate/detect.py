@@ -18,6 +18,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bawwab.gate.prefilter import bash_install_like, context as _prefilter_context
 from bawwab.fetch.target import runner_extras, target_from_command, target_from_url
 from bawwab.paths import bawwab_home, claude_home, claude_json
 from bawwab.types import Target
@@ -95,6 +96,7 @@ class _Acc:
         self.overlays: dict[Target, dict[str, str]] = {}
         self.budget = budget  # bytes of shell text we may still analyse in this detect_install call
         self.scanned: set[tuple[str, str]] = set()  # (text, cwd) already run through _bash
+        self.root = ""  # the top-level command text (the raw backstop skips nested text that is part of it)
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -506,14 +508,27 @@ def _extract_heredocs(cmd: str, as_text=(), regions: list[int] | None = None,
     return "".join(out), bodies, open_from
 
 
-def _tokens(cmd: str) -> list[str]:
-    cmd = _strip_fd_numbers(cmd.replace("\\\n", " ")).replace("`", " ; ")
+def _balanced(cmd: str) -> bool:
+    """The tokeniser reads cmd without running off an open quote."""
+    try:
+        _shlex_tokens(cmd)
+    except ValueError:
+        return False
+    return True
+
+
+def _shlex_tokens(cmd: str) -> list[str]:
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=_PUNCT)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""
+    return list(lex)
+
+
+def _tokens(cmd: str) -> list[str]:
+    cmd = _strip_fd_numbers(cmd.replace("\\\n", " ")).replace("`", " ; ")
     try:
-        return list(lex)
+        return _shlex_tokens(cmd)
     except ValueError:  # unbalanced quotes: crude split, quotes dropped
         return re.findall(r"[();<>|&\n]+|[^\s();<>|&\n]+", re.sub(r"[\"'\\]", "", cmd))
 
@@ -990,6 +1005,232 @@ def _sensitive_text(text: str, cwd: str) -> bool:
     return False
 
 
+# ------------------------------------------------------------------ raw-text backstop (R25)
+#
+# The structured passes model bash's quotes, comments, heredocs and arithmetic across the whole command.
+# Wherever that model differs from bash, a line bash runs can look like quoted/comment/heredoc text and be
+# skipped. The backstop does not carry any of that state: each physical line is read on its own, and
+# every separator, quote and comment character on it is also a cut point, each piece being read as a fresh
+# simple command. Only the per-segment recognisers run (claude invocations, copies/clones/downloads into
+# install dirs, writes/moves of Claude config or the bawwab home, bawwab approvals, disabling bawwab); no
+# interpreter-mention heuristic. Units of a line:
+#   line   the whole line, fresh tokeniser state (unbalanced quotes: retried with quotes removed)
+#   (b)    after each separator that the line reading sees inside quotes: quote characters deleted, up to
+#          the next separator
+#   (a)    after each separator inside quotes and after every quote/comment character: up to the next
+#          separator, quote or comment character (targets only)
+# A cut that the line reading already treats as a command start is not re-read as a piece, so a quoted
+# argument of a visible command (`-H 'Authorization: x'`, `npx -c 'echo hi'`) is never split into a wrong
+# package name. Protected reasons come from the line and (b) units; (a) units only add targets.
+
+_RAW_SEP = re.compile(r"\$\(|\$\{|[;&|(){}`]")
+_RAW_CUT_B = re.compile(r"\$\(|\$\{|[;&|(){}`#]")
+_RAW_CUT_A = re.compile(r"\$\(|\$\{|[;&|(){}`'\"#]")
+_RAW_BRACED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")  # ${HOME} -> $HOME before `${` becomes a cut
+_RAW_DOLLAR_QUOTE = re.compile(r"\$(?=['\"])")
+_RAW_DOLLAR = re.compile(r"\$(?![A-Za-z_{(])")  # a `$` that starts no parameter (`$'…'`, `$"…"`, a stray one)
+_RAW_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "time", "coproc", "eval", "exec"}
+_RAW_WRITERS = {"tee", "sed", "gsed", "perl", "truncate", "patch", "touch", "rm", "unlink", "shred", "sponge",
+                "chmod", "chown", "chattr", "mkdir", "rmdir"}
+_RAW_MAX_CWDS = 16
+
+
+def _sensitive_dir(p: str) -> bool:
+    """A cwd from which a relative path can reach Claude config, an install dir or the bawwab home."""
+    return "/.claude/" in p + "/" or _moves_config(p) or _bawwab_path(p)
+
+
+def _quoted_cuts(line: str) -> tuple[list[int], list[int]]:
+    """(ends of separators inside quotes, ends of quote/comment characters) under a fresh reading of line."""
+    seps: list[int] = []
+    marks: list[int] = []
+    q = None
+    i, n = 0, len(line)
+    while i < n:
+        c = line[i]
+        if c == "\\" and q != "'":
+            i += 2
+            continue
+        if c in "'\"#":
+            marks.append(i + 1)
+            if q is None and c != "#":
+                q = c
+            elif q == c:
+                q = None
+        elif q is not None and (m := _RAW_SEP.match(line, i)):
+            seps.append(m.end())
+            i = m.end()
+            continue
+        i += 1
+    return seps, marks
+
+
+def _raw_cut(cut: re.Pattern[str], line: str, s: int) -> int:
+    m = cut.search(line, s)
+    return m.start() if m else len(line)
+
+
+def _raw_clean(s: str) -> str:
+    return _RAW_DOLLAR.sub("", s).replace("\\", "")
+
+
+class _RawCwd:
+    """cwds a raw unit may run in: the latest `cd`, every `cd` into a sensitive dir, and the start cwd.
+    A fake `cd` (one inside quotes, read as a piece) can add a cwd but never hide a sensitive one."""
+
+    def __init__(self, cwd: str) -> None:
+        self.start = self.latest = cwd
+        self.sensitive = [cwd] if _sensitive_dir(cwd) else []
+
+    def cd(self, args: list[str]) -> None:
+        dest = next((a for a in args if not a.startswith("-")), None)
+        if dest == "-":
+            return
+        dest = "~" if dest is None else dest
+        absolute = os.path.isabs(_home_vars(dest)) or dest.startswith("~")
+        bases = [self.latest] if absolute else [self.latest, *self.sensitive]
+        self.latest = _abspath(dest, self.latest)
+        for p in (_abspath(dest, b) for b in bases):
+            if p not in self.sensitive and _sensitive_dir(p):
+                self.sensitive.append(p)
+        if len(self.sensitive) > _RAW_MAX_CWDS:
+            raise _TooComplex
+
+    def all(self) -> list[str]:
+        return list(dict.fromkeys((self.latest, *self.sensitive, self.start)))
+
+
+def _raw(text: str, cwd: str, acc: _Acc) -> None:
+    """Raw-text backstop over `text` (see above)."""
+    acc.spend(len(text))
+    home, extra = _prefilter_context()
+    cwds = _RawCwd(cwd)
+    seen: set[tuple[str, bool, tuple[str, ...]]] = set()
+    text = _RAW_BRACED.sub(r"$\1", text.replace("\\\n", ""))
+    lines = text.split("\n")
+    for li, line in enumerate(lines):
+        if not line.strip():
+            continue
+        units = [(_RAW_DOLLAR_QUOTE.sub("", _raw_line_unit(lines, li, acc)), True)]  # cl$'a'ude is claude
+        seps, marks = _quoted_cuts(line)
+        for s in seps:  # each unit ends at the next cut, so the units of a line add up to O(len(line))
+            unit = _raw_clean(line[s:_raw_cut(_RAW_CUT_B, line, s)])
+            units.append((unit.replace("'", "").replace('"', ""), True))
+            units.append((_raw_clean(line[s:_raw_cut(_RAW_CUT_A, line, s)]), False))
+        for s in marks:
+            units.append((_raw_clean(line[s:_raw_cut(_RAW_CUT_A, line, s)]), False))
+        for unit, protect in units:
+            if not unit.strip():
+                continue
+            here = tuple(cwds.all())
+            if (unit, protect, here) in seen:
+                continue
+            seen.add((unit, protect, here))
+            # the shared pre-filter never misses what detection finds, so a unit it rejects can only cd
+            relevant = [c for c in here if bash_install_like(unit, c, home, extra)]
+            if not relevant and "cd" not in unit:
+                continue
+            acc.spend(len(unit) * max(1, len(here)))
+            _raw_unit(unit, cwds, relevant, acc, protect, lambda c, u=unit: bash_install_like(u, c, home, extra))
+
+
+_RAW_JOIN_LINES = 50
+
+
+def _raw_line_unit(lines: list[str], li: int, acc: _Acc) -> str:
+    """The line itself; for `add-json` with a quote left open on the line (pretty-printed JSON), the line
+    joined with the following ones up to where the quote closes, so the spec is read whole."""
+    line = lines[li]
+    if "add-json" not in line or _balanced(line):
+        return line
+    for j in range(li + 1, min(len(lines), li + 1 + _RAW_JOIN_LINES)):
+        joined = "\n".join(lines[li:j + 1])
+        acc.spend(len(joined))
+        if _balanced(joined):
+            return joined
+    return line
+
+
+def _raw_unit(unit: str, cwds: _RawCwd, relevant: list[str], acc: _Acc, protect: bool, is_relevant) -> None:
+    sink = acc if protect else _Acc()
+    for seg in _segments(_tokens(unit)):
+        words = _raw_words(seg.words)
+        if words and words[0] == "cd":
+            cwds.cd(words[1:])
+            relevant = [c for c in cwds.all() if is_relevant(c)]
+            continue
+        for c in relevant:
+            _raw_seg(seg.redirs, words, c, sink)
+    if sink is not acc:
+        for t in sink.targets:
+            acc.add(t, sink.pinnable)
+            if t in sink.overlays:
+                acc.overlays.setdefault(t, sink.overlays[t])
+
+
+def _raw_words(words: list[str]) -> list[str]:
+    while True:
+        n = len(words)
+        while words and words[0] in _RAW_KEYWORDS:
+            words = words[1:]
+        words = _strip_prefix(words)
+        if len(words) == n:
+            return words
+
+
+def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc) -> None:
+    """One simple command of a raw unit, through the per-segment recognisers only."""
+    for r in redirs:
+        p = _abspath(r, cwd)
+        if install_dir(p):
+            acc.protect("shell write into install dir")
+        _check_dest(p, acc)
+    if not words:
+        return
+    exe = os.path.basename(words[0])
+    args = words[1:]
+    if exe in ("bawwab", "bawwab.cli", "bawwab.cli:main") and _bawwab_decision(words):
+        acc.protect("bawwab approval via tool call")
+    ci = _claude_index(words)
+    if ci is not None:
+        _claude(words[ci:], cwd, acc)
+        return
+    fb = next((i + 1 for i in range(1, len(words)) if os.path.basename(words[i]) == "claude"
+               and any(w in ("mcp", "plugin", "plugins") for w in words[i + 1:])), None)
+    if fb is not None:  # claude behind an unknown wrapper, or claude named in prose: targets only
+        scratch = _Acc()
+        _claude(words[fb:], cwd, scratch)
+        for t in scratch.targets:
+            acc.add(t, scratch.pinnable)
+    if (exe in ("mcp", "plugin", "plugins") or words[0].startswith("$")) and \
+            _CLAUDE_SUBCMD.search(" ".join(words)):
+        acc.protect("unrecognised claude invocation")
+        return
+    if exe == "git":
+        _git(args, cwd, acc)
+    elif exe in ("cp", "mv", "ln", "rsync", "install"):
+        _copy(exe, args, cwd, acc)
+    elif exe in ("curl", "wget"):
+        _download(exe, args, cwd, acc)
+    elif exe in ("tar", "bsdtar", "unzip"):
+        _extract(exe, args, cwd, acc)
+    elif exe == "dd":
+        for a in args:
+            if a.startswith("of="):
+                p = _abspath(a[3:], cwd)
+                if install_dir(p):
+                    acc.protect("shell write into install dir")
+                _check_dest(p, acc)
+    elif exe in _RAW_WRITERS and (exe not in ("sed", "gsed") or _is_interpreter(exe, args)):
+        for a in args:
+            p = _abspath(a.split("=", 1)[-1] if a.startswith("-") or re.match(r"^\w+=", a) else a, cwd)
+            if exe in _SHELL_WRITERS and install_dir(p):
+                acc.protect("shell write into install dir")
+            _check_dest(p, acc)
+
+
+# ------------------------------------------------------------------ structured passes
+
 def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
     if depth > _MAX_DEPTH:
         acc.protect("shell nesting too deep")
@@ -1001,29 +1242,62 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
     # Arithmetic-candidate regions are ambiguous (bash's own rule depends on quoting and nesting), so never
     # pick one reading: analyse with every region arithmetic, then with every region plain text, and when
     # there are few regions also every mix of the two; the accumulator takes the union. Every pass counts
-    # against the work budget.
+    # against the work budget. How many passes are needed is known from the region count alone, so a command
+    # whose passes cannot fit the budget fails closed before any of them runs.
+    # A reading only changes where heredocs are found, so without any `<<` all readings give the same text,
+    # and readings whose extraction comes out identical share one pass.
     regions: list[int] = []
-    _bash_pass(cmd, cwd, acc, depth, (), regions)
-    if not regions:
-        return
+    first = _extract_heredocs(cmd, (), regions, acc.spend)
+    regions = [r for r in regions if not _inert_region(cmd, r, acc.spend)] if "<<" in cmd else []
     k = len(regions)
     if k > _MAX_MIXED_REGIONS and any("<<" in cmd[r:_arith_region_end(cmd, r, acc.spend) or len(cmd)]
                                       for r in regions):
         raise _TooComplex  # too many readings to enumerate and a mixed one could open a heredoc: fail closed
-    _bash_pass(cmd, cwd, acc, depth, _ALL_TEXT)
+    readings: list = [()]
+    if k:
+        readings.append(_ALL_TEXT)
     if 2 <= k <= _MAX_MIXED_REGIONS:
-        for mask in range(1, (1 << k) - 1):
-            _bash_pass(cmd, cwd, acc, depth, frozenset(r for b, r in enumerate(regions) if mask >> b & 1))
+        readings += [frozenset(r for b, r in enumerate(regions) if mask >> b & 1) for mask in range(1, (1 << k) - 1)]
+    raw = not depth or cmd not in acc.root  # nested text that is part of the command was covered at depth 0
+    # A structured pass charges about 1.5-2x the command length (its text, then its words and pipelines);
+    # the raw backstop about 1x. Decide up front instead of failing after most of the work is done.
+    if (_PASS_COST * len(readings) + raw) * len(cmd) > acc.budget:
+        raise _TooComplex
+    if raw:
+        _raw(cmd, cwd, acc)
+    done: set[tuple] = set()
+    for reading in readings:
+        ext = first if reading == () else _extract_heredocs(cmd, reading, None, acc.spend)
+        key = (ext[0], tuple(ext[1]), tuple(sorted(ext[2].items())))
+        if key not in done:
+            done.add(key)
+            _bash_pass(cmd, cwd, acc, depth, ext)
 
 
 _MAX_MIXED_REGIONS = 3  # up to 2**3 readings; beyond that: Protected if any region has `<<`, else two passes
+_PASS_COST = 2  # estimated budget charge of one structured pass, per byte of command
+_INERT_SKIP = re.compile(r"\$\(\(|\(\(|\$\[|let")  # the region's own opener
+_NOT_INERT = re.compile(r"""['"`\\#<\n$()\[\]]|let""")
 
 
-def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, as_text, regions: list[int] | None = None) -> None:
+def _inert_region(cmd: str, start: int, spend) -> bool:
+    """True when reading the region as text or as arithmetic cannot differ: its interior has no quote,
+    escape, comment, `<`, newline, `$`, bracket or `let`, so the extractor's state and output are the same
+    either way. Such regions need no separate readings."""
+    end = _arith_region_end(cmd, start, spend)
+    if end is None:
+        return False
+    m = _INERT_SKIP.match(cmd, start)
+    inner = cmd[m.end() if m else start:end].rstrip(")]")
+    return _NOT_INERT.search(inner) is None
+
+
+def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, list[str], dict[int, int]]) -> None:
+    """One structured pass over `cmd`, given its heredoc extraction under one reading of the regions."""
     acc.spend(len(cmd))
     start_cwd = cwd
     full = cmd
-    cmd, bodies, open_from = _extract_heredocs(cmd, as_text, regions, acc.spend)
+    cmd, bodies, open_from = extracted
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
     pipeline = ""  # text of the segments piped into the current one
 
@@ -1304,6 +1578,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
         cmd = ti.get("command")
         if isinstance(cmd, str):
             acc.budget = 4 * len(cmd) + 1_000_000
+            acc.root = cmd
             try:
                 _bash(cmd, inp.cwd, acc)
             except _TooComplex:

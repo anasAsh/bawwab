@@ -20,6 +20,7 @@ _CLAUDE_SUBCMD = re.compile(
 _GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")
 # mv/rsync of a directory that contains ~/.claude, ~/.claude.json or the bawwab home (mv ~ /x).
 _MOVE = re.compile(r"(?:^|[\s;&|(])(?:mv|rsync)\s")
+_DOLLAR_QUOTE = re.compile(r"\$(?=['\"])")
 _GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
 
 
@@ -38,21 +39,12 @@ def prefilter(data: dict) -> bool:
     if not isinstance(ti, dict):
         return False
     cwd = str(data.get("cwd") or "")
-    home = _bawwab_home()
-    extra = (home, os.path.basename(home) or home) if os.environ.get("BAWWAB_HOME") else ()
+    home, extra = context()
     if tool == "Bash":
-        needles = _NEEDLES + extra
         cmd = ti.get("command")
         if not isinstance(cmd, str):
             return False
-        s = cmd.replace('"', "").replace("'", "").replace("\\", "")
-        if any(n in s for n in needles):
-            return True
-        if _MOVE.search(s) and _moves_ancestor(s, cwd, home):
-            return True
-        if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
-            return True
-        return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
+        return bash_install_like(cmd, cwd, home, extra)
     if tool in _FILE_TOOLS:
         fp = ti.get("file_path")
         if not isinstance(fp, str) or not fp:
@@ -61,6 +53,25 @@ def prefilter(data: dict) -> bool:
         s = p + "\0" + os.path.realpath(p)
         return any(n in s for n in _FILE_NEEDLES + extra)
     return False
+
+
+def context() -> tuple[str, tuple[str, ...]]:
+    """(bawwab home, extra needles); computed once per call (detect's raw backstop reuses it per piece)."""
+    home = _bawwab_home()
+    return home, ((home, os.path.basename(home) or home) if os.environ.get("BAWWAB_HOME") else ())
+
+
+def bash_install_like(cmd: str, cwd: str, home: str, extra: tuple[str, ...]) -> bool:
+    """The Bash branch of `prefilter`."""
+    # bash drops quotes and backslashes, and `$'…'` / `$"…"` quote too (cl$'a'ude is claude)
+    s = _DOLLAR_QUOTE.sub("", cmd).replace('"', "").replace("'", "").replace("\\", "")
+    if any(n in s for n in _NEEDLES + extra):
+        return True
+    if _MOVE.search(s) and _moves_ancestor(s, cwd, home):
+        return True
+    if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
+        return True
+    return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
 
 
 def _moves_ancestor(s: str, cwd: str, home: str) -> bool:

