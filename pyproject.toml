@@ -3,6 +3,9 @@ name = "bawwab"
 version = "0.1.0"
 description = "Scan MCP servers, skills and plugins for malicious behaviour before Claude Code installs them"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
 dependencies = [
     "anthropic>=2.10.0",
     "httpx>=0.28.1",
