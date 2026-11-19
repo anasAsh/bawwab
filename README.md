@@ -200,7 +200,7 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 
 ## Contributing
 
-Bawwab is an open-source community project (possible home: [JOSA](https://josa.ngo)). Issues and PRs are welcome,
+Bawwab is an open-source community project. Issues and PRs are welcome,
 especially **bypasses**. If you can get something past the gatekeeper, open an issue with a harmless reproduction.
 Please use canary values and `.invalid` hosts, never live malware.
 
