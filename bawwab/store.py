@@ -333,10 +333,10 @@ class Store:
             rows = self._conn.execute("SELECT id, text FROM warnings ORDER BY id").fetchall()
             if rows:
                 self._conn.execute("DELETE FROM warnings WHERE id<=?", (rows[-1]["id"],))
-                try:  # inside the write lock: a concurrent add_warning touches the flag only after we commit
-                    _flag_path().unlink()
-                except OSError:
-                    pass
+            try:  # inside the write lock (a concurrent add_warning touches the flag after commit); also clears stale flags
+                _flag_path().unlink()
+            except OSError:
+                pass
         return [r["text"] for r in rows]
 
     # --- inventory ---

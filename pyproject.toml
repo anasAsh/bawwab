@@ -24,6 +24,7 @@ module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["real_spawn: allow the test to spawn the real background inventory"]
 
 [dependency-groups]
 dev = [

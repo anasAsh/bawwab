@@ -162,6 +162,10 @@ def _pinned_command(item: InstalledItem, version: str) -> str | None:
     return shlex.join([cmd, *new]) if changes else None
 
 
+def _lbl(label: str) -> str:
+    return sanitise(label, 80)
+
+
 def _warn(store, text: str, out: list[str]) -> None:
     text = sanitise(text, 400)
     store.add_warning(text)
@@ -190,15 +194,15 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
                 done[t] = scan(t, mode=cfg.mode, cfg=cfg, store=store, no_cache=t.kind == "remote")
             r = done[t]
         except Exception as e:  # noqa: BLE001 - one bad item must not stop the inventory
-            _warn(store, f"bawwab: {item.label} could not be scanned ({type(e).__name__})", warnings)
+            _warn(store, f"bawwab: {_lbl(item.label)} could not be scanned ({type(e).__name__})", warnings)
             continue
         approved = r.verdict != Verdict.CLEAN and store.is_approved(r.key)
         if r.verdict != Verdict.CLEAN and not approved:
-            _warn(store, f"bawwab: {item.label} is {r.verdict.value.upper()} — run ! bawwab scan {_scan_spec(t)}", warnings)
+            _warn(store, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! bawwab scan {_scan_spec(t)}", warnings)
         if item.unpinned:
             pinned = _pinned_command(item, r.resolved_version)
             if pinned:
-                _warn(store, f"bawwab: {item.label} is unpinned — pin it: {pinned}", warnings)
+                _warn(store, f"bawwab: {_lbl(item.label)} is unpinned — pin it: {pinned}", warnings)
         transient = any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
         if fp is not None and not transient:
             store.put_inventory_seen(item.ident, fp, r.key, r.verdict.value)
@@ -231,33 +235,39 @@ def _stale(p: Path) -> bool:
         pid_s, ts_s = p.read_text().split()
         return time.time() - float(ts_s) > LOCK_STALE_S or not _alive(int(pid_s))
     except (OSError, ValueError):
-        return True
+        try:  # unparseable: a writer may be mid-write, so only old files count as stale
+            return time.time() - p.stat().st_mtime > 5
+        except OSError:
+            return True
 
 
 def acquire_lock() -> bool:
     p = _lock_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        try:
-            fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            if not _stale(p):
-                return False
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    tmp.write_text(f"{os.getpid()} {time.time()}")
+    try:
+        for _ in range(2):
             try:
-                p.unlink()
-            except OSError:
-                return False
-            continue
-        with os.fdopen(fd, "w") as f:
-            f.write(f"{os.getpid()} {time.time()}")
-        return True
-    return False
+                os.link(tmp, p)  # atomic, and the content is complete before the lock is visible
+                return True
+            except FileExistsError:
+                if not _stale(p):
+                    return False
+                try:
+                    p.unlink()
+                except OSError:
+                    return False
+        return False
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def release_lock() -> None:
     try:
-        _lock_path().unlink()
-    except OSError:
+        if _lock_path().read_text().split()[0] == str(os.getpid()):
+            _lock_path().unlink()
+    except (OSError, IndexError):
         pass
 
 

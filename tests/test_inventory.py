@@ -228,3 +228,64 @@ def test_hook_notify_with_flag(home):
                        env=env, timeout=60)
     assert r.returncode == 0
     assert "hook warning" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_take_warnings_clears_stale_flag(home):
+    store = open_store()
+    flag = Path(os.environ["BAWWAB_HOME"]) / "warnings.flag"
+    flag.touch()
+    assert store.take_warnings() == [] and not flag.exists()
+
+
+def test_lock_dead_pid_stale(home):
+    lock = Path(os.environ["BAWWAB_HOME"]) / "inventory.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"999999999 {time.time()}")
+    assert inv.acquire_lock()
+    assert lock.read_text().split()[0] == str(os.getpid())
+
+
+def test_lock_unparseable_fresh_is_live_old_is_stale(home):
+    lock = Path(os.environ["BAWWAB_HOME"]) / "inventory.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("")
+    assert not inv.acquire_lock()
+    old = time.time() - 60
+    os.utime(lock, (old, old))
+    assert inv.acquire_lock()
+
+
+def test_release_only_own_lock(home):
+    lock = Path(os.environ["BAWWAB_HOME"]) / "inventory.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"1 {time.time()}")
+    inv.release_lock()
+    assert lock.exists()
+
+
+def test_label_capped(home):
+    h, proj = home
+    name = "x" * 500
+    _w(h / ".claude.json", {"mcpServers": {name: {"command": "npx", "args": ["bad@1.0.0"]}}})
+    w = inv.run_inventory(proj, scan=lambda t, **kw: _report(t, Verdict.MALICIOUS), store=open_store())
+    assert w and "x" * 81 not in w[0]
+
+
+def test_isolation_guard_and_hook_leaves_real_home_alone(real_home):
+    import subprocess
+    import sys
+
+    assert Path.home() != real_home
+    real = real_home / ".bawwab"
+    before = real.stat().st_mtime_ns if real.exists() else None
+    for sub in ("inventory", "notify"):
+        r = subprocess.run([sys.executable, str(HOOK), sub], input="{}", capture_output=True, text=True,
+                           timeout=60, env=os.environ.copy())
+        assert r.returncode == 0
+    after = real.stat().st_mtime_ns if real.exists() else None
+    assert before == after
+
+
+def test_spawn_blocked_by_default():
+    with pytest.raises(AssertionError):
+        inv.spawn_background(Path("."))
