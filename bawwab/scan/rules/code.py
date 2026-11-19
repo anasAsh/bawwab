@@ -303,6 +303,9 @@ CRED_RES = [
     r"\bdict\(\s*os\.environ\s*\)", r"\bos\.environ\.(?:copy|items)\(\)", r"\bjson\.dumps\(\s*os\.environ\b",
     r"\bstr\(\s*os\.environ\s*\)",
     r"JSON\.stringify\(\s*process\.env\b", r"Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
+    # spread copies: a hit only when they reach a network call or a write (R44)
+    r"\{\s*\.\.\.\s*process\.env\s*[,}]", r"\{\s*\*\*\s*os\.environ\s*[,}]",
+    r"Object\.assign\(\s*\{\s*\}\s*,\s*process\.env\s*[,)]",
 ]
 DOTENV_RE = re.compile(
     r"\b(?:load_dotenv|dotenv_values|find_dotenv)\b|require\(\s*['\"]dotenv['\"]\s*\)"
@@ -315,6 +318,10 @@ CRED_RE = re.compile("|".join(CRED_RES), re.I)
 # Serialising the env (json.dumps, JSON.stringify, str) stays a plain credential hit.
 ENV_COPY_RE = re.compile(
     r"dict\(\s*os\.environ\s*\)|os\.environ\.(?:copy|items)\(\)|Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
+    re.I,
+)
+SPREAD_COPY_RE = re.compile(
+    r"\{\s*\.\.\.\s*process\.env\s*[,}]|\{\s*\*\*\s*os\.environ\s*[,}]|Object\.assign\(\s*\{\s*\}\s*,\s*process\.env\s*[,)]",
     re.I,
 )
 ENV_WRITE_RE = re.compile(
@@ -1834,25 +1841,79 @@ def _from(v: str, mods: tuple[str, ...]) -> bool:
     return any(v == m or v.startswith(m + ".") for m in mods)
 
 
-def _created_require(text: str, root: str) -> str | None:
-    """The module of `const root = req('m')`, where req is `require`, made by `createRequire(...)`, or
-    esbuild's `__require` shim (`var T=(e=>typeof require<"u"?require:...)`)."""
-    m = re.search(r"(?:\b(?:const|let|var)\s+|,\s*)" + re.escape(root)
-                  + r"""\s*=\s*(?:await\s+)?([\w$]+)\(\s*['"]([\w@/.:-]+)['"]\s*\)""", text)
-    if m is None:
-        return None
-    fn = re.escape(m.group(1))
-    if (m.group(1) == "require"
-            or re.search(r"\b(?:const|let|var)\s+" + fn + r"\s*=\s*(?:[\w$.]+\.)?createRequire\(", text)
-            or re.search(r"(?:\b(?:const|let|var)\s+|,\s*)" + fn + r"""\s*=\s*\(\s*[\w$]+\s*=>\s*typeof\s+require\s*<\s*["']u["']\s*\?\s*require\b""", text)):
-        return re.sub(r"^node:", "", m.group(2))
+def _code_only(f: ScanFile) -> str:
+    """The file with comments blanked and string bodies blanked where offsets survive (R44 N8)."""
+    t = _code_text(f.rel, f.text)
+    return t
+
+
+def _is_code_at(f: ScanFile, t: str, a: int, b: int) -> bool:
+    """t[a:b] is code: not in a comment (blanked in t) and not inside a string literal."""
+    tb = _blanked_for(f.rel, t)
+    return tb is None or tb[a:b] == t[a:b]
+
+
+_REQ_DECL = r"""(?:\b(?:const|let|var)\s+|,\s*)({root})\s*=\s*(?:await\s+)?([\w$]+)\(\s*['"]([\w@/.:-]+)['"]\s*\)"""
+
+
+def _require_fn(f: ScanFile, t: str, fn: str) -> bool:
+    """`fn` is `require`, a `createRequire(...)` result or esbuild's `__require` shim, declared in code."""
+    if fn == "require":
+        return True
+    e = re.escape(fn)
+    for rx in (r"\b(?:const|let|var)\s+" + e + r"\s*=\s*(?:[\w$.]+\.)?createRequire\(",
+               r"(?:\b(?:const|let|var)\s+|,\s*)" + e + r"""\s*=\s*\(\s*[\w$]+\s*=>\s*typeof\s+require\s*<\s*["']u["']\s*\?\s*require\b"""):
+        for m in re.finditer(rx, t):
+            head_end = t.index("=", m.start()) + 1  # the shim's body holds string literals ("u")
+            if _is_code_at(f, t, m.start(), head_end):
+                return True
+    return False
+
+
+def _created_require(f: ScanFile, root: str) -> str | None:
+    """The module of `const root = req('m')` in code, where req is `require`, made by `createRequire(...)`,
+    or esbuild's `__require` shim (`var T=(e=>typeof require<"u"?require:...)`). Comments and strings
+    never count (R44 N8)."""
+    t = _code_only(f)
+    for m in re.finditer(_REQ_DECL.format(root=re.escape(root)), t):
+        # the declaration up to the "(" must be code; the module literal itself is a string
+        if _is_code_at(f, t, m.start(), m.start(3) - 1) and _require_fn(f, t, m.group(2)):
+            return re.sub(r"^node:", "", m.group(3))
     return None
+
+
+def _self_defined(f: ScanFile, root: str) -> bool:
+    """The file binds `root` itself somewhere in code, other than by a require/import (R42 N3, R44 N8):
+    function/class/def, a non-require const/let/var, or a Python plain assignment / `as root`."""
+    t = _code_only(f)
+    e = re.escape(root)
+    for m in re.finditer(r"(?:\bdef|\bfunction\s*\*?|\bclass)\s+" + e + r"\b", t):
+        if _is_code_at(f, t, m.start(), m.end()):
+            return True
+    for m in re.finditer(r"(?:\b(?:const|let|var)\s+|,\s*)" + e + r"\s*=(?![=>])", t):
+        if not _is_code_at(f, t, m.start(), m.end()):
+            continue
+        rest = t[m.end() : m.end() + 200]
+        r = re.match(r"""\s*(?:await\s+)?(?:import\(|([\w$]+)\(\s*['"][\w@/.:-]+['"]\s*\))""", rest)
+        if r is None or (r.group(1) is not None and not _require_fn(f, t, r.group(1))):
+            return True
+    if f.rel.endswith(PY_EXT):
+        for m in re.finditer(r"^[ \t]*" + e + r"\s*(?::[^=\n]+)?=(?!=)|\bas\s+" + e + r"\s*(?::|$|,)"
+                             r"|\bfor\s+(?:[\w, ]+,\s*)?" + e + r"\b[^\n]*\bin\b|\bglobal\s+" + e + r"\b", t, re.M):
+            if not _is_code_at(f, t, m.start(), m.end()):
+                continue
+            if m.group(0).lstrip().startswith("as"):
+                line = _line_text(t, _line_of(t, m.start()))
+                if re.match(r"\s*(?:import|from)\b", line):
+                    continue  # `import subprocess as sp`: an import; a fake module is checked by its value
+            return True
+    return False
 
 
 def _resolved(f: ScanFile, callee: str) -> str:
     """The callee normalised through imports, also through createRequire / bundler require shims."""
     root, _, rest = callee.partition(".")
-    if (mod := _created_require(f.text, root)) is not None:
+    if (mod := _created_require(f, root)) is not None:
         return mod + ("." + rest if rest else "")
     return _norm_callee(callee, _aliases(f.rel, f.text))
 
@@ -1863,14 +1924,14 @@ def _launcher(f: ScanFile, callee: str) -> bool:
     raw = re.sub(r"^new\s+", "", callee.strip())
     al = dict(_aliases(f.rel, f.text))
     root = raw.split(".", 1)[0]
-    created = (mod := _created_require(f.text, root)) is not None
-    if created:
+    if (mod := _created_require(f, root)) is not None:
         al[root] = mod  # const puppeteer = requireFrom('puppeteer'), requireFrom = createRequire(...)
+    elif root in al and re.fullmatch(r"[\w$]+", al[root]) and not _from(al[root], LAUNCH_MODULES + BROWSER_MODULES):
+        del al[root]  # `const cp = R("child_process")` with R not a real require
     if root not in al:
         return False  # not an import: the package's own spawn / launch / api.launch
-    if not created and re.search(r"(?:\bdef|\bfunction\s*\*?|\bclass)\s+" + re.escape(root) + r"\b"
-                 r"|\b(?:const|let|var)\s+" + re.escape(root) + r"\s*=(?!\s*(?:await\s+)?(?:require|import)\b)", f.text):
-        return False  # the file defines this name itself
+    if _self_defined(f, root):
+        return False  # the file defines this name itself, always checked (R44 N8)
     norm = _norm_callee(raw, al)
     leaf = norm.rsplit(".", 1)[-1]
     v = al[root]
@@ -2007,7 +2068,7 @@ def _calls_bound(f: ScanFile, t: str, func: str, depth: int) -> bool:
     return ok
 
 
-_OPTION_SINKS = {"util.inspect", "util.formatWithOptions"}
+_OPTION_SINKS = {"util.inspect": 1, "util.formatWithOptions": 0}  # callee -> options argument index
 
 
 def _members_only(f: ScanFile, t: str, name: str, skip: tuple[int, int]) -> bool:
@@ -2019,15 +2080,42 @@ def _members_only(f: ScanFile, t: str, name: str, skip: tuple[int, int]) -> bool
         if skip[0] <= m.start() < skip[1] or not _in_code(f, t, m.start(), name):
             continue
         before, after = t[max(0, m.start() - 40) : m.start()], t[m.end() : m.end() + 40]
+        if re.match(r"\s*\.\s*(?:valueOf|toJSON|toString)\b", after):
+            return False  # the whole object again (review N10)
         if re.match(r"\s*(?:\.\s*[\w$]|\[)", after) or re.search(r"\bin\s+$|\bObject\.keys\(\s*$", before):
             seen = True
             continue
         c = _enclosing_call(t, m.start())
-        if c is not None and _resolved(f, c[1]) in _OPTION_SINKS:
-            seen = True  # util.formatWithOptions(opts, ...): formatting options, in process
-            continue
+        if c is not None and (slot := _OPTION_SINKS.get(_resolved(f, c[1]))) is not None:
+            args = _top_args(t, c[0])
+            k, pos_ = -1, c[0] + 1
+            for i, arg in enumerate(args):
+                if pos_ <= m.start() < pos_ + len(arg):
+                    k = i
+                    break
+                pos_ += len(arg) + 1
+            if k == slot and re.fullmatch(r"\s*" + re.escape(name) + r"\s*", args[k]):
+                seen = True  # util.formatWithOptions(opts, ...): the options slot only (review N10)
+                continue
         return False
     return seen
+
+
+def _spread_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
+    """{...process.env}, {**os.environ}, Object.assign({}, process.env): "real" only when the copy reaches
+    a network call or a write; otherwise "bound" (dropped), so a spread into a child's env or a config
+    object stays silent (R44, R26). The launcher-bound check runs first."""
+    line_start = t.rfind("\n", 0, pos) + 1
+    prefix = t[line_start:pos]
+    heads = list(_ASSIGN_HEAD_RE.finditer(prefix))
+    name = heads[-1].group(1) if heads and not re.search(r"=>|\bfunction\b|\blambda\b", prefix[heads[-1].end():]) else None
+    if name:
+        a, b = _scope_bounds(f, t, _line_of(t, pos))
+        if _name_bound(f, t, name, a, b, (line_start, end), 0):
+            return "bound"
+    elif _use_bound(f, t, pos, end, "", 0) == "ok":
+        return "bound"
+    return "real" if _env_dump_kind(f, t, pos, end) == "real" else "bound"
 
 
 def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
@@ -2050,7 +2138,7 @@ def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
         names.append(heads[-1].group(1))  # not `go = () => spawn(..., {env: copy})`: the copy is not go
     name_res = [re.compile(r"(?<![\w$])" + re.escape(n) + r"(?![\w$])") for n in names]
     for w in ENV_WRITE_RE.finditer(t):
-        if pos <= w.start() < end or re.search(r"\bstd(?:out|err)\s*\.\s*$", t[max(0, w.start() - 12) : w.start()]):
+        if pos <= w.start() < end or re.search(r"(?<![\w$.])(?:process|sys)\s*\.\s*std(?:out|err)\s*\.\s*$", t[max(0, w.start() - 24) : w.start()]):
             continue  # printing to the terminal is not a file write
         wl = _line_of(t, w.start())
         oi = t.find("(", w.start(), w.end() + 1)
@@ -2099,7 +2187,11 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
         if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
             seen.add(m.start())
             kind = _context(f, t, m.start(), regexes)
-            if kind is None and ENV_COPY_RE.fullmatch(m.group(0)):
+            if kind is None and SPREAD_COPY_RE.fullmatch(m.group(0)):
+                kind = _spread_kind(f, t, m.start(), m.end())
+                if kind == "bound":
+                    continue
+            elif kind is None and ENV_COPY_RE.fullmatch(m.group(0)):
                 kind = _env_dump_kind(f, t, m.start(), m.end())
                 if kind == "bound":
                     continue

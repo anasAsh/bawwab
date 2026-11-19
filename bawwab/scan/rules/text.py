@@ -177,7 +177,7 @@ def _schema_param(o, p: dict, string_of, txt) -> bool:
         holder = holder.parent
     if holder is not None and holder.type == "arguments" and in_array:
         # inspectorBackend.registerCommand("Domain.cmd", [{name, type, optional, description, typeRef}])
-        return bool({"optional", "typeRef"} & set(p))
+        return "typeRef" in p  # the CDP table form; `optional` alone is attacker-cheap (review N9)
     if holder is None or holder.type != "pair":
         return False
     k = holder.child_by_field_name("key")
