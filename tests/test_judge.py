@@ -160,7 +160,9 @@ def test_cli_backend_invocation(monkeypatch):
         assert a[a.index(flag) + 1] == val
     assert "--strict-mcp-config" in a and "--no-session-persistence" in a
     assert seen["input"] == "PROMPT" and seen["timeout"] == 7 and not seen.get("shell")
-    assert seen["env"]["BAWWAB_CHILD"] == "1"
+    from bawwab.paths import child_token
+
+    assert seen["env"]["BAWWAB_CHILD"] == child_token()
     assert seen["cwd"] != "." and not __import__("os").path.exists(seen["cwd"])  # removed afterwards
 
 

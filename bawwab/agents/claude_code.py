@@ -126,23 +126,64 @@ def _load(p: Path) -> object:
         raise UnreadableConfig(f"{p}: invalid JSON") from e
 
 
+_SUBTREE_FILES = 1000
+
+
+def _subtree_files(top: Path, out: list, skipped: list) -> None:
+    """Files under top (breadth-first by os.walk order), at most _SUBTREE_FILES; SKIP_DIRS not entered."""
+    n = 0
+    for dp, dns, fns in os.walk(top):
+        keep = []
+        for d in sorted(dns):
+            full = Path(dp) / d
+            if d in watch.SKIP_DIRS:
+                skipped.append(full)
+            elif os.path.islink(full):
+                out.append(full)  # a nested link: its text is hashed, not followed
+            else:
+                keep.append(d)
+        dns[:] = keep
+        for fn in sorted(fns):
+            if n >= _SUBTREE_FILES:
+                skipped.append(Path(dp))
+                return
+            out.append(Path(dp) / fn)
+            n += 1
+
+
 def _tree_hash(root: Path) -> str:
-    """Content hash of a directory (or file), resolving a symlinked root: relative paths and bytes (link
-    targets for nested links); stat data past the size caps."""
+    """Content hash of a directory (or file), resolving a symlinked root. The files that decide what runs
+    (ALWAYS_FILES and every file directly in the root) are always hashed in full; each top-level subtree
+    contributes at most _SUBTREE_FILES files; SKIP_DIRS (node_modules...) count by their own stat only;
+    past the overall caps, files count by stat data. Nested link texts are hashed."""
     h = hashlib.sha256()
     if root.is_symlink():
         try:
             h.update(f"ROOTLINK\0{os.readlink(root)}\n".encode())
         except OSError:
             pass
-    if root.is_dir():  # follows a symlinked root: the target tree is what runs
-        files, base = [], root
-        for dp, dns, fns in os.walk(root):
-            dns[:] = sorted(d for d in dns if d != ".git")
-            files += [Path(dp) / fn for fn in sorted(fns)]
-            files += [Path(dp) / d for d in dns if os.path.islink(os.path.join(dp, d))]
+    if not root.is_dir():
+        files, base, always = [root], root.parent, {root}
+        skipped: list[Path] = []
     else:
-        files, base = [root], root.parent
+        base = root
+        always_l = [root / rel for rel in watch.ALWAYS_FILES if (root / rel).is_file()]
+        files, skipped, subtrees = list(always_l), [], []
+        try:
+            entries = sorted(root.iterdir(), key=lambda p: p.name)
+        except OSError:
+            entries = []
+        for p in entries:
+            if p.is_symlink() and p.is_dir():
+                files.append(p)
+            elif p.is_dir():
+                (skipped if p.name in watch.SKIP_DIRS else subtrees).append(p)
+            else:
+                files.append(p)
+        always = set(files)
+        for sub in subtrees:
+            _subtree_files(sub, files, skipped)
+        files = list(dict.fromkeys(files))
     budget = _MAX_HASH_BYTES
     for i, p in enumerate(files):
         rel = os.path.relpath(p, base)
@@ -158,7 +199,7 @@ def _tree_hash(root: Path) -> str:
                 pass
             if p.is_dir():
                 continue
-        if i < _MAX_HASH_FILES and st.st_size <= budget:
+        if p in always or (i < _MAX_HASH_FILES and st.st_size <= budget):
             try:
                 data = p.read_bytes()
             except OSError:
@@ -168,6 +209,12 @@ def _tree_hash(root: Path) -> str:
             h.update(data)
         else:
             h.update(f"S\0{rel}\0{st.st_size}\0{st.st_mtime_ns}\0{st.st_ctime_ns}\n".encode())
+    for d in skipped:
+        try:
+            st = os.stat(d)
+            h.update(f"D\0{os.path.relpath(d, base)}\0{st.st_mtime_ns}\0{st.st_ctime_ns}\n".encode())
+        except OSError:
+            pass
     return h.hexdigest()
 
 

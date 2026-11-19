@@ -36,8 +36,9 @@ class _CliBackend:
             "--setting-sources", "", "--no-session-persistence", "--output-format", "json",
             "--json-schema", json.dumps(schema), "--system-prompt", system,
         ]
-        env = dict(os.environ)
-        env["BAWWAB_CHILD"] = "1"
+        from bawwab.paths import child_env
+
+        env = child_env()
         with tempfile.TemporaryDirectory(prefix="bawwab-judge-") as cwd:
             try:
                 proc = subprocess.run(

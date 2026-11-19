@@ -8,6 +8,7 @@ directory listings only for shell globs in cp/mv/rsync arguments.
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import functools
 import glob as _glob
 import json
@@ -167,13 +168,48 @@ def _under(p: str, root: str) -> bool:
 _MARKER = ".bawwab-initialised"  # bawwab's install marker (~/.claude, $CLAUDE_PLUGIN_DATA): state like bawwab home
 # Interpreter code that drives bawwab's own state from inside (approve, init --skip, quarantine...).
 _BAWWAB_CODE = re.compile(
-    r"\bimport\s+bawwab\b|\bfrom\s+bawwab\b|\bbawwab\.[a-z_]+|\binit_skip\b|\bapprove\s*\(|bawwab\.db\b"
+    r"\bimport\s+bawwab\b|\bfrom\s+bawwab\b|\bbawwab\.[a-z_]+|\binit_skip\b|bawwab\.db\b"
     r"|quarantine\.flag|\.bawwab-initialised"
 )
 
 
+_GLOB_CHARS = re.compile(r"[*?\[]")
+_STATE_FILES = ("fp", "quarantine.flag", "bawwab.db", "effects.error", "effects.lock")
+
+
+def _state_targets() -> list[str]:
+    """bawwab's own state: its home and key files, and the install markers (paths a glob must not reach)."""
+    home = os.path.normpath(str(bawwab_home()))
+    out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER)]
+    pd = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if pd:
+        out.append(os.path.join(os.path.normpath(pd), _MARKER))
+    return out
+
+
+def _comp_match(pat: str, name: str, icase: bool = False) -> bool:
+    if name.startswith(".") and not pat.startswith("."):
+        return False  # a shell glob doesn't match a leading dot
+    return fnmatch.fnmatchcase(name.lower(), pat.lower()) if icase else fnmatch.fnmatchcase(name, pat)
+
+
+def _glob_hits_state(p: str) -> bool:
+    """A glob path that matches bawwab state, or a directory that contains it (rm -rf ~/.baw*)."""
+    pparts = p.rstrip("/").split("/")
+    if _comp_match(pparts[-1], _MARKER):
+        return True
+    for t in _state_targets():
+        tparts = t.split("/")
+        for n in range(2, len(tparts) + 1):  # the target and each ancestor (deleting it deletes the target)
+            if n == len(pparts) and all(_comp_match(a, b) for a, b in zip(pparts, tparts[:n])):
+                return True
+    return False
+
+
 def _bawwab_path(p: str) -> bool:
     if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER:
+        return True
+    if _GLOB_CHARS.search(p) and _glob_hits_state(os.path.normpath(p)):
         return True
     return os.path.basename(p) == "bawwab.json" and os.path.basename(os.path.dirname(p)) == ".claude"
 
@@ -859,6 +895,38 @@ def _moves_config(p: str) -> bool:
     return any(_under(os.path.normpath(r), p) for r in roots)
 
 
+_FIND_PATTERNS = {"-name": (False, False), "-iname": (False, True), "-path": (True, False),
+                  "-ipath": (True, True), "-wholename": (True, False), "-iwholename": (True, True)}
+
+
+def _find(args: list[str], cwd: str, acc: _Acc) -> None:
+    """find whose start dir contains bawwab state and whose -name/-path pattern matches it (-delete,
+    -exec rm, | xargs rm all start here): protected."""
+    starts = []
+    for a in args:
+        if a.startswith(("-", "(", "!")):
+            break
+        starts.append(_abspath(a, cwd))
+    starts = starts or [cwd]
+    targets = [t for t in _state_targets() if any(_under(t, st) for st in starts)]
+    for j, a in enumerate(args[:-1]):
+        spec = _FIND_PATTERNS.get(a)
+        if spec is None or not targets:
+            continue
+        whole, icase = spec
+        pat = args[j + 1]
+        for t in targets:
+            names = [t] if whole else [t.rsplit("/", 1)[-1]]
+            if whole:
+                hit = any(fnmatch.fnmatchcase(t.lower() if icase else t, pat.lower() if icase else pat)
+                          for t in names)
+            else:
+                hit = _comp_match(pat, names[0], icase) or (pat in ("*", ".*"))
+            if hit:
+                acc.protect("bawwab state change")
+                return
+
+
 def _check_dest(p: str, acc: _Acc) -> None:
     if _config_kind(p):
         acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
@@ -970,25 +1038,45 @@ def _extract(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
         acc.protect("unscannable archive extract")
 
 
-def _bawwab_decision(words: list[str]) -> bool:
-    """A user-only bawwab command: approve, reject, or init without --scan (init --skip trusts everything);
-    also any bawwab call whose subcommand can't be read ($var, $(...), `...` split off by the parser)."""
-    if len(words) == 1 and os.path.basename(words[0]) in ("bawwab", "bawwab.cli", "bawwab.cli:main"):
+_BAWWAB_EXES = ("bawwab", "bawwab.cli", "bawwab.cli:main")
+
+
+def _bawwab_vars(cmd: str) -> set[str]:
+    """Shell variables a command assigns a bawwab executable to (B=bawwab; $B init --skip)."""
+    return {m.group(1) for m in re.finditer(r"(?<![\w$])([A-Za-z_]\w*)=['\"]?([^\s;&|'\"]*)", cmd)
+            if os.path.basename(m.group(2)) in _BAWWAB_EXES}
+
+
+def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset()) -> bool:
+    """A user-only bawwab command: approve, reject, init without --scan (init --skip trusts everything),
+    effects --retry; also a bawwab call whose subcommand can't be read ($var, $(...), `...` split off by
+    the parser into a bare `bawwab`)."""
+    if not words:
+        return False
+    w0 = words[0]
+    if w0.startswith("$") and re.sub(r"^\$\{?(\w+)\}?$", r"\1", w0) in bawwab_vars:
+        words = ["bawwab", *words[1:]]
+    if len(words) == 1 and os.path.basename(words[0]) in _BAWWAB_EXES:
         return True
-    seen = False
+    seen = None
     for i, w in enumerate(words):
-        b = os.path.basename(w)
-        if b in ("bawwab", "bawwab.cli", "bawwab.cli:main"):
-            seen = True
-        elif i == 0 and w.startswith("$") and any(x in ("init", "approve", "reject") for x in words[1:]):
-            return True  # B=bawwab; $B init --skip
-        elif seen and ("$" in w or "`" in w):
-            return True  # the subcommand can't be read: x=init; bawwab $x --skip
-        elif seen and w in ("approve", "reject"):
+        if seen is None:
+            if os.path.basename(w) in _BAWWAB_EXES:
+                seen = i
+            continue
+        if w.startswith("-"):
+            continue
+        # the subcommand position
+        if "$" in w or "`" in w:
             return True
-        elif seen and w == "init":
-            rest = words[i + 1:]
+        rest = words[i + 1:]
+        if w in ("approve", "reject"):
+            return True
+        if w == "init":
             return "--scan" not in rest or any(a.startswith("--sk") for a in rest)
+        if w == "effects":
+            return any(a.startswith("--re") for a in rest)
+        return False
     return False
 
 
@@ -1260,7 +1348,7 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
         return
     exe = os.path.basename(words[0])
     args = words[1:]
-    if exe in ("bawwab", "bawwab.cli", "bawwab.cli:main") and _bawwab_decision(words):
+    if exe in _BAWWAB_EXES and _bawwab_decision(words):
         acc.protect("bawwab approval via tool call")
     ci = _claude_index(words)
     if ci is not None:
@@ -1275,6 +1363,8 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
         return
     if exe == "git":
         _git(args, cwd, acc)
+    elif exe == "find":
+        _find(args, cwd, acc)
     elif exe in ("cp", "mv", "ln", "rsync", "install"):
         _copy(exe, args, cwd, acc)
     elif exe in ("curl", "wget"):
@@ -1415,7 +1505,7 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
         up_words, prev_words = (prev_words if seg.piped else []), words
         if not words:
             continue
-        if _bawwab_decision(words):
+        if _bawwab_decision(words, _bawwab_vars(cmd) if words[0].startswith("$") else frozenset()):
             acc.protect("bawwab approval via tool call")
         exe = os.path.basename(words[0])
         args = words[1:]
@@ -1472,6 +1562,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             _bash(" ".join(args), cwd, acc, depth + 1)
         elif exe == "git":
             _git(args, cwd, acc)
+        elif exe == "find":
+            _find(args, cwd, acc)
         elif exe in ("cp", "mv", "ln", "rsync", "install"):
             _copy(exe, args, cwd, acc)
             continue

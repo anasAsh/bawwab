@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from bawwab.paths import is_bawwab_child
 from bawwab.report import explain, format_report, sanitise
 
 
@@ -146,7 +147,7 @@ def _decide(args) -> int:
 
 def _gate() -> int:
     """Hook entry point. Always exits 0; prints hook JSON or nothing."""
-    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+    if is_bawwab_child():
         return 0
     try:
         data = json.loads(sys.stdin.read())
@@ -201,7 +202,7 @@ def _hook_cwd(arg: str | None) -> Path:
 
 def _inventory(args) -> int:
     """SessionStart: start the scan detached, print what earlier scans queued. Always exits 0."""
-    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+    if is_bawwab_child():
         return 0
     try:
         from bawwab import inventory as inv
@@ -233,7 +234,7 @@ def _inventory(args) -> int:
 
 def _notify() -> int:
     """UserPromptSubmit: print queued warnings once. Always exits 0."""
-    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+    if is_bawwab_child():
         return 0
     try:
         from bawwab.inventory import hook_output
@@ -291,7 +292,7 @@ def _hook_json() -> dict | None:
 
 def _post() -> int:
     """PostToolUse hook. Always exits 0; prints {"decision": "block", ...} when something new is quarantined."""
-    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+    if is_bawwab_child():
         return 0
     data = _hook_json()
     if data is None:

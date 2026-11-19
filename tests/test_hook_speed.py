@@ -32,7 +32,9 @@ def test_non_install_fast_and_silent():
 
 
 def test_child_env_short_circuits():
-    r = run(INSTALL, "gate", env={"BAWWAB_CHILD": "1"})
+    from bawwab.paths import child_token
+
+    r = run(INSTALL, "gate", env={"BAWWAB_CHILD": child_token()})  # bawwab's own child (per-install token)
     assert r.returncode == 0 and r.stdout == ""
 
 

@@ -66,9 +66,9 @@ def _add_server(home, name="evil", where=None):
 
 def test_marker_written_outside_bawwab_home(env, monkeypatch, tmp_path):
     home, proj = env
-    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(tmp_path / "pdata"))
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(tmp_path / "data/bawwab-mkt"))
     fx.session_start(proj)
-    for p in (home / ".claude/.bawwab-initialised", tmp_path / "pdata/.bawwab-initialised"):
+    for p in (home / ".claude/.bawwab-initialised", tmp_path / "data/bawwab-mkt/.bawwab-initialised"):
         m = json.loads(p.read_text())
         assert m["init_state"] == "none" and m["installed_at"]
     fx.init_skip(proj)

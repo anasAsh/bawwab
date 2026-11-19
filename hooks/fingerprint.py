@@ -1,8 +1,8 @@
 """Cheap change detection for the effect check. Stdlib only; loaded by path from the hook and from bawwab.
 
 fingerprint(): stat data (mtime, ctime, size, inode) of every watched JSON file, and of every entry under
-the watched directories (skills/commands/agents, installed plugins' install paths), walked recursively,
-following symlinks, up to MAX_ENTRIES per root (past that the root is marked truncated: coarse).
+the watched directories (skills/commands/agents, installed plugins' install paths): see _walk for the
+rules (skip node_modules & co, breadth-first with per-root and per-subtree budgets, key files always).
 semantic_digest(): the same, except JSON files count only through the keys that matter (mcpServers,
 hooks, ...), so Claude rewriting ~/.claude.json (numStartups, tips, project metadata) is noise.
 
@@ -21,7 +21,8 @@ import time
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _WATCH_GLOB = os.path.join(_ROOT, "bawwab", "agents", "*_watch.py")
 _MAX_CWDS = 32
-MAX_ENTRIES = 5000
+ROOT_BUDGET = 5000  # entries walked per watched root, beyond the always-statted ones
+SUBTREE_BUDGET = 1000  # per top-level subtree of an item root, so one big subtree can't starve its siblings
 MARKER = ".bawwab-initialised"
 _tables = None
 
@@ -52,8 +53,81 @@ def _stat(path: str) -> str:
     return f"{st.st_mtime_ns}:{st.st_ctime_ns}:{st.st_size}:{st.st_ino}"
 
 
-def _walk(root: str, h) -> None:
-    """Feed every entry under root (recursively, symlinks followed, loops cut) into the hash h."""
+def _row(h, path: str, st, tag: str = "") -> None:
+    h.update(f"{tag}{path}\0{st.st_mtime_ns}:{st.st_ctime_ns}:{st.st_size}:{st.st_ino}\n".encode())
+
+
+def _link(h, path: str) -> None:
+    try:
+        h.update(f"L\0{os.readlink(path)}\n".encode())
+    except OSError:
+        pass
+
+
+def _stat_into(h, path: str) -> None:
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        h.update(f"E\0{path}\0{e.errno}\n".encode())
+        return
+    _row(h, path, st, "A\0")
+    if os.path.islink(path):
+        _link(h, path)
+
+
+def _entries(d: str, h) -> list:
+    try:
+        with os.scandir(d) as it:
+            return sorted(it, key=lambda e: e.name)
+    except OSError as e:
+        h.update(f"E\0{d}\0{e.errno}\n".encode())
+        return []
+
+
+def _entry(h, e, seen: set, skip, tag: str = "") -> str | None:
+    """Record one dir entry; returns its path when it is a directory to descend into."""
+    try:
+        st = e.stat()
+    except OSError:
+        h.update(f"?\0{e.path}\n".encode())
+        return None
+    _row(h, e.path, st, tag)
+    if e.is_symlink():
+        _link(h, e.path)
+    if e.is_dir() and e.name not in skip:  # skipped dirs (node_modules...): their own stat only
+        key = (st.st_dev, st.st_ino)
+        if key not in seen:
+            seen.add(key)
+            return e.path
+    return None
+
+
+def _bfs(top: str, h, budget: int, seen: set, skip) -> int:
+    """Breadth-first stat of everything under top, at most `budget` entries; returns the entries used."""
+    queue, i, n = [top], 0, 0
+    while i < len(queue):
+        d = queue[i]
+        i += 1
+        for e in _entries(d, h):
+            if n >= budget:
+                h.update(f"TRUNCATED\0{top}\n".encode())
+                return n
+            n += 1
+            sub = _entry(h, e, seen, skip)
+            if sub:
+                queue.append(sub)
+    return n
+
+
+def _walk(root: str, h, item_root: bool = False) -> None:
+    """Feed a watched root into h. Every item root (each child dir of a skills/commands/agents dir, or the
+    root itself for a plugin install path) gets its direct entries and its ALWAYS_FILES statted whatever
+    the budgets; then each top-level subtree is walked breadth-first within SUBTREE_BUDGET, the whole root
+    within ROOT_BUDGET, never descending into SKIP_DIRS. Symlinks are followed (loops cut)."""
+    t = _watch_tables()[0]
+    skip, always = t.SKIP_DIRS, t.ALWAYS_FILES
     try:
         st = os.stat(root)
     except FileNotFoundError:
@@ -62,51 +136,32 @@ def _walk(root: str, h) -> None:
     except OSError as e:
         h.update(f"R\0{root}\0E{e.errno}\n".encode())
         return
-    h.update(f"R\0{root}\0{st.st_mtime_ns}:{st.st_ctime_ns}:{st.st_ino}\n".encode())
+    _row(h, root, st, "R\0")
     if os.path.islink(root):
-        h.update(f"L\0{os.readlink(root)}\n".encode())
+        _link(h, root)
     seen = {(st.st_dev, st.st_ino)}
-    stack = [root]
-    n = 0
-    while stack:
-        d = stack.pop()
-        try:
-            with os.scandir(d) as it:
-                entries = sorted(it, key=lambda e: e.name)
-        except OSError as e:
-            h.update(f"E\0{d}\0{e.errno}\n".encode())
-            continue
-        for e in entries:
-            n += 1
-            if n > MAX_ENTRIES:
-                h.update(b"TRUNCATED\n")
-                return
-            if e.name == ".git":
-                continue
-            try:
-                s = e.stat()
-            except OSError:
-                h.update(f"?\0{e.path}\n".encode())
-                continue
-            link = e.is_symlink()
-            h.update(f"{e.path}\0{s.st_mtime_ns}:{s.st_ctime_ns}:{s.st_size}:{s.st_ino}:{int(link)}\n".encode())
-            if link:
-                try:
-                    h.update(f"L\0{os.readlink(e.path)}\n".encode())
-                except OSError:
-                    pass
-            if e.is_dir():
-                key = (s.st_dev, s.st_ino)
-                if key not in seen:
-                    seen.add(key)
-                    stack.append(e.path)
+    if item_root:
+        items = [root]
+    else:  # the container's own entries (skill dirs, command files); its subdirs are item roots
+        items = [p for p in (_entry(h, e, seen, skip) for e in _entries(root, h)) if p]
+    subtrees: list[str] = []
+    for it in items:  # always, whatever the budgets: the files that decide what runs
+        for rel in always:
+            _stat_into(h, os.path.join(it, rel))
+        subtrees += [p for p in (_entry(h, e, seen, skip, "D\0") for e in _entries(it, h)) if p]
+    left = ROOT_BUDGET
+    for sub in subtrees:
+        if left <= 0:
+            h.update(f"TRUNCATED\0{root}\n".encode())
+            break
+        left -= _bfs(sub, h, min(SUBTREE_BUDGET, left), seen, skip)
 
 
 def _paths(cwd: str, home: str) -> tuple[list, list, list]:
     files, dirs = [], []
     for t in _watch_tables():
         files += t.json_files(cwd, home)
-        dirs += t.dirs(cwd, home) + t.plugin_dirs(cwd, home)
+        dirs += [(d, False) for d in t.dirs(cwd, home)] + [(d, True) for d in t.plugin_dirs(cwd, home)]
     return files, dirs, _watch_tables()
 
 
@@ -116,8 +171,8 @@ def fingerprint(cwd: str, home: str) -> str:
     h = hashlib.sha256()
     for p, _k in files:
         h.update(f"J\0{p}\0{_stat(p)}\n".encode())
-    for d in dirs:
-        _walk(d, h)
+    for d, item in dirs:
+        _walk(d, h, item)
     return h.hexdigest()
 
 
@@ -148,8 +203,8 @@ def semantic_digest(cwd: str, home: str) -> str:
         except (OSError, ValueError, RecursionError):
             part = ["unreadable", _stat(p), time.time()]  # never equal: the slow path decides
         h.update(f"J\0{p}\0{json.dumps(part, sort_keys=True, default=str)}\n".encode())
-    for d in dirs:
-        _walk(d, h)
+    for d, item in dirs:
+        _walk(d, h, item)
     return h.hexdigest()
 
 
@@ -158,15 +213,37 @@ def semantic_digest(cwd: str, home: str) -> str:
 def marker_paths(home: str) -> list[str]:
     out = [os.path.join(home, ".claude", MARKER)]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
-    if pd:
+    if pd and is_bawwab_plugin_dir(pd):  # another plugin's data dir is not ours to write
         out.append(os.path.join(pd, MARKER))
     return out
+
+
+def is_bawwab_plugin_dir(path: str) -> bool:
+    """A path with a bawwab plugin id segment (e.g. ~/.claude/plugins/data/bawwab-<marketplace>)."""
+    import re
+
+    return any(re.fullmatch(r"bawwab(?:[-@_.].*)?", part) for part in os.path.normpath(path).split(os.sep))
 
 
 def initialised(home: str, bawwab_home: str) -> bool:
     """Bawwab has had its first SessionStart (install marker), or has effect-check state (the fp file).
     Both gone = a fresh install (first-run prompt; documented residual)."""
     return any(os.path.exists(p) for p in marker_paths(home)) or os.path.exists(state_path(bawwab_home))
+
+
+def is_child(bawwab_home: str) -> bool:
+    """BAWWAB_CHILD counts only when it equals the per-install token bawwab sets on its own children."""
+    import hmac
+
+    v = os.environ.get("BAWWAB_CHILD", "")
+    if not v or v == "0":
+        return False
+    try:
+        with open(os.path.join(bawwab_home, "child.token")) as f:
+            tok = f.read().strip()
+    except OSError:
+        return False
+    return bool(tok) and hmac.compare_digest(v, tok)
 
 
 # ------------------------------------------------------------------ stored state

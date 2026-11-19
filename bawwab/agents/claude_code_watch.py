@@ -30,6 +30,14 @@ PROJECT_JSON = (
     ("{proj}/.claude/settings.local.json", _SETTINGS),
     ("{proj}/.mcp.json", (("mcpServers",),)),
 )
+# Walking rules shared by the fingerprint and the content hash: never descend into these (their own stat
+# is recorded), and always look at these files of an item root (a skill dir, a plugin install path)
+# whatever the size budgets say.
+SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".git", ".tox", ".mypy_cache",
+                       ".pytest_cache"})
+ALWAYS_FILES = ("SKILL.md", "hooks/hooks.json", ".mcp.json", ".claude-plugin/plugin.json", "package.json",
+                "pyproject.toml", "setup.py")
+
 USER_DIRS = ("{home}/.claude/skills", "{home}/.claude/commands", "{home}/.claude/agents")
 PROJECT_DIRS = ("{proj}/.claude/skills", "{proj}/.claude/commands", "{proj}/.claude/agents")
 
