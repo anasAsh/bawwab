@@ -34,6 +34,10 @@ def _build() -> argparse.ArgumentParser:
     d = sub.add_parser("diff", help="show what changed since the trusted snapshot")
     d.add_argument("name", help="trust name (e.g. npm:pkg) or a target spec")
     sub.add_parser("gate", help="PreToolUse hook: read hook JSON on stdin, print a decision (always exits 0)")
+    i = sub.add_parser("inventory", help="SessionStart hook: scan installed items in the background")
+    i.add_argument("--background", action="store_true", help="run the scan in this process (used by the hook's child)")
+    i.add_argument("--cwd", help="project directory (default: from hook JSON on stdin, else the current directory)")
+    sub.add_parser("notify", help="UserPromptSubmit hook: print queued warnings")
     return p
 
 
@@ -116,6 +120,56 @@ def _gate() -> int:
     return 0
 
 
+def _hook_cwd(arg: str | None) -> Path:
+    if arg:
+        return Path(arg)
+    try:
+        if not sys.stdin.isatty():
+            data = json.loads(sys.stdin.read())
+            if isinstance(data, dict) and isinstance(data.get("cwd"), str) and data["cwd"]:
+                return Path(data["cwd"])
+    except (ValueError, OSError):
+        pass
+    return Path.cwd()
+
+
+def _inventory(args) -> int:
+    """SessionStart: start the scan detached, print what earlier scans queued. Always exits 0."""
+    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+        return 0
+    try:
+        from bawwab import inventory as inv
+
+        cwd = _hook_cwd(args.cwd)
+        if args.background:
+            return inv.background(cwd)
+        inv.spawn_background(cwd)
+        from bawwab.store import open_store
+
+        warnings = open_store().take_warnings()
+        if warnings:
+            print(json.dumps(inv.hook_output("SessionStart", warnings)))
+    except Exception:  # noqa: BLE001 - never break session start
+        pass
+    return 0
+
+
+def _notify() -> int:
+    """UserPromptSubmit: print queued warnings once. Always exits 0."""
+    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+        return 0
+    try:
+        from bawwab.inventory import hook_output
+        from bawwab.store import open_store
+
+        warnings = open_store().take_warnings()
+        if warnings:
+            print(json.dumps(hook_output("UserPromptSubmit", warnings)))
+    except Exception:  # noqa: BLE001
+        pass
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = _build().parse_args(argv)
@@ -123,6 +177,10 @@ def main(argv: list[str] | None = None) -> int:
         return e.code if isinstance(e.code, int) else 3
     if args.cmd == "gate":
         return _gate()
+    if args.cmd == "inventory":
+        return _inventory(args)
+    if args.cmd == "notify":
+        return _notify()
     try:
         if args.cmd == "scan":
             return _scan(args)

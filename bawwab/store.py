@@ -50,7 +50,15 @@ def _migrate_2(conn: sqlite3.Connection) -> None:
     _add_column(conn, "scans", "snapshot", "TEXT")
 
 
-_MIGRATIONS = [_migrate_1, _migrate_2]
+def _migrate_3(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS baseline (ident TEXT PRIMARY KEY, key TEXT NOT NULL, accepted_at TEXT NOT NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS inventory_seen ("
+        "ident TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, key TEXT NOT NULL, verdict TEXT NOT NULL, ts TEXT NOT NULL)"
+    )
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3]
 _VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
 
@@ -314,15 +322,46 @@ class Store:
             )
 
     def add_warning(self, text: str) -> None:
+        """Queue a warning for the user's next message (same text is not queued twice until taken)."""
         with self._tx():
-            self._conn.execute("INSERT INTO warnings(text, ts) VALUES (?,?)", (text, _iso(_now())))
+            if self._conn.execute("SELECT 1 FROM warnings WHERE text=?", (text,)).fetchone() is None:
+                self._conn.execute("INSERT INTO warnings(text, ts) VALUES (?,?)", (text, _iso(_now())))
+        _touch_flag()
 
     def take_warnings(self) -> list[str]:
         with self._tx():
             rows = self._conn.execute("SELECT id, text FROM warnings ORDER BY id").fetchall()
             if rows:
                 self._conn.execute("DELETE FROM warnings WHERE id<=?", (rows[-1]["id"],))
+                try:  # inside the write lock: a concurrent add_warning touches the flag only after we commit
+                    _flag_path().unlink()
+                except OSError:
+                    pass
         return [r["text"] for r in rows]
+
+    # --- inventory ---
+    def get_inventory_seen(self, ident: str) -> tuple[str, str, str] | None:
+        """(fingerprint, key, verdict) recorded for an installed item, if any."""
+        r = self._conn.execute("SELECT fingerprint, key, verdict FROM inventory_seen WHERE ident=?", (ident,)).fetchone()
+        return (r["fingerprint"], r["key"], r["verdict"]) if r else None
+
+    def put_inventory_seen(self, ident: str, fingerprint: str, key: str, verdict: str) -> None:
+        with self._tx():
+            self._conn.execute(
+                "INSERT OR REPLACE INTO inventory_seen(ident, fingerprint, key, verdict, ts) VALUES (?,?,?,?,?)",
+                (ident, fingerprint, key, verdict, _iso(_now())),
+            )
+
+    def add_baseline(self, ident: str, key: str) -> bool:
+        """Accept `key` as the baseline for `ident` unless one exists already (changes are for the effect check)."""
+        with self._tx():
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO baseline(ident, key, accepted_at) VALUES (?,?,?)", (ident, key, _iso(_now()))
+            )
+        return cur.rowcount > 0
+
+    def get_baseline(self) -> dict[str, str]:
+        return {r["ident"]: r["key"] for r in self._conn.execute("SELECT ident, key FROM baseline")}
 
     # --- snapshots ---
     def put_snapshot(self, name: str, key: str, snap: dict) -> None:
@@ -343,6 +382,19 @@ class Store:
             "SELECT name, snap FROM snapshots WHERE id IN (SELECT MAX(id) FROM snapshots GROUP BY name)"
         ).fetchall()
         return {r["name"]: json.loads(r["snap"]) for r in rows}
+
+
+def _flag_path():
+    return bawwab_home() / "warnings.flag"
+
+
+def _touch_flag() -> None:
+    try:
+        p = _flag_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+    except OSError:
+        pass
 
 
 def _one(r: ScanReport, f: Finding) -> ScanReport:
