@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import re
+import unicodedata
 from typing import TYPE_CHECKING
 
 from bawwab.types import Finding, Severity, Target, ToolInfo
@@ -15,9 +16,14 @@ if TYPE_CHECKING:
     from bawwab.store import Store
 
 MAX_DIFF_LINES = 40
+CHUNK = 150  # diff lines stay under the report's per-line cap so appended text is never cut off
+_MORE = "… ({n} more lines; run ! bawwab diff <name>)"
 MAX_SUMMARY_LINES = 120
 _PLACEHOLDERS = {"(unnamed)", "(unparsed)"}
-STOPLIST = {"read", "write", "search", "list", "get", "fetch", "run"}
+STOPLIST = {
+    "query", "open", "create", "update", "delete", "status", "help", "find", "send", "save", "load", "call",
+    "execute", "info", "data", "file", "files", "search", "list", "read", "write", "get", "fetch", "run",
+}
 MIN_TOOL_NAME = 4
 _KNOWN_PREFIXES = ("npm:", "pypi:", "git:", "remote:", "local:", "docker:")
 
@@ -49,39 +55,66 @@ def _target_from_trust_name(name: str) -> Target | None:
 
 def make_snapshot(files: list[ScanFile], model_text: list[ExtraText], tools: list[ToolInfo]) -> dict:
     tool_map: dict[str, str] = {}
+    text: dict[str, str] = {}
     for e in model_text:
+        # duplicate labels (e.g. one tool defined in two files) are concatenated, never overwritten
+        text[e.label] = f"{text[e.label]}\n{e.text}" if e.label in text else e.text
         if e.label.startswith("tool "):
             n = e.label[5:]
             if n and n not in _PLACEHOLDERS:
-                tool_map[n] = e.text
+                tool_map[n] = f"{tool_map[n]}\n{e.text}" if n in tool_map else e.text
     for t in tools:
         if not t.name.startswith(("prompt:", "resource:")):
             tool_map[t.name] = t.description or ""
     return {
         "files": {f.rel: hashlib.sha256(f.text.encode("utf-8", "replace")).hexdigest() for f in files},
-        "text": {e.label: e.text for e in model_text},
+        "text": text,
         "tools": tool_map,
     }
 
 
-def _clean_lines(lines: list[str]) -> list[str]:
-    from bawwab.report import sanitise
+def merge_snapshots(base: dict, other: dict, prefix: str) -> dict:
+    """Fold `other` (a plugin child, sandbox result) into `base` under a label prefix."""
+    out = {k: dict(base.get(k, {})) for k in ("files", "text", "tools")}
+    for k in out:
+        for name, v in other.get(k, {}).items():
+            out[k][f"{prefix}{name}"] = v
+    return out
 
-    return [l[0] + sanitise(l[1:], 200) if l else l for l in lines]
+
+_ANSI = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[PX^_][^\x1b]*(?:\x1b\\)?|\x1b[@-Z\\-_]"
+)
+
+
+def _visible(s: str) -> str:
+    """Show invisible, format and control characters (and escape sequences) as <U+XXXX> markers."""
+    s = _ANSI.sub(lambda m: "".join(f"<U+{ord(c):04X}>" for c in m.group()), s)
+    return "".join(
+        f"<U+{ord(c):04X}>" if c != "\n" and unicodedata.category(c) in ("Cc", "Cf", "Cs", "Co", "Zl", "Zp") else c
+        for c in s
+    )
+
+
+def _wrapped(text: str) -> list[str]:
+    out: list[str] = []
+    for line in _visible(text).split("\n"):
+        out.extend(line[i : i + CHUNK] for i in range(0, len(line), CHUNK)) if line else out.append("")
+    return out
 
 
 def _capped(lines: list[str], limit: int = MAX_DIFF_LINES) -> list[str]:
     if len(lines) <= limit:
         return lines
-    return lines[: limit - 1] + [f"… ({len(lines) - limit + 1} more lines)"]
+    return lines[: limit - 1] + [_MORE.format(n=len(lines) - limit + 1)]
 
 
 def _text_diff(label: str, old: str | None, new: str) -> list[str]:
     diff = difflib.unified_diff(
-        (old or "").splitlines(), new.splitlines(), fromfile=f"trusted {label}", tofile=f"current {label}",
-        lineterm="", n=1,
+        _wrapped(old or ""), _wrapped(new), fromfile=f"trusted {_visible(label)[:100]}",
+        tofile=f"current {_visible(label)[:100]}", lineterm="", n=1,
     )
-    return _capped(_clean_lines(list(diff)))
+    return _capped(list(diff))
 
 
 def diff_snapshots(old: dict, new: dict) -> tuple[list[Finding], str]:
@@ -121,8 +154,10 @@ def diff_snapshots(old: dict, new: dict) -> tuple[list[Finding], str]:
 
 def diff_since_trusted(name: str, store: Store, fetch_opts: FetchOpts | None = None) -> str:
     from bawwab.fetch import FetchError, fetch_target, parse_target
-    from bawwab.scan import _static_step
-    from bawwab.scan.rules.text import model_facing_text
+    from bawwab.config import load_config
+    from bawwab.scan import _analyze, _build_snapshot, _Ctx
+    from pathlib import Path
+    from bawwab.types import Mode
 
     name = name.strip()
     tname, target = name, None
@@ -144,8 +179,9 @@ def diff_since_trusted(name: str, store: Store, fetch_opts: FetchOpts | None = N
 
         return f"cannot fetch {name}: {sanitise(e, 200)}"
     try:
-        files, extra, _ = _static_step(f)
-        snap = make_snapshot(files, model_facing_text(files, extra), f.remote_tools)
+        ctx = _Ctx(load_config(Path.cwd()), Mode.STANDARD, None, fetch_opts, None, judge=False)
+        _analyze(f, ctx)
+        snap = _build_snapshot(ctx.parts)
     finally:
         f.cleanup()
     _, summary = diff_snapshots(got[1], snap)

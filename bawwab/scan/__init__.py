@@ -16,7 +16,7 @@ from bawwab.scan.rules import run_static_rules
 from bawwab.scan.rules.text import model_facing_text
 from bawwab.severity import compute_verdict
 from bawwab.store import Store, open_store, target_key
-from bawwab.trust import diff_snapshots, make_snapshot, trust_name
+from bawwab.trust import diff_snapshots, make_snapshot, merge_snapshots, trust_name
 from bawwab.types import Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
 
 __all__ = ["SandboxRunner", "scan_target", "synthetic_report"]
@@ -109,7 +109,7 @@ def _child_target(spec: dict, root: Path) -> Target | None:
     return t
 
 
-def _scan_children(f: Fetched, ctx: _Ctx, depth: int) -> list[Finding]:
+def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[Finding]:
     if f.artifact_type != "plugin" or f.root is None:
         return []
     servers = _bundled_servers(f.root)
@@ -135,7 +135,7 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int) -> list[Finding]:
             out.append(Finding("fetch.failed", Severity.MED, "gate", f"[server {name}] {e}"))
             continue
         try:
-            out.extend(_prefix(_analyze(cf, ctx, depth + 1), name))
+            out.extend(_prefix(_analyze(cf, ctx, depth + 1, f"{label}[server {name}] "), name))
         finally:
             cf.cleanup()
     return out
@@ -145,10 +145,11 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int) -> list[Finding]:
 
 class _Ctx:
     def __init__(self, cfg: Config, mode: Mode, backend: Backend | None, fetch_opts: FetchOpts | None,
-                 sandbox: SandboxRunner | None) -> None:
+                 sandbox: SandboxRunner | None, judge: bool = True) -> None:
         self.cfg, self.mode, self._backend = cfg, mode, backend
-        self.fetch_opts, self.sandbox = fetch_opts, sandbox
-        self.top: tuple[list[ScanFile], list[ExtraText]] = ([], [])
+        self.fetch_opts, self.sandbox, self.judge = fetch_opts, sandbox, judge
+        # (label prefix, files, extra, remote tools) for the target, each plugin child and sandbox results
+        self.parts: list[tuple[str, list[ScanFile], list[ExtraText], list[ToolInfo]]] = []
 
     @property
     def backend(self) -> Backend:
@@ -170,7 +171,7 @@ def _static_step(f: Fetched) -> tuple[list[ScanFile], list[ExtraText], list[Find
 
 
 def _judge_step(files: list[ScanFile], extra: list[ExtraText], static: list[Finding], ctx: _Ctx) -> list[Finding]:
-    if not (files or extra):
+    if not ctx.judge or not (files or extra):
         return []
     if not static and not model_facing_text(files, extra):
         return []
@@ -181,7 +182,7 @@ def _judge_step(files: list[ScanFile], extra: list[ExtraText], static: list[Find
     return judge(files, extra, static, backend)
 
 
-def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx) -> list[Finding]:
+def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "") -> list[Finding]:
     if ctx.sandbox is None:
         return [Finding("sandbox.unavailable", Severity.MED, "gate", "deep scan requested but no sandbox (Docker) is available")]
     try:
@@ -191,20 +192,21 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx) -> list[Finding]
     out = list(found)
     sb_extra = _extra_from_tools(tools)
     if sb_extra:
+        ctx.parts.append((f"{label}[sandbox] ", [], sb_extra, []))
+    if sb_extra:
         text_findings = run_static_rules([], sb_extra)
         out += text_findings
         out += _judge_step([], sb_extra, text_findings, ctx)
     return out
 
 
-def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0) -> list[Finding]:
+def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0, label: str = "") -> list[Finding]:
     files, extra, findings = _static_step(f)
-    if depth == 0:
-        ctx.top = (files, extra)
-    findings += _scan_children(f, ctx, depth)
+    ctx.parts.append((label, files, extra, f.remote_tools))
+    findings += _scan_children(f, ctx, depth, label)
     findings += _judge_step(files, extra, findings, ctx)
     if ctx.mode == Mode.DEEP:
-        findings += _sandbox_step(f, files, ctx)
+        findings += _sandbox_step(f, files, ctx, label)
     return findings
 
 
@@ -217,6 +219,39 @@ def _apply_trust(f: Fetched, findings: list[Finding], cfg: Config) -> list[Findi
 
 
 TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error"}
+
+
+def _remote_children(f: Fetched) -> bool:
+    """A plugin bundling non-local servers can drift without its own key changing, so it is never served from cache."""
+    if f.artifact_type != "plugin" or f.root is None:
+        return False
+    for spec in _bundled_servers(f.root).values():
+        t = _child_target(spec, f.root)
+        if t is None or t.kind != "local":
+            return True
+    return False
+
+
+def _build_snapshot(parts) -> dict:
+    snap: dict | None = None
+    for prefix, files, extra, tools in parts:
+        s = make_snapshot(files, model_facing_text(files, extra), tools)
+        snap = s if snap is None else merge_snapshots(snap, s, prefix)
+    return snap or make_snapshot([], [], [])
+
+
+def _baseline_cached(f: Fetched, t: Target, key: str, store: Store) -> None:
+    """A clean cache hit still baselines trust if no trusted snapshot exists for this name."""
+    tname = trust_name(t)
+    if store.latest_snapshot(tname) is not None:
+        return
+    snap = store.get_scan_snapshot(key)
+    if snap is None and f.artifact_type != "plugin":  # plugin children cannot be rebuilt without a rescan
+        files = load_files(f.root)[0] if f.root is not None else []
+        extra = _extra_from_tools(f.remote_tools)
+        snap = make_snapshot(files, model_facing_text(files, extra), f.remote_tools)
+    if snap is not None:
+        store.put_snapshot(tname, key, snap)
 
 
 def _cacheable(r: ScanReport) -> bool:
@@ -252,17 +287,18 @@ def scan_target(
         key = target_key(t, f.resolved_version, f.content_hash)
         if not no_cache:
             cached = store.get_cached(key)
-            if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
+            if cached is not None and not _remote_children(f) and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
+                if cached.verdict == Verdict.CLEAN:
+                    _baseline_cached(f, t, key, store)
                 return cached
         ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
         try:
             findings = _analyze(f, ctx)
-            files, extra = ctx.top
-            snap = make_snapshot(files, model_facing_text(files, extra), f.remote_tools)
+            snap = _build_snapshot(ctx.parts)
             tname = trust_name(t)
             prev = store.latest_snapshot(tname)
             diff_summary = None
-            if prev is not None and prev[0] != key:
+            if prev is not None and (prev[0] != key or prev[1] != snap):
                 rug, diff_summary = diff_snapshots(prev[1], snap)
                 findings += rug
         except Exception as e:  # noqa: BLE001 - fail closed on anything unexpected
@@ -281,7 +317,7 @@ def scan_target(
             key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
         )
         store.put_report(report, snapshot=snap)
-        if verdict == Verdict.CLEAN and (prev is None or prev[0] != key):
+        if verdict == Verdict.CLEAN and (prev is None or prev[1] != snap):
             store.put_snapshot(tname, key, snap)
         store.audit("scan", key=key, verdict=verdict.value, mode=mode.value)
         return report

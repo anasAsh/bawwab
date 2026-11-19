@@ -181,6 +181,15 @@ class Store:
                 (r.key, data, _iso(r.scanned_at), json.dumps(snapshot) if snapshot is not None else None),
             )
 
+    def get_scan_snapshot(self, key: str) -> dict | None:
+        row = self._conn.execute("SELECT snapshot FROM scans WHERE key=?", (key,)).fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            return json.loads(row[0])
+        except ValueError:
+            return None
+
     def get_finding(self, finding_id: str) -> tuple[Finding, str] | None:
         row = self._conn.execute("SELECT key, finding FROM findings WHERE id=?", (finding_id,)).fetchone()
         if not row:
