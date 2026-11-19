@@ -1,0 +1,220 @@
+# Bawwab (بوّاب) — Design
+
+Date: 2026-11-19
+Status: approved (merged with the earlier "Bawwab: MCP & Skill Security Scanner" doc)
+Owner: Anas Al-Hamdan · open source · possible home: JOSA community project
+
+## Intent
+
+Coding agents (Claude Code, Cursor, Copilot) install MCP servers, skills
+and plugins from npm, PyPI, GitHub and marketplaces with one command. These
+run with the agent's permissions: they can read files, call the network and
+steer what the agent does. Almost nobody checks them, and skills (Markdown
+plus scripts) are scanned by almost no tool.
+
+Bawwab — "gatekeeper" — checks every such install **automatically, before
+it happens**. It gives a fast, explainable verdict with evidence, and puts a
+human in the loop whenever anything looks off.
+
+## Goals
+
+- Install actions Claude takes are intercepted and scanned before they run.
+- Three verdicts with fixed behavior:
+  - **clean** (allow) → allow silently
+  - **suspicious** (warn) → **block until the user explicitly approves**
+  - **malicious** (block) → block
+- Two scan depths, the user chooses: **standard** (default: static rules +
+  LLM judge) and **deep** (standard + Docker sandbox run).
+- Covers MCP servers, skills and plugins.
+- **Rug-pull protection:** remember what was trusted, and show exactly what
+  changed since (`diff_since_trusted`).
+- **Cross-server analysis:** catch one server's descriptions steering
+  another server's tools.
+- **Explainable:** every finding has an id, and `explain_finding(id)`
+  returns a plain-language explanation and a suggested fix.
+- **Measured:** a labelled benchmark with precision, recall and
+  false-positive rate published in the README and re-run in CI.
+- Usable by hand too (CLI + MCP tools) for anything the hook can't see.
+
+## Non-goals (v1)
+
+- Gates for agents other than Claude Code. The scanner stays
+  agent-agnostic so Cursor/Codex/Claude Desktop gates can be added later.
+- Monitoring tool calls at runtime after installation.
+- A hosted service or public verdict registry.
+
+## Anti-goals (failure even if it "works")
+
+- **Executing untrusted code outside the sandbox.** Fetching is
+  download-only.
+- **The judge lowering a verdict.** The LLM can raise risk but never clear
+  a static finding, so scanned text can't talk Bawwab into "clean".
+- **Failing open.** Errors, timeouts, an unparseable judge reply, or Docker
+  missing in deep mode all mean *suspicious*, never allow.
+- **Alarm fatigue.** Popular legitimate servers must come back clean; the
+  benchmark's false-positive rate is tracked for this.
+- **Shipping exploits.** Malicious benchmark samples use canary strings
+  only, never working payloads.
+
+## Approaches considered
+
+| | Approach | Trade-off |
+|-|----------|-----------|
+| A | Static rules only | Fast, offline, free; misses natural-language injection |
+| B | Static + LLM judge | Catches semantic injection; small cost, ~10–30 s |
+| C | B + sandbox run | Catches runtime-only behavior; needs Docker, slower |
+
+**Chosen: B by default, C as user-selectable deep mode.** Prior art like
+Invariant Labs' `mcp-scan` is MCP-only with no install gate, so we build
+our own and borrow its rule ideas.
+
+## Architecture
+
+One Python package (`bawwab`), shipped as a **Claude Code plugin**
+(`/plugin install bawwab`) and also usable standalone (`uvx bawwab`).
+Python ≥ 3.12, managed with `uv`, using the official MCP Python SDK.
+
+```
+Claude tool call ──► PreToolUse hook ──► fast detector (stdlib only)
+                                             │ install action?
+                                             ▼ yes
+                       fetch (download only) ──► static rules ──► LLM judge ──► [deep: sandbox]
+                                                       │
+                                  verdict + rug-pull diff + cross-server check
+                                                       │
+                          allow  /  block + `bawwab approve <id>`  /  block
+```
+
+### 1. Gate (hooks)
+
+- **PreToolUse** (`Bash|Write|Edit|MultiEdit`): a tiny stdlib-only Python
+  script decides in well under 100 ms whether the call is an install
+  action. Only then does it run the full scanner.
+  - clean → `allow` (with the version pinned, below)
+  - suspicious → `deny` with the report and an approval id. The user runs
+    `! bawwab approve <id>` and Claude retries. Decided instead of the
+    hook's `ask` because auto-approve modes can skip an `ask` prompt.
+  - malicious → `deny`. Override only with `bawwab approve --force <id>`.
+  - Approval ids expire after 1 h and are bound to the exact version +
+    content hash.
+- Install actions: `claude mcp add|add-json`, `claude plugin install`,
+  `plugin marketplace add`, copies/clones/downloads into skill/plugin/
+  command/agent dirs, and edits to `.mcp.json`, `~/.claude.json`, or
+  settings files touching `mcpServers`, `enabledPlugins` or `hooks`.
+- **Protected actions** (always suspicious): hook changes, writes to
+  Bawwab's own state/config, Claude running `bawwab approve|reject`,
+  unscannable downloads into skill dirs.
+- **Version pinning:** unpinned `npx -y pkg` / `uvx pkg` get rewritten to
+  the scanned version (`updatedInput`), so an upgrade is a new install.
+- **SessionStart** inventory runs in the background. It scans anything new
+  or changed (including tools/list of remote servers, to catch rug-pulls
+  without a version bump), flags unpinned items, and runs the cross-server
+  check. Warnings are shown on the user's next message
+  (**UserPromptSubmit**), because SessionStart can't block.
+- Hook timeout 600 s. If the scan isn't done by then → suspicious.
+- Bash detection is best-effort; the inventory is the backstop, and also
+  covers installs made outside Claude.
+
+### 2. Fetch (download only)
+
+npm and PyPI via registry HTTP APIs + safe archive extraction; git via
+`--depth 1` clone with hooks and submodules disabled; local paths in place;
+remote MCP servers via `initialize` + list calls only; Docker images are
+metadata-only unless deep. Exact versions are resolved for the cache key.
+
+### 3. Static rules — can't be talked out of a finding
+
+AST-based for Python (stdlib `ast`) and JS/TS (tree-sitter), plus
+Semgrep-style patterns and manifest parsers. Covers:
+
+- install-time execution (`postinstall`, `setup.py`), `curl | sh`
+- remote code / eval of fetched or decoded content, obfuscation, base64 blobs
+- credential access, exfiltration hosts, credential read + network in one file
+- prompt injection in model-facing text, hidden Unicode, HTML comments
+- tool shadowing, risky plugin hooks, bundled MCP servers (scanned recursively)
+- identity: typosquats, very new packages, repo mismatch, unpinned deps
+
+### 4. LLM judge — reads for intent
+
+Reads tool descriptions and skill instructions for intent ("does this try
+to steer the agent or hide something from the user?"), plus code around
+static findings. Scanned content is passed strictly as quoted data. Fixed
+JSON output schema; anything else is a failed scan (fail closed). No tools,
+network or secrets are available to the judge. Backend: `claude -p`
+(user's existing auth, all tools disabled) or the Anthropic API.
+
+### 5. Deep mode — sandbox run
+
+Docker, non-root, read-only target mount, resource limits, no network
+except a logging proxy that refuses everything, and a decoy home with
+canary credentials. Install, start, list tools, call each once. Flags
+canary reads, canary leaks, network attempts, shell spawns, and writes
+outside the workdir.
+
+### 6. Trust store, rug-pull, cross-server
+
+SQLite at `~/.bawwab/bawwab.db`. It holds scan results, findings (with
+ids), pending approvals, approvals and rejections, the audit log and
+**trusted snapshots**. A snapshot holds the file hashes, model-facing text
+and tool list of every clean or approved scan.
+
+- **Rug-pull:** when a previously trusted name comes back with different
+  content, Bawwab rescans and attaches a diff. Changed model-facing text
+  (descriptions, SKILL.md) is always at least *suspicious*.
+  `diff_since_trusted(name)` shows that diff on demand.
+- **Cross-server:** across all installed servers' tool names and
+  descriptions, flag a description in server A that refers to or redirects
+  a tool of server B.
+
+### 7. Interfaces
+
+- **CLI:** `bawwab scan <target> [--deep] [--json]`,
+  `approve <id> [--force]`, `reject <id>`, `explain <finding-id>`,
+  `diff <name>`, plus the hook entry points.
+- **MCP tools:** `scan_mcp_server(target)`, `scan_skill(path)`,
+  `scan_plugin(target)`, `diff_since_trusted(name)`,
+  `explain_finding(id)`. No approval tools: approving is human-only.
+- **Skill:** teaches Claude to show reports verbatim, never run
+  `bawwab approve`, never route around a block, and to offer the user
+  the approve or deep-scan commands.
+
+### 8. Evaluation & benchmark
+
+- A labelled corpus of safe and malicious MCP servers and skills (~60
+  samples to start), with categories matching the rule families.
+  Malicious samples print a canary string; they contain no working
+  exploits or real payloads.
+- The safe set includes popular legitimate servers, at pinned versions.
+- It includes adversarial samples that target the judge itself.
+- Reports per category: precision and recall, plus the false-positive
+  rate on the safe set. Published in the README and re-run in CI
+  (static-only without an API key, full when the secret is present).
+
+## Config
+
+`~/.bawwab/config.json`; project override `.claude/bawwab.json`, which can
+only **tighten**.
+
+```json
+{
+  "mode": "standard",
+  "llm": { "backend": "claude-cli", "model": "claude-sonnet-5-5" },
+  "thresholds": { "malicious": "critical", "suspicious": "med" },
+  "trusted": ["@modelcontextprotocol/*"]
+}
+```
+
+`trusted` names still get scanned, and identity checks always apply.
+Low/med findings on trusted names are noted but don't block.
+
+## Constraints
+
+- No untrusted code outside Docker, ever.
+- A non-install tool call adds well under 100 ms.
+- Linux and macOS first. Requires `python3` ≥ 3.12 and `uv`.
+
+## Left to the builder
+
+Exact rule patterns and weights, judge prompt wording, sandbox image
+details, Bash parsing approach, corpus contents beyond the categories
+above.
