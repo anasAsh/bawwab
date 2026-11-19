@@ -462,6 +462,10 @@ class Store:
             if qid is not None:
                 self._conn.execute("UPDATE quarantine SET id=? WHERE qrow=?", (qid, qrow))
 
+    def pending_key(self, pid: str) -> str | None:
+        row = self._conn.execute("SELECT key FROM pending WHERE id=?", (pid.strip().upper(),)).fetchone()
+        return row[0] if row else None
+
     def pending_expired(self, pid: str, now: datetime | None = None) -> bool:
         row = self._conn.execute("SELECT expires_at, status FROM pending WHERE id=?", (pid,)).fetchone()
         if row is None or row["status"] != "pending":

@@ -167,6 +167,10 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store) -> tuple[bool, ScanReport
     return False, r
 
 
+def _is_quarantined(store: Store, it: EffectItem) -> bool:
+    return any(q["ident"] == it.ident and q["hash"] == it.hash for q in store.active_quarantine())
+
+
 def _quarantine(store: Store, it: EffectItem, r: ScanReport) -> str:
     qid = store.create_pending(r)
     store.add_quarantine(qid, it.ident, it.hash, r.key, it.to_dict(), report_to_dict(r))
@@ -302,10 +306,19 @@ def quarantined(store: Store | None = None) -> list[dict]:
     return out
 
 
+def find_quarantine(store: Store, qid: str) -> dict | None:
+    """The quarantine entry for an id, including an id that was since re-issued (same pending key)."""
+    q = store.quarantine_by_id(qid)
+    if q is not None:
+        return q
+    key = store.pending_key(qid)
+    return next((x for x in store.active_quarantine() if x["key"] == key), None) if key else None
+
+
 def reject_quarantined(qid: str, store: Store | None = None) -> tuple[bool, str]:
     """Remove the item (config entry, or move the dir/file to bawwab_home()/quarantine) and record the reject."""
     store = store or open_store()
-    q = store.quarantine_by_id(qid)
+    q = find_quarantine(store, qid)
     if q is None or q["status"] != "active":
         return False, "not an active quarantine id"
     item = json.loads(q["item"]) if q["item"] else {}
@@ -343,7 +356,8 @@ def _summary(q: dict) -> str:
     if len(findings) > MAX_SHOWN_FINDINGS:
         lines.append(f"    … and {len(findings) - MAX_SHOWN_FINDINGS} more")
     qid = sanitise(q["id"], 8)
-    lines.append(f"    keep it:  ! bawwab approve {qid}      remove it:  ! bawwab reject {qid}")
+    force = " --force" if verdict == "MALICIOUS" else ""
+    lines.append(f"    keep it:  ! bawwab approve {qid}{force}      remove it:  ! bawwab reject {qid}")
     return "\n".join(lines)
 
 
@@ -428,24 +442,25 @@ def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
     warnings = run_inventory(cwd, scan=scan, store=store)
     cfg = load_config(cwd)
     rows = store.effect_rows(_scopes(cwd))
-    active = {(q["ident"], q["hash"]) for q in store.active_quarantine()}
     new_ids: list[str] = []
-    with _lock():
-        for it in effect_items(cwd):
-            row = rows.get(it.ident)
-            same = row is not None and row["hash"] == it.hash
-            if (it.category in UNSCANNABLE or it.target is None) and same:
-                if row["status"] == "provisional":
-                    store.put_effect(it.ident, it.hash, it.scope, "unscanned", row["key"])
-                continue
-            if (it.ident, it.hash) in active:
-                continue
-            ok, r = _evaluate(it, scan, cfg, store)
-            if ok:
-                store.put_effect(it.ident, it.hash, it.scope, "accepted", r.key)
-            else:
+    # no lock while scanning (minutes): the hooks' effect checks must not wait on a background scan
+    for it in effect_items(cwd):
+        row = rows.get(it.ident)
+        same = row is not None and row["hash"] == it.hash
+        if (it.category in UNSCANNABLE or it.target is None) and same:
+            if row["status"] == "provisional":
+                store.put_effect(it.ident, it.hash, it.scope, "unscanned", row["key"])
+            continue
+        if _is_quarantined(store, it):
+            continue
+        ok, r = _evaluate(it, scan, cfg, store)
+        if ok:
+            store.put_effect(it.ident, it.hash, it.scope, "accepted", r.key)
+            continue
+        with _lock():  # an effect check may have quarantined it meanwhile
+            if not _is_quarantined(store, it):
                 new_ids.append(_quarantine(store, it, r))
-        store.promote_provisional("unscanned")  # other scopes' provisional rows: not scanned here
+    store.promote_provisional("unscanned")  # other scopes' provisional rows: not scanned here
     store.audit("effects.full_scan", cwd=str(cwd), warnings=len(warnings), quarantined=len(new_ids))
     _sync_flag(store)
     return new_ids

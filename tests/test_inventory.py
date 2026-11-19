@@ -186,6 +186,7 @@ def test_notify_empty_and_full(home, capsys):
 def test_inventory_cli_spawns_background_and_prints_stored(home, monkeypatch, capsys):
     h, proj = home
     open_store().add_warning("bawwab: old warning")
+    open_store().set_init_state("scanned")  # after first run (before it, SessionStart asks instead)
     spawned = []
     monkeypatch.setattr(inv, "spawn_background", lambda cwd: spawned.append(cwd))
     monkeypatch.chdir(proj)

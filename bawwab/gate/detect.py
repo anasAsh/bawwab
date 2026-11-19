@@ -963,13 +963,17 @@ def _extract(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
 
 
 def _bawwab_decision(words: list[str]) -> bool:
+    """A user-only bawwab command: approve, reject, or init without --scan (init --skip trusts everything)."""
     seen = False
-    for w in words:
+    for i, w in enumerate(words):
         b = os.path.basename(w)
         if b in ("bawwab", "bawwab.cli", "bawwab.cli:main"):
             seen = True
         elif seen and w in ("approve", "reject"):
             return True
+        elif seen and w == "init":
+            rest = words[i + 1:]
+            return "--scan" not in rest or any(a.startswith("--sk") for a in rest)
     return False
 
 

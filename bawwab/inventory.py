@@ -185,7 +185,8 @@ def release_lock() -> None:
         pass
 
 
-def spawn_background(cwd: Path) -> None:
+def spawn_background(cwd: Path, full: bool = False) -> None:
+    """Start `bawwab inventory --background` detached; full=True is init --scan / scan --all."""
     exe = shutil.which("bawwab")
     if exe:
         cmd = [exe]
@@ -194,18 +195,30 @@ def spawn_background(cwd: Path) -> None:
         cmd = ["uv", "run", "--project", root, "--quiet", "bawwab"]
     try:
         subprocess.Popen(
-            [*cmd, "inventory", "--background", "--cwd", str(cwd)], start_new_session=True,
+            [*cmd, "inventory", "--background", *(["--full"] if full else []), "--cwd", str(cwd)],
+            start_new_session=True,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except OSError:
         pass
 
 
-def background(cwd: Path) -> int:
-    if not acquire_lock():
+def background(cwd: Path, full: bool = False) -> int:
+    if full:  # asked for by the user (init --scan / scan --all): wait for a running inventory instead of skipping
+        deadline = time.time() + LOCK_STALE_S
+        while not acquire_lock():
+            if time.time() > deadline:
+                return 0
+            time.sleep(2)
+    elif not acquire_lock():
         return 0
     try:
-        run_inventory(cwd)
+        if full:
+            from bawwab.effects import full_scan
+
+            full_scan(cwd)
+        else:
+            run_inventory(cwd)
     finally:
         release_lock()
     return 0

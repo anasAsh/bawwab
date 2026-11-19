@@ -20,7 +20,8 @@ def _build() -> argparse.ArgumentParser:
     p = _Parser(prog="bawwab", description="Scan MCP servers, skills and plugins before installing them.")
     sub = p.add_subparsers(dest="cmd", required=True, parser_class=_Parser)
     s = sub.add_parser("scan", help="scan a package, repo, path or remote MCP URL")
-    s.add_argument("target")
+    s.add_argument("target", nargs="?")
+    s.add_argument("--all", action="store_true", help="re-scan everything installed (in the background)")
     s.add_argument("--deep", action="store_true", help="also run the sandbox")
     s.add_argument("--no-cache", action="store_true", help="ignore cached results and rescan")
     s.add_argument("--json", action="store_true", help="print the report as JSON")
@@ -36,7 +37,13 @@ def _build() -> argparse.ArgumentParser:
     sub.add_parser("gate", help="PreToolUse hook: read hook JSON on stdin, print a decision (always exits 0)")
     i = sub.add_parser("inventory", help="SessionStart hook: scan installed items in the background")
     i.add_argument("--background", action="store_true", help="run the scan in this process (used by the hook's child)")
+    i.add_argument("--full", action="store_true", help=argparse.SUPPRESS)
     i.add_argument("--cwd", help="project directory (default: from hook JSON on stdin, else the current directory)")
+    n = sub.add_parser("init", allow_abbrev=False, help="first run: scan everything now, or trust it without a scan")
+    g = n.add_mutually_exclusive_group()
+    g.add_argument("--scan", action="store_true", help="scan everything installed, in the background")
+    g.add_argument("--skip", action="store_true", help="trust everything installed now without scanning (user only)")
+    n.add_argument("--cwd", help="project directory (default: the current directory)")
     sub.add_parser("notify", help="UserPromptSubmit hook: print queued warnings")
     sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
     fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
@@ -54,7 +61,46 @@ def _spec(spec: str) -> str:
     return spec
 
 
+def _start_full_scan(cwd: Path) -> None:
+    from bawwab import inventory as inv
+    from bawwab.effects import ensure_provisional
+    from bawwab.store import open_store
+
+    store = open_store()
+    ensure_provisional(store, cwd)
+    if store.init_state() == "none":
+        store.set_init_state("scanned")
+    inv.spawn_background(cwd, full=True)
+    print("bawwab: full scan started in the background. Results arrive as warnings; anything not clean is "
+          "quarantined (tools are blocked) until the user approves or rejects it.")
+
+
+def _init(args) -> int:
+    cwd = Path(args.cwd) if args.cwd else Path.cwd()
+    if args.scan:
+        _start_full_scan(cwd)
+        return 0
+    if args.skip:
+        from bawwab.effects import init_skip
+
+        n = init_skip(cwd)
+        print(f"bawwab: {n} installed items accepted as trusted without scan; only later changes are checked. "
+              "Run `bawwab scan --all` to scan them at any time.")
+        return 0
+    from bawwab.effects import ask_context
+    from bawwab.store import open_store
+
+    print(f"bawwab: init state is {open_store().init_state()}.\n{ask_context(cwd)}")
+    return 0
+
+
 def _scan(args) -> int:
+    if args.all:
+        _start_full_scan(Path.cwd())
+        return 0
+    if not args.target:
+        print("error: give a target to scan, or --all", file=sys.stderr)
+        return 3
     from bawwab.config import load_config
     from bawwab.fetch import parse_target
     from bawwab.scan import scan_target
@@ -82,7 +128,7 @@ def _decide(args) -> int:
     from bawwab import effects
 
     store = open_store()
-    q = store.quarantine_by_id(args.id)
+    q = effects.find_quarantine(store, args.id)
     if args.cmd == "approve":
         ok, msg = store.approve(args.id, force=args.force)
         verb = "approved"
@@ -162,11 +208,19 @@ def _inventory(args) -> int:
 
         cwd = _hook_cwd(args.cwd)
         if args.background:
-            return inv.background(cwd)
-        inv.spawn_background(cwd)
+            return inv.background(cwd, full=args.full)
         from bawwab.store import open_store
 
-        warnings = open_store().take_warnings()
+        store = open_store()
+        if store.init_state() == "none":  # first run: ask the user before scanning anything
+            from bawwab.effects import ask_context, ensure_provisional
+
+            ensure_provisional(store, cwd)
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                                     "additionalContext": ask_context(cwd)}}))
+            return 0
+        inv.spawn_background(cwd)
+        warnings = store.take_warnings()
         if warnings:
             print(json.dumps(inv.hook_output("SessionStart", warnings)))
     except Exception:  # noqa: BLE001 - never break session start
@@ -245,6 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "effects":
             return _effects(args)
+        if args.cmd == "init":
+            return _init(args)
         if args.cmd == "scan":
             return _scan(args)
         if args.cmd in ("approve", "reject"):

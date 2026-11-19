@@ -355,3 +355,25 @@ def test_edit_inside_skill_detected(env):
     (home / ".claude/skills/s1/SKILL.md").write_text("# s1 changed, longer")
     scan = FakeScan(Verdict.SUSPICIOUS)
     assert len(fx.refresh(proj, scan=scan)) == 1
+
+
+def test_reject_with_reissued_old_id_still_removes(env):
+    home, proj = env
+    _baseline(proj)
+    _add_server(home)
+    old = fx.refresh(proj, scan=FakeScan(Verdict.SUSPICIOUS))[0]
+    store = open_store()
+    store._conn.execute("UPDATE pending SET expires_at='2000-01-01T00:00:00+00:00' WHERE id=?", (old,))
+    assert fx.quarantined(store)[0]["id"] != old
+    assert main(["reject", old]) == 0
+    assert "evil" not in _cj(home)["mcpServers"] and fx.quarantined() == []
+
+
+def test_malicious_shows_force(env):
+    home, proj = env
+    _baseline(proj)
+    _add_server(home)
+    fx.refresh(proj, scan=FakeScan(Verdict.MALICIOUS))
+    reason = fx.pre_tool_decision("Bash", proj)["hookSpecificOutput"]["permissionDecisionReason"]
+    qid = fx.quarantined()[0]["id"]
+    assert f"! bawwab approve {qid} --force" in reason
