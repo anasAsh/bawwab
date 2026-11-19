@@ -875,14 +875,14 @@ def test_work_budget_fails_closed_fast(home):
 
 def test_shell_heredoc_body_scanned_once(home, monkeypatch):
     import bawwab.gate.detect as d
-    calls: list[str] = []
-    orig = d._bash
+    calls: list[str] = []  # texts actually analysed (_bash returns early for an already-scanned pair)
+    orig = d._extract_heredocs
 
     def counting(cmd, *a, **k):
         calls.append(cmd)
         return orig(cmd, *a, **k)
 
-    monkeypatch.setattr(d, "_bash", counting)
+    monkeypatch.setattr(d, "_extract_heredocs", counting)
     body = "claude mcp add x -- npx evilpkg"
     r = detect_install(bash(f"bash <<EOF\n{body}\nEOF\ncat <<EOF\n{body}\nEOF"))
     assert isinstance(r, Targets) and [t.name for t in r.targets] == ["evilpkg"], r
@@ -907,3 +907,46 @@ def test_round4_hiding_resistance(home, cmd):
 def test_unterminated_interpreter_heredoc_still_checked(home):
     r = detect_install(bash(f"python3 <<A\nopen('{home}/.claude.json', 'w').write('x')"))
     assert isinstance(r, Protected), r
+
+
+# ------------------------------------------------------------- fix round 5
+
+@pytest.mark.parametrize("cmd", [
+    # `))` inside quotes or escaped does not close `((`: bash reads nested subshells with a real heredoc
+    "((cat <<X '))' ) )\n'\nX\n" + _E + "\necho '",
+    '((cat <<X "))" ) )\n"\nX\n' + _E + '\necho "',
+    "((cat <<X \\)) ) )\n'\nX\n" + _E + "\necho '",
+    "((cat <<X # ))\n'\nX\n" + _E + "\necho '",
+    # a clean `(( … << … ))` is arithmetic in bash (verified): treating it as a heredoc would hide this
+    "(( a << X ))\nfoo '\nX\n'\n" + _E + "\necho '",
+])
+def test_arith_quote_bypass(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets], r
+
+
+def test_budget_charged_before_building_text(home):
+    import tracemalloc
+    cmd = f"cat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E
+    r, dt = _timed(cmd)
+    assert dt < 1.0, dt
+    tracemalloc.start()  # second, untimed run (tracing slows it down) for the allocation peak
+    try:
+        detect_install(bash(cmd))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 200 * 2**20, peak
+    assert isinstance(r, (Protected, Targets)), r
+
+
+@pytest.mark.parametrize("cmd", [
+    "(cd /tmp); bash <<EOF\ncp -r ../evil skills/x\nEOF",
+    "cd /nonexist; bash <<EOF\ncp -r ../evil skills/x\nEOF",
+    "cd /tmp\nbash <<EOF\ncp -r ../evil skills/x\nEOF\ncd -\n",
+])
+def test_failsafe_body_scan_keeps_start_cwd(home, cmd):
+    (home / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+    (home / "evil").mkdir(exist_ok=True)
+    r = detect_install(bash(cmd, cwd=str(home / ".claude")))
+    assert isinstance(r, Targets) and r.targets[0].path == str(home / "evil"), r

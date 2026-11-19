@@ -9,74 +9,26 @@ output and without importing bawwab. Install-like calls are handed to
 """
 import json
 import os
-import re
 import sys
 
 CHILD_TIMEOUT_S = 590
-_NEEDLES = ("claude", "bawwab", ".mcp.json")
-_FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
-_FILE_TOOLS = ("Write", "Edit", "MultiEdit")
-# A shell glob may hide ".claude" from the substring check (cp x ~/.c*/skills/).
-# claude reached through $(…), `…` or $VAR: detected by its subcommand.
-_CLAUDE_SUBCMD = re.compile(
-    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
-)
-# ...and only when a path could reach a hidden dir (~, $HOME, a ".x" component) or names an install dir.
-_GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")
-# mv/rsync of a directory that contains ~/.claude, ~/.claude.json or the bawwab home (mv ~ /x).
-_MOVE = re.compile(r"(?:^|[\s;&|(])(?:mv|rsync)\s")
-_GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
 
 
-def _bawwab_home() -> str:
-    return os.path.normpath(os.environ.get("BAWWAB_HOME") or os.path.join(os.path.expanduser("~"), ".bawwab"))
+def _load_prefilter():
+    """Load bawwab/gate/prefilter.py by path: no bawwab package import on the hot path."""
+    import importlib.util
+
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bawwab", "gate", "prefilter.py")
+    try:
+        spec = importlib.util.spec_from_file_location("_bawwab_prefilter", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.prefilter
+    except Exception:  # noqa: BLE001 - can't tell what is install-like: send every call to the gate
+        return lambda data: True
 
 
-def _under(p: str, root: str) -> bool:
-    return p == root or p.startswith(root.rstrip("/") + "/")
-
-
-def prefilter(data: dict) -> bool:
-    """True when the call might be an install. May over-match; must never miss what detect_install finds."""
-    tool = data.get("tool_name")
-    ti = data.get("tool_input")
-    if not isinstance(ti, dict):
-        return False
-    cwd = str(data.get("cwd") or "")
-    home = _bawwab_home()
-    extra = (home, os.path.basename(home) or home) if os.environ.get("BAWWAB_HOME") else ()
-    if tool == "Bash":
-        needles = _NEEDLES + extra
-        cmd = ti.get("command")
-        if not isinstance(cmd, str):
-            return False
-        s = cmd.replace('"', "").replace("'", "").replace("\\", "")
-        if any(n in s for n in needles):
-            return True
-        if _MOVE.search(s) and _moves_ancestor(s, cwd, home):
-            return True
-        if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
-            return True
-        return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
-    if tool in _FILE_TOOLS:
-        fp = ti.get("file_path")
-        if not isinstance(fp, str) or not fp:
-            return False
-        p = os.path.normpath(os.path.join(cwd or "/", fp))
-        s = p + "\0" + os.path.realpath(p)
-        return any(n in s for n in _FILE_NEEDLES + extra)
-    return False
-
-
-def _moves_ancestor(s: str, cwd: str, home: str) -> bool:
-    user = os.path.expanduser("~")
-    roots = (os.path.join(user, ".claude"), os.path.join(user, ".claude.json"), home)
-    for tok in s.split():
-        t = tok.replace("${HOME}", user).replace("$HOME", user)
-        t = os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(t)))
-        if any(r == t or r.startswith(t.rstrip("/") + "/") for r in roots):
-            return True
-    return False
+prefilter = _load_prefilter()
 
 
 def _deny(reason: str) -> str:

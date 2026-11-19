@@ -18,6 +18,7 @@ from pathlib import Path
 from bawwab.config import load_config
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install
 from bawwab.gate.pin import pin_changes
+from bawwab.gate.prefilter import prefilter
 from bawwab.report import format_report, sanitise
 from bawwab.scan import scan_target, synthetic_report
 from bawwab.store import Store, open_store
@@ -182,9 +183,14 @@ def run_gate(inp: HookInput, scan: Callable[..., ScanReport] | None = None, stor
     """Hook JSON ("deny", or "ask" with a pinned updatedInput) for an install-like call, or None."""
     try:
         det = detect_install(inp)
-    except Exception as e:  # noqa: BLE001 - detection bugs never block ordinary calls
+    except Exception as e:  # noqa: BLE001 - incl. MemoryError/RecursionError
         _audit(store, "gate.detect_error", tool_name=inp.tool_name, error=sanitise(f"{type(e).__name__}: {e}", 300))
-        return None
+        # R23: a detection failure never blocks an ordinary call, but never lets an install-like one through
+        try:
+            install_like = prefilter({"tool_name": inp.tool_name, "tool_input": inp.tool_input, "cwd": inp.cwd})
+        except Exception:  # noqa: BLE001 - can't tell: fail closed
+            install_like = True
+        return decision("deny", "bawwab error: could not analyse command") if install_like else None
     if det is None:
         return None
     keys: list[str] = []

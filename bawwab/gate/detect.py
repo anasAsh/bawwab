@@ -95,7 +95,6 @@ class _Acc:
         self.overlays: dict[Target, dict[str, str]] = {}
         self.budget = budget  # bytes of shell text we may still analyse in this detect_install call
         self.scanned: set[tuple[str, str]] = set()  # (text, cwd) already run through _bash
-        self.scanned_text: set[str] = set()
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -343,19 +342,26 @@ _HEREDOC_TOKEN_RE = re.compile(r"__bawwab_heredoc_(\d+)__")
 _HEREDOC_DELIM = re.compile(r"(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([A-Za-z0-9_.-]+))")
 
 
+_ARITH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ \t+-*/%<>=!&|^~?:,[]()$")
+
+
 def _arith_command_end(cmd: str, i: int) -> int | None:
     """End of a `(( … ))` arithmetic command starting at i, or None if it isn't one.
 
     Bash reads `((` as arithmetic only when it closes with `))` at the same nesting level; otherwise
-    (e.g. `((cat <<X) )`) it is nested subshells and `<<` inside is a real heredoc. Only the current
-    line is searched, so this stays linear.
+    (e.g. `((cat <<X) )`) it is nested subshells and `<<` inside is a real heredoc. A region with a quote,
+    backslash, `#`, backtick, `;`, `$(`/`${` or a newline is never treated as arithmetic: we fall back to
+    normal parsing (heredocs recognised) rather than guess how bash pairs it. Only the current line is
+    searched, so this stays linear.
     """
     if i > 0 and cmd[i - 1] in "$<>":
         return None
     depth = 0
     j, n = i + 2, len(cmd)
-    while j < n and cmd[j] != "\n":
+    while j < n:
         c = cmd[j]
+        if c not in _ARITH_CHARS or (c == "$" and j + 1 < n and cmd[j + 1] in "({"):
+            return None
         if c == "(":
             depth += 1
         elif c == ")":
@@ -954,7 +960,6 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
         if (cmd, cwd) in acc.scanned:
             return
         acc.scanned.add((cmd, cwd))
-        acc.scanned_text.add(cmd)
     acc.spend(len(cmd))
     start_cwd = cwd
     full = cmd
@@ -977,8 +982,11 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
 
     for seg in _segments(_tokens(cmd)):
         redirs, raw_words = seg.redirs, seg.words
-        stdin_text = "\n".join(body_of(t) for t in seg.inputs)
+        stdin_parts = [body_of(t) for t in dict.fromkeys(seg.inputs)]  # body_of charges unterminated text
+        acc.spend(sum(map(len, stdin_parts)))
+        stdin_text = "\n".join(stdin_parts)
         upstream = pipeline if seg.piped else ""
+        acc.spend(len(upstream) + sum(map(len, raw_words)))  # stdin_text was charged above
         pipeline = (upstream + "\n" if seg.piped else "") + " ".join(raw_words) + "\n" + stdin_text
         for r in redirs:
             p = _abspath(r, cwd)
@@ -1014,15 +1022,18 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
         if _is_interpreter(exe, args):
             script_i = _script_index(exe, args)
             script_path = _abspath(args[script_i], cwd) if script_i is not None else None
-            script_files = "\n".join(written[p] for a in args if (p := _abspath(a, cwd)) in written)
+            script_parts = [written[p] for p in dict.fromkeys(_abspath(a, cwd) for a in args) if p in written]
+            acc.spend(sum(map(len, script_parts)))
+            script_files = "\n".join(script_parts)
             # running a skill's/plugin's own bundled script is execution, not a write of that path
             own = [a for j, a in enumerate(args) if not (j == script_i and script_path and install_dir(script_path))]
-            text = "\n".join([" ".join(own), stdin_text, upstream, script_files])
-            acc.spend(len(text))
+            parts = [" ".join(own), stdin_text, upstream, script_files]
+            acc.spend(sum(map(len, parts)))
+            text = "\n".join(parts)
             if _sensitive_text(text, cwd):
                 acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
             if exe in _SHELLS:
-                stdin_scan = "\n".join(body_of(t) for t in seg.inputs
+                stdin_scan = "\n".join(body_of(t) for t in dict.fromkeys(seg.inputs)
                                        if (k := heredoc_index(t)) is None or k not in open_from)
                 for text in (stdin_scan, script_files):
                     if text.strip():
@@ -1062,9 +1073,9 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
             _check_dest(p, acc)
-    # fail-safe: every terminated heredoc body is scanned as commands too (unless a shell already did)
+    # fail-safe: every terminated heredoc body is also scanned as commands, from the command's start cwd
     for body in dict.fromkeys(bodies):
-        if body.strip() and body not in acc.scanned_text:
+        if body.strip():  # _bash skips it if this (body, cwd) pair was already scanned
             _bash(body, start_cwd, acc, depth + 1)
 
 

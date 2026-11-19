@@ -129,10 +129,11 @@ def test_scan_raises_denies(store):
 
 
 def test_detect_raises_is_none_and_audited(store, monkeypatch):
+    # R23: no decision only when the call is not install-like (an install-like one is denied, see round 5)
     def boom(inp):
         raise RuntimeError("detect broke")
     monkeypatch.setattr(gate_mod, "detect_install", boom)
-    assert run_gate(bash("claude mcp add gh -- npx -y @a/b"), scan=fake_scan({}), store=store) is None
+    assert run_gate(bash("ls -la"), scan=fake_scan({}), store=store) is None
     rows = store._conn.execute("SELECT event FROM audit").fetchall()
     assert any(r[0] == "gate.detect_error" for r in rows)
 
@@ -267,3 +268,30 @@ def test_pin_reason_reflects_actual_changes(store):
     assert reason(out) == "bawwab: scanned clean; pinned okpkg to 1.0.0"
     out = run_gate(bash("bash -c 'claude mcp add x -- npx -y okpkg'"), scan=fake_scan({}), store=store)
     assert out is None  # detected and scanned, but nothing pinnable at top level: no ask
+
+
+# ------------------------------------------------------------- fix round 5 (R23)
+
+@pytest.mark.parametrize("exc", [MemoryError, RecursionError, ValueError])
+def test_detection_error_on_install_like_call_denies(store, monkeypatch, exc):
+    def boom(_inp):
+        raise exc("x")
+
+    monkeypatch.setattr(gate_mod, "detect_install", boom)
+    out = run_gate(bash("claude mcp add x -- npx evilpkg"), scan=fake_scan({}), store=store)
+    assert decision(out) == "deny" and reason(out) == "bawwab error: could not analyse command", out
+    assert run_gate(bash("ls"), scan=fake_scan({}), store=store) is None
+
+
+def test_gate_and_hook_share_one_prefilter():
+    import importlib.util
+    from pathlib import Path
+
+    from bawwab.gate import prefilter as pf
+
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("bawwab_hook_t", root / "hooks" / "bawwab_hook.py")
+    hook = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hook)
+    assert hook.prefilter.__code__.co_filename == pf.prefilter.__code__.co_filename == str(Path(pf.__file__))
+    assert gate_mod.prefilter is pf.prefilter
