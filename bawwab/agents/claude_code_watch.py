@@ -188,10 +188,36 @@ def entry_refs(root: str, skipped_only: bool = False) -> list[str]:
             p = os.path.normpath(t if os.path.isabs(t) else os.path.join(root, t))
             if p in out or not p.startswith(root.rstrip("/") + "/"):
                 continue
-            if os.path.isfile(p):
-                out.append(p)
+            for f in [p] if os.path.isfile(p) else _dir_entries(p):
+                if f not in out:
+                    out.append(f)
                 if len(out) >= MAX_REFS:
                     return out
+    return out
+
+
+_DIR_MAINS = ("index.js", "index.mjs", "index.cjs", "index.ts", "__main__.py", "__init__.py", "main.py")
+
+
+def _dir_entries(d: str) -> list[str]:
+    """The files a directory reference runs (`node dir`, `python dir`): package.json main/bin/exports, else
+    index.js / __main__.py and the like."""
+    if not os.path.isdir(d):
+        return []
+    out: list[str] = []
+    raw = _read(os.path.join(d, "package.json"))
+    if raw:
+        out.append(os.path.join(d, "package.json"))
+        try:
+            data = json.loads(raw)
+        except (ValueError, RecursionError):
+            data = None
+        if isinstance(data, dict):
+            for v in _strings(data, ("main", "bin", "exports", "module")):
+                f = os.path.normpath(os.path.join(d, v))
+                if f.startswith(d.rstrip("/") + "/") and os.path.isfile(f) and f not in out:
+                    out.append(f)
+    out += [f for f in (os.path.join(d, n) for n in _DIR_MAINS) if os.path.isfile(f) and f not in out]
     return out
 
 

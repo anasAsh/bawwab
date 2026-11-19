@@ -233,10 +233,61 @@ def is_bawwab_plugin_dir(path: str) -> bool:
     return re.fullmatch(r"bawwab(?:[-@_.].*)?", os.path.basename(os.path.normpath(path))) is not None
 
 
+LOST_AFTER = 600  # seconds: a plugin install older than this with no bawwab state means the state was lost
+
+
+def plugin_installed_at(home: str) -> float | None:
+    """When Claude Code installed bawwab as a plugin (installed_plugins.json, earliest entry), if this hook
+    runs as that installed plugin (CLAUDE_PLUGIN_ROOT set); else None."""
+    from datetime import datetime, timezone
+
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if not root:
+        return None
+    root = os.path.normpath(root)
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+    try:
+        with open(os.path.join(cfg, "plugins", "installed_plugins.json")) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    if not isinstance(plugins, dict):
+        return None
+    times = []
+    for key, entries in plugins.items():
+        for e in entries if isinstance(entries, list) else [entries]:
+            if not isinstance(e, dict):
+                continue
+            path = e.get("installPath")
+            ours = str(key).split("@", 1)[0] == "bawwab" or (
+                isinstance(path, str) and os.path.normpath(path) == root)
+            at = e.get("installedAt")
+            if not ours or not isinstance(at, str):
+                continue
+            try:
+                t = datetime.fromisoformat(at.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            times.append((t if t.tzinfo else t.replace(tzinfo=timezone.utc)).timestamp())
+    return min(times) if times else None
+
+
+def plugin_lost(home: str) -> str | None:
+    """bawwab runs as a plugin Claude Code installed more than LOST_AFTER ago: missing bawwab state is then
+    lost state (wiped), never a fresh install. The reason, or None."""
+    at = plugin_installed_at(home)
+    if at is None or time.time() - at <= LOST_AFTER:
+        return None
+    return ("bawwab's state was lost: bawwab has been installed as a plugin since "
+            f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(at))}, but its state and install markers are missing")
+
+
 def initialised(home: str, bawwab_home: str) -> bool:
-    """Bawwab has had its first SessionStart (install marker), or has effect-check state (the fp file).
-    Both gone = a fresh install (first-run prompt; documented residual)."""
-    return any(os.path.exists(p) for p in marker_paths(home)) or os.path.exists(state_path(bawwab_home))
+    """Bawwab has had its first SessionStart (install marker), has effect-check state (the fp file), or is an
+    installed plugin whose state was lost (fail closed). None of these = a fresh install (first-run prompt)."""
+    return any(os.path.exists(p) for p in marker_paths(home)) or os.path.exists(state_path(bawwab_home)) \
+        or plugin_lost(home) is not None
 
 
 def is_child(bawwab_home: str) -> bool:

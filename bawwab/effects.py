@@ -155,10 +155,20 @@ def set_init_state(store: Store, v: str) -> None:
     write_marker(store.get_meta("installed_at") or datetime.now(UTC).isoformat(), v)
 
 
+LOST_FIX = "run `! bawwab init --scan` (a full scan: nothing is trusted without scanning)"
+
+
+def _lost(store: Store, marker: dict | None) -> str | None:
+    """Markers and state all gone while bawwab is a plugin installed long ago: lost, not a fresh install."""
+    if marker is not None or store.get_meta("installed_at") is not None:
+        return None
+    return fp_module().plugin_lost(str(Path.home()))
+
+
 def state_problem(store: Store, marker: dict | None) -> str | None:
     """Why bawwab's state can't be trusted (it was wiped, replaced or edited), or None."""
     if marker is None:
-        return None
+        return _lost(store, marker)
     if marker.get("corrupt"):
         return "the install marker (~/.claude/.bawwab-initialised) is unreadable"
     installed = store.get_meta("installed_at")
@@ -176,6 +186,8 @@ def _installed(store: Store, cwd: Path) -> bool:
     bawwab was already installed (marker or db state)."""
     if read_marker() is not None or store.get_meta("installed_at") is not None:
         return False
+    if fp_module().plugin_lost(str(Path.home())):
+        return False  # lost state (R37): never re-baselined as a fresh install
     ts = datetime.now(UTC).isoformat()
     take_install_baseline(store, cwd)
     store.set_meta("installed_at", ts)
@@ -191,7 +203,7 @@ def _restore_marker(store: Store) -> dict | None:
         write_marker(installed, store.init_state())
         store.audit("install.marker_restored")
         marker = read_marker()
-    elif marker and not marker.get("corrupt") and installed == marker.get("installed_at") and not all(
+    elif marker and state_problem(store, marker) is None and not all(
             os.path.exists(p) for p in fp_module().marker_paths(str(Path.home()))):
         write_marker(installed, store.init_state())  # one copy was removed: put it back while state is good
         store.audit("install.marker_restored")
@@ -381,6 +393,8 @@ def _active(store: Store | None) -> bool:
     """Bawwab has been installed (first SessionStart): an install marker, or install state in the db."""
     if read_marker() is not None:
         return True
+    if fp_module().plugin_lost(str(Path.home())):
+        return True  # lost state: the check runs and fails closed
     if not _db_path().exists():
         return False
     return (store or open_store()).get_meta("installed_at") is not None
@@ -619,7 +633,11 @@ def session_start(cwd: Path, scan=None, store: Store | None = None) -> str | Non
     marker = _restore_marker(store)
     problem = state_problem(store, marker)
     parts: list[str] = []
-    if problem:
+    if problem and _lost(store, marker):
+        _fail_closed(store, problem)
+        parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed). Tell the user to {LOST_FIX}; "
+                     "`bawwab init --skip` is refused while the state is lost.")
+    elif problem:
         _fail_closed(store, problem)
         parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed) until the user runs "
                      "`! bawwab effects --retry` (rebuilds the state by scanning) or `! bawwab init --scan`.")
@@ -664,7 +682,12 @@ def _repair_for_init(store: Store, cwd: Path) -> None:
     if _installed(store, cwd):
         return
     marker = read_marker()
-    if state_problem(store, marker) and marker and not marker.get("corrupt"):
+    if _lost(store, marker):  # nothing is adopted: the full scan rebuilds the state from nothing
+        ts = datetime.now(UTC).isoformat()
+        store.set_meta("installed_at", ts)
+        write_marker(ts, store.init_state())
+        store.audit("install.lost_rebuild", installed_at=ts)
+    elif state_problem(store, marker) and marker and not marker.get("corrupt"):
         store.set_meta("installed_at", marker["installed_at"])
     for q in store.active_quarantine():
         if q["ident"] == ERROR_IDENT:
@@ -677,7 +700,10 @@ def init_skip(cwd: Path, store: Store | None = None) -> int:
     """`init --skip`: rows recorded at install time become "trusted without scan". Refused on lost state."""
     store = store or open_store()
     if not _installed(store, cwd):
-        problem = state_problem(store, _restore_marker(store))
+        marker = _restore_marker(store)
+        problem = state_problem(store, marker)
+        if problem and _lost(store, marker):
+            raise RuntimeError(f"{problem}; {LOST_FIX.replace('! ', '')}")
         if problem:
             raise RuntimeError(f"{problem}; run `bawwab effects --retry` or `bawwab init --scan`")
     n = store.promote_provisional("unscanned")

@@ -14,6 +14,8 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
     monkeypatch.setenv("HOME", str(root / "home"))
     monkeypatch.setenv("BAWWAB_HOME", str(root / "bawwab"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / "xdg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / "home" / ".local" / "state"))  # the third marker copy
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)  # "installed as a plugin" (lost-state check)
     monkeypatch.delenv("BAWWAB_CHILD", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)  # the install marker is also written there

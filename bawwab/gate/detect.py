@@ -181,11 +181,16 @@ def _xdg_state() -> str:
     return os.path.normpath(os.environ.get("XDG_STATE_HOME") or os.path.join(str(Path.home()), ".local", "state"))
 
 
+def _xdg_bawwab() -> str:
+    """bawwab's XDG state dir: holds the third copy of the install marker."""
+    return os.path.join(_xdg_state(), "bawwab")
+
+
 def _state_targets() -> list[str]:
     """bawwab's own state: its home and key files, and the install markers (paths a glob must not reach)."""
     home = os.path.normpath(str(bawwab_home()))
     out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER),
-           os.path.join(_xdg_state(), "bawwab", _MARKER)]
+           _xdg_bawwab(), os.path.join(_xdg_bawwab(), _MARKER)]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd:
         out.append(os.path.join(os.path.normpath(pd), _MARKER))
@@ -249,7 +254,7 @@ def _bawwab_path(p: str) -> bool:
 
 
 def _bawwab_path1(p: str) -> bool:
-    if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER:
+    if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER or _under(p, _xdg_bawwab()):
         return True
     if _GLOB_CHARS.search(p) and _glob_hits_state(os.path.normpath(p)):
         return True
@@ -929,19 +934,41 @@ def _dot_component(tok: str) -> bool:
 
 
 def _moves_config(p: str) -> bool:
-    """p is, or contains, a Claude config/install path or the bawwab home."""
+    """p is, or contains, a Claude config/install path or bawwab state."""
     p = os.path.normpath(p)
     if _config_kind(p) or _bawwab_path(p) or install_dir(p) or os.path.basename(p) == ".claude":
         return True
-    roots = (str(claude_home()), str(claude_json()), str(bawwab_home()))
+    roots = (str(claude_home()), str(claude_json()), str(bawwab_home()), _xdg_bawwab())
     return any(_under(os.path.normpath(r), p) for r in roots)
+
+
+def _contains_state(p: str) -> bool:
+    """p is a directory above bawwab state (~/.local, ~/.claude, ~): removing it removes the state."""
+    p = os.path.normpath(p)
+    return any(_under(t, p) and t != p for t in _state_targets())
 
 
 _FIND_PATTERNS = {"-name": ("name", False), "-iname": ("name", True), "-path": ("path", False),
                   "-ipath": ("path", True), "-wholename": ("path", False), "-iwholename": ("path", True),
                   "-regex": ("regex", False), "-iregex": ("regex", True)}
-_FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir"}
+_FIND_EXEC = {"-exec", "-execdir", "-ok", "-okdir"}
 _DESTRUCTIVE = {"rm", "mv", "unlink", "shred", "rmdir", "cp", "rsync", "truncate"}
+_REMOVERS = {"rm", "rmdir", "unlink", "shred", "trash", "trash-put", "srm", "wipe"}
+# Commands that can remove or rewrite what find lists, when they receive its output (pipe, `while read`,
+# `$(find …)`, a for loop) or run from -exec. xargs/parallel/sudo/env only wrap: the command they run counts.
+_CONSUMERS = _DESTRUCTIVE | _REMOVERS | _SHELLS | {"dd", "tee", "sponge", "perl", "ruby", "node", "eval"}
+_FIND_ALL = {"!", "-not", "-o", "-or", ","}  # negation / alternation: the patterns no longer limit the match
+
+
+def _consumer(w: str) -> bool:
+    b = os.path.basename(w)
+    return b in _CONSUMERS or re.fullmatch(r"python[0-9.]*", b) is not None
+
+
+@functools.lru_cache(maxsize=8)
+def _find_consumed(cmd: str) -> bool:
+    """Something in the command can act destructively on find's output."""
+    return any(_consumer(w) for w in _words(cmd))
 
 
 def _find_hits(kind: str, icase: bool, pat: str, t: str) -> bool:
@@ -959,26 +986,40 @@ def _find_hits(kind: str, icase: bool, pat: str, t: str) -> bool:
 
 
 def _find(args: list[str], cwd: str, acc: _Acc, destructive: bool = False) -> None:
-    """A destructive find (-delete, -exec/-ok…, or piped into xargs / `while read`) whose start dir
-    contains bawwab state and whose -name/-path/-regex patterns (or none: everything) reach it."""
-    destructive = destructive or any(a in _FIND_ACTIONS for a in args)
+    """A destructive find (-delete, -exec/-ok… of a removing command, or output that reaches one) whose start
+    is bawwab state, or contains it and whose -name/-path/-regex patterns (none, or negated/OR-ed: all) reach
+    the state or a directory above it."""
+    destructive = destructive or "-delete" in args or any(
+        a in _FIND_EXEC and j + 1 < len(args) and _consumer(args[j + 1]) for j, a in enumerate(args))
     if not destructive:
         return
-    starts = []
+    starts: list[tuple[str, str]] = []  # (absolute, as find prints it)
     for a in args:
         if a.startswith(("-", "(", "!")):
             break
-        starts.append(_abspath(a, cwd))
-    starts = starts or [cwd]
-    targets = [t for t in _state_targets() if any(_under(t, st) and t != st for st in starts)]
-    if not targets:
+        ab = _abspath(a, cwd)
+        starts.append((ab, ab if a.startswith(("~", "$")) else a.rstrip("/") or "/"))
+    starts = starts or [(cwd, ".")]
+    if any(_bawwab_path(ab) for ab, _ in starts):
+        acc.protect("bawwab state change")
+        return
+    cands: list[str] = []  # the state, and each directory from a start down to it, as find may print them
+    for t in _state_targets():
+        for ab, shown in starts:
+            if not _under(t, ab):
+                continue
+            rel = os.path.relpath(t, ab).split(os.sep)
+            for n in range(0, len(rel) + 1):
+                tail = "/".join(rel[:n]) if rel != ["."] else ""
+                cands += [os.path.join(ab, tail).rstrip("/") or "/", (shown.rstrip("/") + "/" + tail) if tail else shown]
+    if not cands:
+        return
+    if any(a in _FIND_ALL for a in args):
+        acc.protect("bawwab state change")
         return
     pats = [(args[j + 1], *_FIND_PATTERNS[a]) for j, a in enumerate(args[:-1]) if a in _FIND_PATTERNS]
-    if not pats or any(_find_hits(kind, icase, pat, t) for pat, kind, icase in pats for t in targets):
+    if not pats or any(_find_hits(kind, icase, pat, t) for pat, kind, icase in pats for t in cands):
         acc.protect("bawwab state change")
-
-
-_PIPED_READ = re.compile(r"\|\s*(?:xargs\b|while\s+read\b)")
 
 
 def _xargs_upstream(up_words: list[str], cwd: str, acc: _Acc) -> None:
@@ -1429,7 +1470,7 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
     if exe == "git":
         _git(args, cwd, acc)
     elif exe == "find":
-        _find(args, cwd, acc, destructive=_PIPED_READ.search(acc.root or "") is not None)
+        _find(args, cwd, acc, destructive=_find_consumed(acc.root or ""))
     elif exe in ("cp", "mv", "ln", "rsync", "install"):
         _copy(exe, args, cwd, acc)
     elif exe in ("curl", "wget"):
@@ -1449,6 +1490,8 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
             _check_dest(p, acc)
+            if exe in _REMOVERS and _contains_state(p):
+                acc.protect("bawwab state change")
 
 
 # ------------------------------------------------------------------ structured passes
@@ -1630,7 +1673,7 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
         elif exe == "git":
             _git(args, cwd, acc)
         elif exe == "find":
-            _find(args, cwd, acc, destructive=_PIPED_READ.search(cmd) is not None)
+            _find(args, cwd, acc, destructive=_find_consumed(cmd))
             continue  # its -name/-path values are patterns, not paths
         elif exe in ("cp", "mv", "ln", "rsync", "install"):
             _copy(exe, args, cwd, acc)
@@ -1654,6 +1697,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
             _check_dest(p, acc)
+            if exe in _REMOVERS and _contains_state(p):
+                acc.protect("bawwab state change")
     # fail-safe: every terminated heredoc body is also scanned as commands, from the command's start cwd
     for body in dict.fromkeys(bodies):
         if body.strip():  # _bash skips it if this (body, cwd) pair was already scanned
@@ -1822,15 +1867,84 @@ _NESTED_CLAUDE = re.compile(
     r"|allow-dangerously-skip-permissions|plugin-dir)\b"
 )
 _BAWWAB_ENV = re.compile(
-    r"\bBAWWAB_(?:CHILD|HOME)\s*\+?=|\b(?:export|declare|typeset|readonly|local|unset)\b[^\n;|&]*\bBAWWAB_(?:CHILD|HOME)\b"
+    r"\bBAWWAB_(?:CHILD|HOME)\s*\+?=|\b(?:export|declare|typeset|readonly|local|unset|read|readarray|mapfile"
+    r"|printf)\b[^\n;|&]*\bBAWWAB_(?:CHILD|HOME)\b"
 )
+_NO_HOOKS_FLAGS = ("--settings", "--setting-sources", "--dangerously-skip-permissions",
+                   "--allow-dangerously-skip-permissions", "--plugin-dir")
+_CONFIG_REDIRECT = re.compile(r"(?:CLAUDE_CONFIG_DIR|HOME)\+?=")  # a nested claude reading another config
+_ASSIGN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)", re.S)
+_VAR_REF = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _claude_words(words: list[str]) -> tuple[list[str], list[str]] | None:
+    """(words before the claude executable, claude's arguments) when the segment runs Claude Code."""
+    sw = _strip_prefix(words)
+    ci = _claude_index(sw)
+    if ci is not None:
+        return words[: len(words) - len(sw)], sw[ci:]
+    j = next((j for j, w in enumerate(words) if os.path.basename(w) == "claude"), None)
+    return None if j is None else (words[:j], words[j + 1:])
+
+
+def _nested_claude(segs: list[_Seg]) -> bool:
+    """A claude run in this command that would skip bawwab's hooks: no-hooks flags, bypassPermissions, an
+    inline settings value, or another config dir / HOME (on the tokenised command: quotes and line
+    continuations can't hide a flag)."""
+    assigned: dict[str, str] = {}
+    redirected = False
+    for seg in segs:
+        words = seg.words
+        cw = _claude_words(words)
+        if cw is None:
+            for w in words[1:] if words[:1] in (["export"], ["declare"], ["typeset"], ["readonly"]) else words:
+                m = _ASSIGN.fullmatch(w)
+                if not m:
+                    break
+                assigned[m.group(1)] = m.group(2)
+                redirected = redirected or _CONFIG_REDIRECT.match(w) is not None
+            continue
+        pre, args = cw
+        if redirected or any(_CONFIG_REDIRECT.match(w) for w in pre):
+            return True
+        args = [_VAR_REF.sub(lambda m: assigned.get(m.group(1) or m.group(2), m.group(0)), a) for a in args]
+        for j, a in enumerate(args):
+            if a.startswith(_NO_HOOKS_FLAGS) or "disableAllHooks" in a or a == "--permission-mode=bypassPermissions":
+                return True
+            if a == "--permission-mode" and args[j + 1:j + 2] == ["bypassPermissions"]:
+                return True
+    return False
+
+
+def _writes_anything(segs: list[_Seg]) -> bool:
+    """Some segment redirects into a file or runs a command that isn't read-only."""
+    for seg in segs:
+        if seg.redirs:
+            return True
+        w = _strip_prefix(seg.words)
+        if w and os.path.basename(w[0]) not in _READ_ONLY:
+            return True
+    return False
+
+
+_WHOLE_TOKENISE = 20_000  # bytes: above this, the whole-command claude check tokenises only relevant lines
 
 
 def _whole_command_checks(cmd: str, acc: _Acc) -> None:
     """Things no reading of the shell grammar may miss: a nested claude without bawwab's hooks, and
     overriding the variables that locate or switch off bawwab."""
     s = cmd.replace('"', "").replace("'", "").replace("\\", "")
-    if "disableAllHooks" in s or _NESTED_CLAUDE.search(s):
+    segs: list[_Seg] = []
+    if "claude" in s or "disableAllHooks" in s:
+        text = cmd
+        if len(cmd) > _WHOLE_TOKENISE:  # a huge command: only the text around each mention can matter
+            flat = cmd.replace("\\\n", " ")
+            spans = [(max(0, m.start() - 500), m.end() + 2000)
+                     for m in re.finditer(r"(?i:claude)|disableAllHooks", flat)][:64]
+            text = "\n".join(flat[a:b] for a, b in spans)
+        acc.spend(2 * len(text))
+        segs = _segments(_tokens(text))
+    if _NESTED_CLAUDE.search(s) or _nested_claude(segs) or ("disableAllHooks" in s and _writes_anything(segs)):
         acc.protect("nested claude without bawwab hooks")
     if _BAWWAB_ENV.search(s):
         acc.protect("bawwab environment override")
@@ -1845,8 +1959,8 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
         if isinstance(cmd, str):
             acc.budget = 4 * len(cmd) + 1_000_000
             acc.root = cmd
-            _whole_command_checks(cmd, acc)
             try:
+                _whole_command_checks(cmd, acc)
                 _bash(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")

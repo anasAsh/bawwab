@@ -11,7 +11,7 @@ import re
 _NEEDLES = ("claude", "bawwab", ".mcp.json", "BAWWAB_", "disableAllHooks")
 _FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
 _FILE_TOOLS = ("Write", "Edit", "MultiEdit")
-# A shell glob may hide ".claude" from the substring check (cp x ~/.c*/skills/).
+# A shell glob or brace may hide ".claude" from the substring check (cp x ~/.c*/skills/, rm -rf ~/.baw{a..z}ab).
 # claude reached through $(…), `…` or $VAR: detected by its subcommand.
 _CLAUDE_SUBCMD = re.compile(
     r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)"
@@ -19,10 +19,14 @@ _CLAUDE_SUBCMD = re.compile(
 )
 # ...and only when a path could reach a hidden dir (~, $HOME, a ".x" component) or names an install dir.
 _GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")
-# mv/rsync of a directory that contains ~/.claude, ~/.claude.json or the bawwab home (mv ~ /x).
-_MOVE = re.compile(r"(?:^|[\s;&|(])(?:mv|rsync)\s")
+# mv/rsync/rm of a directory that contains ~/.claude, ~/.claude.json, the bawwab home or its XDG state dir
+# (mv ~ /x, rm -rf ~/.local).
+_MOVE = re.compile(r"(?:^|[\s;&|(`])(?:mv|rsync|rm|rmdir|unlink|shred|trash|trash-put|srm)\s")
 _DOLLAR_QUOTE = re.compile(r"\$(?=['\"])")
-_GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
+_GLOB_COPY = re.compile(r"(?:^|[\s;&|(`])(?:cp|mv|rsync|ln|install|rm|rmdir|unlink|shred)\s")
+# find that deletes, runs a command, or whose output goes somewhere (pipe, $(…), `…`, a loop): detect decides.
+_FIND = re.compile(r"(?:^|[\s;&|(`])find\s")
+_FIND_ACTS = re.compile(r"-delete|-exec|-ok|[|`]|\$\(|\bfor\b")
 
 
 def _bawwab_home() -> str:
@@ -70,14 +74,17 @@ def bash_install_like(cmd: str, cwd: str, home: str, extra: tuple[str, ...]) -> 
         return True
     if _MOVE.search(s) and _moves_ancestor(s, cwd, home):
         return True
-    if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
+    if _FIND.search(s) and _FIND_ACTS.search(s):
+        return True
+    if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[{") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
         return True
     return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
 
 
 def _moves_ancestor(s: str, cwd: str, home: str) -> bool:
     user = os.path.expanduser("~")
-    roots = (os.path.join(user, ".claude"), os.path.join(user, ".claude.json"), home)
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(user, ".local", "state")
+    roots = (os.path.join(user, ".claude"), os.path.join(user, ".claude.json"), home, os.path.join(state, "bawwab"))
     for tok in s.split():
         t = tok.replace("${HOME}", user).replace("$HOME", user)
         t = os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(t)))
