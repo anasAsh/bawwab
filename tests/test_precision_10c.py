@@ -533,6 +533,8 @@ def test_b_debug_package_reading_debug_env_keys_is_not_credential_access():
     src = ('var Fk=y((ft,Lk)=>{var qk=T("tty"),As=T("util");ft=Lk.exports=Rh();ft.init=UL;ft.log=LL;'
            'ft.inspectOpts=Object.keys(process.env).filter(function(e){return/^debug_/i.test(e)}).reduce('
            'function(e,t){var r=t.substring(6).toLowerCase();e[r]=process.env[t];return e},{});'
+           # R42 N5: the real bundle reads the options only by member (`"colors" in`, `.colors`)
+           'function qL(){return"colors"in ft.inspectOpts?!!ft.inspectOpts.colors:qk.isatty(Ni)}'
            '});\nfunction pp(u){return fetch(u)}\n')  # the bundle's other modules sit on other lines
     found = rules(("bin/cli.mjs", src))
     assert "credential-access" not in rule_ids(found) and "exfil.combo" not in rule_ids(found), found

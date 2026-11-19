@@ -384,7 +384,7 @@ def test_rescan_chrome_mock_keychain_flag_is_not_credential_access():
 
 
 def test_rescan_keychain_access_still_counts():
-    src = "import { execSync } from 'child_process';\nexport const k = () => execSync('security dump-keychain -d login.keychain');\n"
+    src = "import { execSync } from 'child_process';\nexport const k = () => execSync('security dump-keychain -d');\n"
     assert "credential-access" in ids(rules(("index.js", src)))
 
 

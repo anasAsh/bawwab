@@ -26,6 +26,7 @@ class _Text:
     label: str
     text: str
     is_description: bool  # tool/prompt/resource description or remote metadata (not a skill document)
+    shadow_exempt: bool = False  # a protocol parameter table entry: every rule but tool-shadowing (R42 N2)
 
 
 def _is_doc_path(rel: str, is_skill: bool = True) -> bool:
@@ -149,10 +150,8 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
             continue
         p = pairs(o)
         desc, name = string_of(p.get("description")), string_of(p.get("name"))
-        if desc and name and _schema_param(p, string_of):
-            continue
         if desc and name:
-            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True))
+            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True, _schema_param(o, p, string_of, txt)))
     return out
 
 
@@ -160,12 +159,30 @@ _SCHEMA_TYPES = {"string", "boolean", "integer", "number", "array", "object", "a
 _TOOL_KEYS = {"inputSchema", "input_schema", "parameters", "handler", "execute", "run", "annotations", "outputSchema"}
 
 
-def _schema_param(p: dict, string_of) -> bool:
-    """A protocol / JSON-schema parameter ({name, description, type: "boolean"} or a $ref), as in the
-    Chrome DevTools protocol tables bundled into chrome-devtools-mcp, not a tool definition (R40 rescan)."""
+_PARAM_CONTAINERS = {"parameters", "returns", "properties", "items"}
+
+
+def _schema_param(o, p: dict, string_of, txt) -> bool:
+    """A protocol / JSON-schema parameter ({name, description, type: "boolean"} or a $ref) nested under a
+    parameters / returns / properties / items key, as in the Chrome DevTools protocol tables bundled into
+    chrome-devtools-mcp. Its description is still model-facing text for every other rule and the judge;
+    it is only not a tool that can shadow another (R40 rescan, R42 N2)."""
     if _TOOL_KEYS & set(p):
         return False
-    return "$ref" in p or string_of(p.get("type")) in _SCHEMA_TYPES
+    if not ("$ref" in p or string_of(p.get("type")) in _SCHEMA_TYPES):
+        return False
+    holder = o.parent
+    in_array = holder is not None and holder.type == "array"
+    if in_array:
+        holder = holder.parent
+    if holder is not None and holder.type == "arguments" and in_array:
+        # inspectorBackend.registerCommand("Domain.cmd", [{name, type, optional, description, typeRef}])
+        return bool({"optional", "typeRef"} & set(p))
+    if holder is None or holder.type != "pair":
+        return False
+    k = holder.child_by_field_name("key")
+    key = (string_of(k) if k is not None and k.type == "string" else txt(k)) if k is not None else None
+    return key in _PARAM_CONTAINERS
 
 
 _FALLBACK_RE = re.compile(
@@ -420,7 +437,7 @@ class TextRules:
 
     def run(self, files: list[ScanFile], extra: list[ExtraText]) -> list[Finding]:
         texts = _collect(files, extra)
-        tool_names = {n for t in texts if (n := _tool_name(t.label)) and n not in ("(unnamed)", "(unparsed)")}
+        tool_names = {n for t in texts if not t.shadow_exempt and (n := _tool_name(t.label)) and n not in ("(unnamed)", "(unparsed)")}
         out: list[Finding] = []
         for t in texts:
             out.extend(self._one(t, tool_names))
@@ -440,7 +457,7 @@ class TextRules:
             if VERB_RE.search(body) or any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", body) for n in tool_names if len(n) >= 3):
                 out.append(_mk("injection.html-comment", Severity.MED, t, start, end))
                 break
-        if t.is_description:
+        if t.is_description and not t.shadow_exempt:
             own = _tool_name(t.label)
             others = tool_names - ({own} if own else set())
             m = _first(SHADOW_RES, t, lambda m: self._names_other(m, own, others))

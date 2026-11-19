@@ -296,8 +296,8 @@ CRED_RES = [
     # `options?.env` is optional chaining, not a .env file (Task 10c)
     r"(?<![\w.?])\.env\b", r"\.claude\.json",
     r"\.npmrc\b", r"\.netrc\b", r"\.pypirc\b",
-    # "--use-mock-keychain" is a Chrome flag, not keychain access (R40 rescan)
-    r"security\s+find-generic-password", r"(?<![\w-])keychain(?![\w-])",
+    # "--use-mock-keychain" is a Chrome flag; dump-keychain / login.keychain-db still count (R42)
+    r"security\s+find-generic-password", r"(?<!mock-)\bkeychain\b",
     r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
     r"\.mozilla/firefox", r"\bLogin Data\b",
     r"\bdict\(\s*os\.environ\s*\)", r"\bos\.environ\.(?:copy|items)\(\)", r"\bjson\.dumps\(\s*os\.environ\b",
@@ -1601,15 +1601,22 @@ def _loopback_only(first_raw: str) -> bool:
     return bool(_LOOPBACK_LIT_RE.match(first_raw)) and "@" not in first_raw
 
 
-def _net_calls(f: ScanFile, t: str) -> list[tuple[int, str]]:
+def _net_calls(f: ScanFile, t: str) -> tuple[tuple[int, str], ...]:
     return _net_calls_cached(f.rel, f.text, t)
 
 
 _HOST_SCAN = 4000  # an exfil host deep inside a huge argument (a bundle's IIFE) is exfil.host anyway
 
 
+def _host_in(args: str) -> bool:
+    """An exfil host in the first or last _HOST_SCAN chars of a call's arguments (review N6)."""
+    if len(args) <= 2 * _HOST_SCAN:
+        return EXFIL_HOST_RE.search(args) is not None
+    return EXFIL_HOST_RE.search(args, 0, _HOST_SCAN) is not None or EXFIL_HOST_RE.search(args, len(args) - _HOST_SCAN) is not None
+
+
 @lru_cache(maxsize=8)  # holds the texts: keep it small
-def _net_calls_cached(rel: str, text: str, t: str) -> list[tuple[int, str]]:
+def _net_calls_cached(rel: str, text: str, t: str) -> tuple[tuple[int, str], ...]:
     """(line, argument text) of outbound network calls.
 
     Parsed files: real call nodes to a network global, or to a network module bound in the
@@ -1633,9 +1640,9 @@ def _net_calls_cached(rel: str, text: str, t: str) -> list[tuple[int, str]]:
                 or (bound and _is_net_callee(callee) and _imported(callee, b.mods))
                 or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
             )
-            if (is_net and not _loopback_only(c.first_raw)) or EXFIL_HOST_RE.search(c.args, 0, _HOST_SCAN):
+            if (is_net and not _loopback_only(c.first_raw)) or _host_in(c.args):
                 out.append((c.line, c.args))
-        return out
+        return tuple(out)
     out = []
     for rx in (NET_RE, EXFIL_HOST_RE):
         for m in rx.finditer(t):
@@ -1643,7 +1650,7 @@ def _net_calls_cached(rel: str, text: str, t: str) -> list[tuple[int, str]]:
             line = _line_text(t, ln)
             if not _IMPORT_LINE_RE.search(line):
                 out.append((ln, line))
-    return out
+    return tuple(out)
 
 
 def _net_lines(f: ScanFile, t: str) -> list[int]:
@@ -1819,12 +1826,63 @@ _ENV_KEY_RE = re.compile(r"""(?<![\w$.])['"]?env['"]?\s*(?:=(?![=>])|:(?!:))\s*"
 _BIND_DEPTH = 3
 
 
+LAUNCH_MODULES = ("child_process", "subprocess", "os", "execa", "cross-spawn", "asyncio")
+BROWSER_MODULES = ("puppeteer", "puppeteer-core", "playwright", "playwright-core", "@playwright/test", "chrome-launcher")
+
+
+def _from(v: str, mods: tuple[str, ...]) -> bool:
+    return any(v == m or v.startswith(m + ".") for m in mods)
+
+
+def _created_require(text: str, root: str) -> str | None:
+    """The module of `const root = req('m')`, where req is `require`, made by `createRequire(...)`, or
+    esbuild's `__require` shim (`var T=(e=>typeof require<"u"?require:...)`)."""
+    m = re.search(r"(?:\b(?:const|let|var)\s+|,\s*)" + re.escape(root)
+                  + r"""\s*=\s*(?:await\s+)?([\w$]+)\(\s*['"]([\w@/.:-]+)['"]\s*\)""", text)
+    if m is None:
+        return None
+    fn = re.escape(m.group(1))
+    if (m.group(1) == "require"
+            or re.search(r"\b(?:const|let|var)\s+" + fn + r"\s*=\s*(?:[\w$.]+\.)?createRequire\(", text)
+            or re.search(r"(?:\b(?:const|let|var)\s+|,\s*)" + fn + r"""\s*=\s*\(\s*[\w$]+\s*=>\s*typeof\s+require\s*<\s*["']u["']\s*\?\s*require\b""", text)):
+        return re.sub(r"^node:", "", m.group(2))
+    return None
+
+
+def _resolved(f: ScanFile, callee: str) -> str:
+    """The callee normalised through imports, also through createRequire / bundler require shims."""
+    root, _, rest = callee.partition(".")
+    if (mod := _created_require(f.text, root)) is not None:
+        return mod + ("." + rest if rest else "")
+    return _norm_callee(callee, _aliases(f.rel, f.text))
+
+
 def _launcher(f: ScanFile, callee: str) -> bool:
-    norm = _norm_callee(re.sub(r"^new\s+", "", callee.strip()), _aliases(f.rel, f.text))
-    parts = norm.split(".")
-    if parts[-1] in LAUNCH_LEAVES or re.fullmatch(r"os\.(?:exec|spawn)\w*", norm):
-        return True
-    return parts[-1] in LAUNCH_MODULE_LEAVES and parts[0] in ("subprocess", "child_process", "execa")
+    """A real process launcher: the callee resolves to an import / require of a launcher module, a
+    browser launcher's .launch, or the MCP SDK's StdioClientTransport, never a bare name (R42 N3)."""
+    raw = re.sub(r"^new\s+", "", callee.strip())
+    al = dict(_aliases(f.rel, f.text))
+    root = raw.split(".", 1)[0]
+    created = (mod := _created_require(f.text, root)) is not None
+    if created:
+        al[root] = mod  # const puppeteer = requireFrom('puppeteer'), requireFrom = createRequire(...)
+    if root not in al:
+        return False  # not an import: the package's own spawn / launch / api.launch
+    if not created and re.search(r"(?:\bdef|\bfunction\s*\*?|\bclass)\s+" + re.escape(root) + r"\b"
+                 r"|\b(?:const|let|var)\s+" + re.escape(root) + r"\s*=(?!\s*(?:await\s+)?(?:require|import)\b)", f.text):
+        return False  # the file defines this name itself
+    norm = _norm_callee(raw, al)
+    leaf = norm.rsplit(".", 1)[-1]
+    v = al[root]
+    if _from(v, LAUNCH_MODULES):
+        if _from(v, ("os",)):
+            return bool(re.fullmatch(r"os\.(?:exec|spawn|posix_spawn)\w*", norm))
+        if _from(v, ("asyncio",)):
+            return leaf in ("create_subprocess_exec", "create_subprocess_shell")
+        return leaf in LAUNCH_LEAVES | LAUNCH_MODULE_LEAVES or norm in ("execa", "cross-spawn")
+    if _from(v, BROWSER_MODULES):
+        return leaf in ("launch", "launchPersistentContext")
+    return v.startswith("@modelcontextprotocol/") and leaf == "StdioClientTransport"
 
 
 def _enclosing_call(t: str, q: int) -> tuple[int, str] | None:
@@ -1885,8 +1943,8 @@ def _use_bound(f: ScanFile, t: str, q: int, qend: int, name: str, depth: int) ->
         return "skip"  # env["X"] = ..., env.pop("X"), env.X = ...
     if re.search(r"\bdelete\s+$", before):
         return "skip"
-    if re.match(r"\s*(?:\?(?![.?])|&&|\|\|)", after) or re.search(r"(?:\bif\s*\(?\s*!?|!\s*|\bnot\s+)$", before):
-        return "skip"  # chromeEnv ? {...} : {}
+    if re.match(r"\s*\?(?![.?])", after) or re.search(r"(?:\bif\s*\(?\s*!?|!\s*|\bnot\s+)$", before):
+        return "skip"  # chromeEnv ? {...} : {}  (e || x / e && x are value uses: R42 N4)
     if _launch_slot(f, t, q):
         return "ok"
     if name == "env" and re.search(r"[{,]\s*$", before) and re.match(r"\s*[,}]", after) and _launch_slot(f, t, q, shorthand=True):
@@ -1949,6 +2007,29 @@ def _calls_bound(f: ScanFile, t: str, func: str, depth: int) -> bool:
     return ok
 
 
+_OPTION_SINKS = {"util.inspect", "util.formatWithOptions"}
+
+
+def _members_only(f: ScanFile, t: str, name: str, skip: tuple[int, int]) -> bool:
+    """Every use of `name` in the file reads a member of it (X.k, X[k]), tests a key (`k in X`) or lists
+    its keys (Object.keys(X)), and there is at least one such use."""
+    rx = re.compile(r"(?<![\w$.])" + re.escape(name) + r"(?![\w$])")
+    seen = False
+    for m in rx.finditer(t):
+        if skip[0] <= m.start() < skip[1] or not _in_code(f, t, m.start(), name):
+            continue
+        before, after = t[max(0, m.start() - 40) : m.start()], t[m.end() : m.end() + 40]
+        if re.match(r"\s*(?:\.\s*[\w$]|\[)", after) or re.search(r"\bin\s+$|\bObject\.keys\(\s*$", before):
+            seen = True
+            continue
+        c = _enclosing_call(t, m.start())
+        if c is not None and _resolved(f, c[1]) in _OPTION_SINKS:
+            seen = True  # util.formatWithOptions(opts, ...): formatting options, in process
+            continue
+        return False
+    return seen
+
+
 def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
     """"real", "env" (LOW, still backstop-eligible) or "bound" (ignored) for a copy of the environment.
 
@@ -1965,15 +2046,17 @@ def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
     prefix = t[line_start:pos]
     names: list[str] = []
     heads = list(_ASSIGN_HEAD_RE.finditer(prefix))
-    if heads:
-        names.append(heads[-1].group(1))
+    if heads and not re.search(r"=>|\bfunction\b|\blambda\b", prefix[heads[-1].end():]):
+        names.append(heads[-1].group(1))  # not `go = () => spawn(..., {env: copy})`: the copy is not go
     name_res = [re.compile(r"(?<![\w$])" + re.escape(n) + r"(?![\w$])") for n in names]
     for w in ENV_WRITE_RE.finditer(t):
-        if pos <= w.start() < end:
-            continue
+        if pos <= w.start() < end or re.search(r"\bstd(?:out|err)\s*\.\s*$", t[max(0, w.start() - 12) : w.start()]):
+            continue  # printing to the terminal is not a file write
         wl = _line_of(t, w.start())
-        # written right here, or written by name in the same function
-        if wl == line or (any(r.search(_line_text(t, wl)) for r in name_res) and _same_scope(f, [line], [wl])):
+        oi = t.find("(", w.start(), w.end() + 1)
+        span = (oi, _close_of(t, oi)) if oi >= 0 else (w.start(), w.end())
+        # written right here (the copy inside the write call), or written by name in the same function
+        if span[0] < pos < span[1] or (any(r.search(t, span[0], span[1]) for r in name_res) and _same_scope(f, [line], [wl])):
             return "real"
     a, b = _scope_bounds(f, t, line)
     returned = bool(re.search(r"\breturn\b", prefix)) or any(
@@ -1984,8 +2067,11 @@ def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
         rx = re.compile(r"(?<![\w$.])" + re.escape(n) + r"(?![\w$])")
         if any(rx.search(args) for _, args in net):
             return "real"
-    if (m := _PREFIX_FILTER_RE.match(t, end)) is not None and not _SECRETISH_RE.search(m.group(1)):
-        return "bound"  # debug: Object.keys(process.env).filter(k => /^debug_/i.test(k)).reduce(...)
+    if ((m := _PREFIX_FILTER_RE.match(t, end)) is not None and not _SECRETISH_RE.search(m.group(1))
+            and names and _members_only(f, t, names[0], (line_start, end))):
+        # debug: X = Object.keys(process.env).filter(k => /^debug_/i.test(k)).reduce(...), and X is
+        # only ever read by member / `in` / Object.keys: it never leaves as a whole (R42 N5)
+        return "bound"
     if names:
         return "bound" if _name_bound(f, t, names[0], a, b, (line_start, end), 0) else "env"
     # the copy itself, unnamed: an env= argument right here, or returned

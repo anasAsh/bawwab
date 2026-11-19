@@ -14,7 +14,7 @@ from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
 from bawwab.paths import bawwab_home
 from bawwab.report import sanitise
-from bawwab.scan import TRANSIENT_RULES, scan_target
+from bawwab.scan import TRANSIENT_RULES, needs_recheck, scan_target
 from bawwab.trust import cross_server_findings
 from bawwab.types import Target, Verdict
 
@@ -118,7 +118,7 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
             if pinned:
                 _warn(store, f"bawwab: {_lbl(item.label)} is unpinned — pin it: {pinned}", warnings)
         transient = any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
-        if fp is not None and not transient:
+        if fp is not None and not transient and not needs_recheck(r):  # an OSV outage is looked up again (R42)
             store.put_inventory_seen(item.ident, fp, r.key, r.verdict.value)
         if (r.verdict == Verdict.CLEAN or approved) and not transient:
             store.add_baseline(item.ident, r.key)

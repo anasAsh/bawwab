@@ -306,10 +306,17 @@ def _baseline_cached(f: Fetched, t: Target, key: str, store: Store) -> None:
         store.put_snapshot(tname, key, snap)
 
 
+# Findings that mean "look again next time" without failing closed: a known-malware lookup that
+# failed must run again (R41 I1, R42).
+RECHECK_RULES = {"identity.osv-unavailable"}
+
+
+def needs_recheck(r: ScanReport) -> bool:
+    return any(f.rule in RECHECK_RULES for f in r.findings)
+
+
 def _cacheable(r: ScanReport) -> bool:
-    # A known-malware lookup that failed must run again next time (R41, I1).
-    return not any((f.source == "gate" and f.rule in TRANSIENT_RULES) or f.rule == "identity.osv-unavailable"
-                   for f in r.findings)
+    return not needs_recheck(r) and not any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
 
 
 def _fetch_key(t: Target) -> str:
