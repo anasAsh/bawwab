@@ -396,7 +396,7 @@ def _fix_positive_cases(home: Path) -> list[HookInput]:
         bash("node -e \"require('fs').writeFileSync('.mcp.json','{}')\"", cwd=str(proj)),
         bash("perl -pi -e 's/a/b/' ~/.claude/settings.json"),
         bash("awk -i inplace '{print}' ~/.claude/settings.json"),
-        bash("jq '.mcpServers.x={}' ~/.claude.json > /tmp/t"),
+        bash("jq '.mcpServers.x={}' ~/.claude.json > /tmp/t && mv /tmp/t ~/.claude.json"),
         bash("bash -c 'cat x > ~/.claude/commands/y.md'"),
         # globs
         bash("cp -r evil ~/.c*/skills/", cwd=str(proj)),
@@ -560,7 +560,7 @@ def test_extra_packages_are_targets(home):
     "ruby -e 'File.write(\"~/.claude/skills/x/SKILL.md\", 1)'",
     "sed -i 's/a/b/' ~/.claude/settings.local.json",
     "awk -i inplace '{print}' ~/.claude/settings.json",
-    "jq '.mcpServers.x={}' ~/.claude.json > /tmp/t",
+    "jq '.mcpServers.x={}' ~/.claude.json > /tmp/t && mv /tmp/t ~/.claude.json",
     "bash -c 'cat x > ~/.claude/commands/y.md'",
     "python3 - ~/.bawwab/bawwab.db",
     "dd if=/tmp/x of=$HOME/.claude/agents/a.md",
@@ -595,5 +595,129 @@ def test_glob_sources_and_dests(home):
 def test_prefilter_superset_fix_round(home):
     hook = _load_hook()
     for inp in _fix_positive_cases(home):
+        assert detect_install(inp) is not None, inp
+        assert hook.prefilter({"tool_name": inp.tool_name, "tool_input": inp.tool_input, "cwd": inp.cwd}), inp
+
+
+# ------------------------------------------------------------- fix round 2
+
+def test_pipx_spec_is_the_package(home):
+    t = only(detect_install(bash("claude mcp add x -- pipx run --spec evil okpkg")))
+    assert (t.kind, t.name, t.version) == ("pypi", "evil", None)
+    t = only(detect_install(bash("claude mcp add x -- pipx run --spec=evil==1.0 okpkg")))
+    assert (t.name, t.version) == ("evil", "1.0")
+
+
+HEREDOC_PY = "python3 - <<'X'\nopen('/root/.claude.json','w')\nX"
+
+
+@pytest.mark.parametrize("cmd", [
+    HEREDOC_PY,
+    "python3 <<EOF\nopen('.mcp.json','w').write('{}')\nEOF\necho done",
+    "echo \"open('.mcp.json','w')\" | python3",
+    "printf '%s' \"open('$HOME/.claude/settings.json','w')\" | sudo python3 -",
+    "cat > /tmp/a.py <<EOF\nopen('.mcp.json','w')\nEOF\npython3 /tmp/a.py",
+    "node <<<\"require('fs').writeFileSync('.mcp.json','{}')\"",
+    "uv run python -c \"open('$HOME/.claude.json','w').write('{}')\"",
+    "poetry run python -c \"open('.mcp.json','w')\"",
+    "cd ~/.claude && python3 -c \"open('settings.json','w').write('{}')\"",
+    "cd ~/.claude/skills/x && ruby -e 'File.write(\"SKILL.md\", 1)'",
+])
+def test_interpreter_stdin_heredoc_and_cwd(home, cmd):
+    r = detect_install(bash(cmd, cwd=str(home.parent / "proj")))
+    assert isinstance(r, Protected), r
+
+
+@pytest.mark.parametrize("cmd", [
+    "python3 - <<'X'\nprint(1)\nX",
+    "echo hi | python3 -c 'import sys; print(sys.stdin.read())'",
+    "cat > /tmp/a.py <<EOF\nprint(1)\nEOF\npython3 /tmp/a.py",
+    "uv run pytest -q",
+    "cd ~/.claude && ls",
+])
+def test_interpreter_benign_stays_none(home, cmd):
+    assert detect_install(bash(cmd, cwd=str(home.parent / "proj"))) is None
+
+
+@pytest.mark.parametrize("cmd", [
+    "rsync -a ~/.claude/skills/ /backup/skills/",
+    "jq .mcpServers .mcp.json > /tmp/servers.json",
+    "cp ~/.claude/settings.json /tmp/backup.json",
+    "cp .mcp.json .mcp.json.bak",
+    "dd if=.mcp.json of=/tmp/x",
+    "tar czf backup.tgz ~/.claude/skills",
+])
+def test_destination_only_checks_none(home, cmd):
+    assert detect_install(bash(cmd, cwd=str(home.parent / "proj"))) is None
+
+
+@pytest.mark.parametrize("cmd", [
+    "echo '{}' | tee -a ~/.claude/settings.json",
+    "dd if=evil of=.mcp.json",
+    "cp evil.json ~/.claude/settings.json",
+    "rsync -a evil.json .mcp.json",
+])
+def test_destination_writes_protected(home, cmd):
+    assert isinstance(detect_install(bash(cmd, cwd=str(home.parent / "proj"))), Protected)
+
+
+def test_rsync_install_into_skills_are_targets_only(home):
+    proj = home.parent / "proj"
+    (proj / "evil").mkdir()
+    (proj / "evil" / "SKILL.md").write_text("x")
+    for cmd in ("rsync -a evil/ ~/.claude/skills/x/", "install -D evil/SKILL.md ~/.claude/skills/x/SKILL.md"):
+        r = detect_install(bash(cmd, cwd=str(proj)))
+        assert isinstance(r, Targets) and r.protected == [], (cmd, r)
+
+
+@pytest.mark.parametrize("cmd", [
+    "claude mcp add x -- npx --userconfig /tmp/npmrc -y okpkg",
+    "claude mcp add x -- npx --node-options=--require=/tmp/e.js -y okpkg",
+    "claude mcp add x -e NPM_CONFIG_USERCONFIG=/tmp/npmrc -- npx -y okpkg",
+    "claude mcp add x -e npm_config_userconfig=/tmp/npmrc -- npx -y okpkg",
+    "claude mcp add x -e PIP_CONFIG_FILE=/tmp/pip.conf -- uvx okpkg",
+    "claude mcp add x -e UV_CONFIG_FILE=/tmp/uv.toml -- uvx okpkg",
+    "claude mcp add x -e UV_INDEX_EVIL_URL=http://e -- uvx okpkg",
+])
+def test_index_config_protected(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and r.protected, r
+    assert [t.name for t in r.targets] == ["okpkg"]
+
+
+def test_npx_value_flags_not_taken_as_package(home):
+    for flags in ("--registry http://x", "--userconfig /tmp/rc", "--node-options x", "--cache /tmp/c"):
+        t = detect_install(bash(f"claude mcp add x -- npx {flags} -y okpkg")).targets[0]
+        assert t.name == "okpkg", flags
+
+
+def test_glob_prefilter_fast_path_for_ordinary_copies(home):
+    hook = _load_hook()
+    for cmd in ("cp -r dist/* build/", "mv src/*.py lib/", "cp *.txt out/", "cp foo[1].txt out/"):
+        assert not hook.prefilter({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": "/tmp"}), cmd
+        assert detect_install(bash(cmd)) is None, cmd
+    assert detect_install(bash("cp x out*/")) is None  # no match, not under a dot dir: no decision
+
+
+def _round2_positive_cases(home: Path) -> list[HookInput]:
+    proj = str(home.parent / "proj")
+    return [bash(c, cwd=proj) for c in (
+        HEREDOC_PY,
+        "echo \"open('.mcp.json','w')\" | python3",
+        "cat > /tmp/a.py <<EOF\nopen('.mcp.json','w')\nEOF\npython3 /tmp/a.py",
+        "uv run python -c \"open('$HOME/.claude.json','w').write('{}')\"",
+        "cd ~/.claude && python3 -c \"open('settings.json','w').write('{}')\"",
+        "echo '{}' | tee -a ~/.claude/settings.json",
+        "dd if=evil of=.mcp.json",
+        "claude mcp add x -- npx --userconfig /tmp/npmrc -y okpkg",
+        "claude mcp add x -- pipx run --spec evil okpkg",
+        "cp -r evil ~/.x*/skills/",
+        "cp -r evil ../.c*/skills/",
+    )]
+
+
+def test_prefilter_superset_round2(home):
+    hook = _load_hook()
+    for inp in _round2_positive_cases(home):
         assert detect_install(inp) is not None, inp
         assert hook.prefilter({"tool_name": inp.tool_name, "tool_input": inp.tool_input, "cwd": inp.cwd}), inp

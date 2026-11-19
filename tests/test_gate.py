@@ -257,3 +257,13 @@ def test_protected_key_ignores_description_and_timeout(store):
     e1 = HookInput("Edit", {"file_path": "/x", "old_string": "a", "new_string": "b"}, "/tmp")
     e2 = HookInput("Edit", {"file_path": "/x", "old_string": "a", "new_string": "c"}, "/tmp")
     assert gate_mod.protected_key(e1) != gate_mod.protected_key(e2)
+
+
+def test_pin_reason_reflects_actual_changes(store):
+    """I6 residual: a runner inside echo is never pinned, and no change means no "ask"."""
+    out = run_gate(bash('echo "npx okpkg"; claude mcp add x -- npx -y okpkg'), scan=fake_scan({}), store=store)
+    assert decision(out) == "ask"
+    assert out["hookSpecificOutput"]["updatedInput"]["command"] == 'echo "npx okpkg"; claude mcp add x -- npx -y okpkg@1.0.0'
+    assert reason(out) == "bawwab: scanned clean; pinned okpkg to 1.0.0"
+    out = run_gate(bash("bash -c 'claude mcp add x -- npx -y okpkg'"), scan=fake_scan({}), store=store)
+    assert out is None  # detected and scanned, but nothing pinnable at top level: no ask

@@ -94,3 +94,49 @@ def test_pin_rejects_invalid_versions():
     for bad in ("1.2.3; curl x|sh", "$(id)", "1 2", "", "a/b"):
         assert pin_input(inp, {npm("evilpkg"): bad}) is None
     assert pin_input(inp, {npm("evilpkg"): "1.0.0-rc.1+b_2"}) is not None
+
+
+# ------------------------------------------------------------- fix round 2 (I6 residual, N1)
+
+from bawwab.gate.pin import pin_changes  # noqa: E402
+
+
+def _bash_pin(cmd, pins):
+    return pin_changes(HookInput("Bash", {"command": cmd}, "/tmp"), pins)
+
+
+def test_pin_ignores_runner_in_echo_and_quotes():
+    t = npm("okpkg")
+    ti, ch = _bash_pin('echo "npx okpkg"; claude mcp add x -- npx -y okpkg', {t: "1.0.0"})
+    assert ti["command"] == 'echo "npx okpkg"; claude mcp add x -- npx -y okpkg@1.0.0' and ch == [("okpkg", "1.0.0")]
+    ti, _ = _bash_pin("echo npx okpkg && claude mcp add x -- npx -y okpkg", {t: "1.0.0"})
+    assert ti["command"] == "echo npx okpkg && claude mcp add x -- npx -y okpkg@1.0.0"
+    ti, _ = _bash_pin("claude mcp add x -- npx -y okpkg # npx okpkg", {t: "1.0.0"})
+    assert ti["command"] == "claude mcp add x -- npx -y okpkg@1.0.0 # npx okpkg"
+
+
+def test_pin_nothing_when_runner_only_in_echo():
+    assert _bash_pin('echo "npx okpkg"', {npm("okpkg"): "1.0.0"}) == (None, [])
+
+
+def test_pin_add_json_and_multiple():
+    ti, ch = _bash_pin("""claude mcp add-json x '{"command":"npx","args":["-y","okpkg"]}'""", {npm("okpkg"): "1.0.0"})
+    assert json.loads(ti["command"].split(" ", 4)[4].strip("'"))["args"] == ["-y", "okpkg@1.0.0"]
+    ti, ch = _bash_pin("claude mcp add a -- npx -y p1 && claude mcp add b -- uvx p2",
+                       {npm("p1"): "1.0.0", pypi("p2"): "2.0"})
+    assert ti["command"] == "claude mcp add a -- npx -y p1@1.0.0 && claude mcp add b -- uvx p2==2.0"
+    assert sorted(ch) == [("p1", "1.0.0"), ("p2", "2.0")]
+
+
+def test_pin_pipx_spec():
+    ti, ch = _bash_pin("claude mcp add x -- pipx run --spec evil okpkg", {pypi("evil"): "2.0"})
+    assert ti["command"] == "claude mcp add x -- pipx run --spec evil==2.0 okpkg" and ch == [("evil", "2.0")]
+    ti, _ = _bash_pin("claude mcp add x -- uvx --from=evil okcmd", {pypi("evil"): "2.0"})
+    assert ti["command"] == "claude mcp add x -- uvx --from=evil==2.0 okcmd"
+
+
+def test_edit_fragment_skips_json_keys():
+    inp = HookInput("Edit", {"file_path": "/p/.mcp.json", "old_string": "{}",
+                             "new_string": '{"okpkg": {"command": "npx", "args": ["-y", "okpkg"]}}'}, "/tmp")
+    out = pin_input(inp, {npm("okpkg"): "1.0.0"})
+    assert out["new_string"] == '{"okpkg": {"command": "npx", "args": ["-y", "okpkg@1.0.0"]}}'

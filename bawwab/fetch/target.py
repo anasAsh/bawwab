@@ -119,37 +119,77 @@ def target_from_command(command: str, args: list[str]) -> Target | None:
     return None
 
 
-def _npx_package(args: list[str]) -> str | None:
+_NPX_OTHER_VALUE_FLAGS = {"--registry", "--userconfig", "--node-options", "--cache", "--prefix", "-c", "--call",
+                          "--workspace", "-w"}
+
+
+def _npx_spec_pos(args: list[str]) -> tuple[int, int] | None:
+    """(index into args, char offset) of the package spec npx/bunx/dlx installs."""
     i = 0
     while i < len(args):
         a = args[i]
         if a in _NPX_VALUE_FLAGS:
-            return args[i + 1] if i + 1 < len(args) else None
+            return (i + 1, 0) if i + 1 < len(args) else None
         if a.startswith("--package="):
-            return a.split("=", 1)[1] or None
+            return (i, len("--package=")) if len(a) > len("--package=") else None
         if a.startswith("-"):
-            i += 1
+            i += 2 if (a in _NPX_OTHER_VALUE_FLAGS and "=" not in a) else 1
             continue
-        return a
+        return i, 0
     return None
 
 
-def _uvx(raw: str, args: list[str]) -> Target | None:
-    spec = None
+def _npx_package(args: list[str]) -> str | None:
+    pos = _npx_spec_pos(args)
+    return args[pos[0]][pos[1]:] if pos else None
+
+
+def _uvx_spec_pos(args: list[str]) -> tuple[int, int] | None:
+    """(index, char offset) of the package spec for uvx/pipx run/uv tool run (--from/--spec win)."""
     i = 0
     while i < len(args):
         a = args[i]
-        if a == "--from" and i + 1 < len(args):
-            spec = args[i + 1]
-            break
-        if a.startswith("--from="):
-            spec = a.split("=", 1)[1]
-            break
+        if a in ("--from", "--spec"):
+            return (i + 1, 0) if i + 1 < len(args) else None
+        if a.startswith(("--from=", "--spec=")):
+            off = a.index("=") + 1
+            return (i, off) if len(a) > off else None
         if a.startswith("-"):
             i += 2 if (a in _UV_VALUE_FLAGS and "=" not in a) else 1
             continue
-        spec = a
-        break
+        return i, 0
+    return None
+
+
+def _runner_args(command: str, args: list[str]) -> tuple[str, int] | None:
+    """(runner kind "npm"|"pypi", offset of the runner's own args within args), or None."""
+    exe = os.path.basename(command or "")
+    if exe in ("npx", "bunx"):
+        return "npm", 0
+    if exe in ("pnpm", "yarn") and args[:1] == ["dlx"]:
+        return "npm", 1
+    if exe == "uvx":
+        return "pypi", 0
+    if exe == "pipx":
+        return "pypi", 1 if args[:1] == ["run"] else 0
+    if exe == "uv" and args[:1] == ["tool"]:
+        return "pypi", 2 if args[:2] == ["tool", "run"] else 1
+    return None
+
+
+def package_position(command: str, args: list[str]) -> tuple[str, int, int] | None:
+    """(kind, index into args, char offset) of the package spec a runner installs; used for pinning."""
+    r = _runner_args(command, args)
+    if r is None:
+        return None
+    kind, off = r
+    pos = (_npx_spec_pos if kind == "npm" else _uvx_spec_pos)(args[off:])
+    return (kind, pos[0] + off, pos[1]) if pos else None
+
+
+def _uvx(raw: str, args: list[str]) -> Target | None:
+    pos = _uvx_spec_pos(args)
+    spec = args[pos[0]][pos[1]:] if pos else None
     if not spec:
         return None
     name, _, version = spec.partition("==")
@@ -157,7 +197,7 @@ def _uvx(raw: str, args: list[str]) -> Target | None:
     return Target("pypi", raw, name=name, version=version.strip() or None) if name else None
 
 
-_NPX_INDEX_FLAGS = ("--registry",)
+_NPX_INDEX_FLAGS = ("--registry", "--userconfig", "--node-options")
 _UV_INDEX_FLAGS = ("--index-url", "--extra-index-url", "--index", "--default-index", "-i", "--find-links", "-f",
                    "--pip-args")
 _UV_VALUE_FLAGS = {"--from", "--python", "-p", "--with", "--with-requirements", "--with-editable", "--constraint",
@@ -184,12 +224,12 @@ def runner_extras(command: str, args: list[str]) -> tuple[list[Target], list[str
         while i < len(a):
             k, v = _flag(a[i])
             if k in _NPX_INDEX_FLAGS:
-                reasons.append("custom package index")
-            if k in _NPX_VALUE_FLAGS or k == "--package" or k in _NPX_INDEX_FLAGS:
+                reasons.append("npx --node-options" if k == "--node-options" else "custom package index")
+            if k in _NPX_VALUE_FLAGS or k in _NPX_OTHER_VALUE_FLAGS:
                 if v is None:
                     v = a[i + 1] if i + 1 < len(a) else None
                     i += 1
-                if k != "--registry" and v:
+                if k in _NPX_VALUE_FLAGS and v:
                     pkgs.append(v)
                 i += 1
                 continue

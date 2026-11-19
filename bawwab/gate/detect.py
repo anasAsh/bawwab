@@ -53,7 +53,7 @@ _READ_ONLY = {
     "diff", "sha256sum", "sha1sum", "md5sum", "du", "echo", "printf", "test", "[", "realpath", "readlink",
     "bat", "git", "true", "false", "which", "type",
 }
-_SHELL_WRITERS = {"tee", "sed", "perl", "dd", "truncate", "patch", "python", "python3", "node"}
+_SHELL_WRITERS = {"tee", "sed", "perl", "truncate", "patch", "python", "python3", "node"}
 _SENSITIVE = (
     ".claude.json", ".mcp.json", ".claude/settings", ".claude/skills", ".claude/commands", ".claude/agents",
     ".claude/plugins",
@@ -65,7 +65,8 @@ _CODE_ENV = {
 }
 _INDEX_ENV = {
     "NPM_CONFIG_REGISTRY", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_INDEX", "UV_DEFAULT_INDEX", "UV_FIND_LINKS",
-    "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_FIND_LINKS",
+    "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_FIND_LINKS", "NPM_CONFIG_USERCONFIG", "PIP_CONFIG_FILE",
+    "UV_CONFIG_FILE",
 }
 _EXEC_SETTINGS = ("statusLine", "apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper", "env")
 _PROTECTED_KEYS = ("hooks", "disableAllHooks", "extraKnownMarketplaces", "enableAllProjectMcpServers")
@@ -173,7 +174,7 @@ def _env_checks(env: dict[str, str], name: str, acc: _Acc) -> None:
     for k in env:
         if k in _CODE_ENV or k.startswith("DYLD_"):
             acc.protect(f"server env loads code: {k} ({name})")
-        elif k.upper() in _INDEX_ENV:
+        elif k.upper() in _INDEX_ENV or k.upper().startswith("UV_INDEX"):
             acc.protect(f"custom package index: {k} ({name})")
 
 
@@ -308,6 +309,43 @@ def _strip_fd_numbers(cmd: str) -> str:
     return "".join(out)
 
 
+_HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+_HEREDOC_TOKEN = "__bawwab_heredoc_{}__"
+
+
+def _extract_heredocs(cmd: str) -> tuple[str, list[str]]:
+    """Replace each `<<DELIM … DELIM` with `< __bawwab_heredoc_N__` and return the bodies."""
+    bodies: list[str] = []
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = _HEREDOC.search(cmd, pos)
+        if m is None or cmd[m.start():m.start() + 3] == "<<<":
+            if m is not None:  # here-string: keep as is, continue after it
+                out.append(cmd[pos:m.start() + 3])
+                pos = m.start() + 3
+                continue
+            out.append(cmd[pos:])
+            break
+        nl = cmd.find("\n", m.end())
+        if nl < 0:
+            out.append(cmd[pos:])
+            break
+        delim = m.group(3)
+        lines = cmd[nl + 1:].split("\n")
+        body: list[str] = []
+        consumed = nl + 1
+        for line in lines:
+            consumed += len(line) + 1
+            if (line.lstrip("\t") if m.group(1) else line) == delim:
+                break
+            body.append(line)
+        out.append(cmd[pos:m.start()] + f"< {_HEREDOC_TOKEN.format(len(bodies))}" + cmd[m.end():nl + 1])
+        bodies.append("\n".join(body))
+        pos = min(consumed, len(cmd))
+    return "".join(out), bodies
+
+
 def _tokens(cmd: str) -> list[str]:
     cmd = _strip_fd_numbers(cmd.replace("\\\n", " ")).replace("`", " ; ")
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=_PUNCT)
@@ -324,32 +362,40 @@ def _words(cmd: str) -> list[str]:
     return [t for t in _tokens(cmd) if not (t and all(c in _PUNCT for c in t))]
 
 
-def _segments(tokens: list[str]) -> list[tuple[list[str], list[str]]]:
-    """Split into (words, redirect targets) per simple command."""
-    segs: list[tuple[list[str], list[str]]] = []
-    words: list[str] = []
-    redirs: list[str] = []
+@dataclass
+class _Seg:
+    words: list[str]
+    redirs: list[str]
+    inputs: list[str]
+    piped: bool  # stdin comes from the previous segment through a pipe
+
+
+def _segments(tokens: list[str]) -> list[_Seg]:
+    """Split into simple commands with their redirect targets and input sources."""
+    segs: list[_Seg] = []
+    cur = _Seg([], [], [], False)
     i = 0
     while i < len(tokens):
         tok = tokens[i]
         if tok and all(c in _PUNCT for c in tok):
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
             if ">" in tok:
-                if i + 1 < len(tokens):
-                    redirs.append(tokens[i + 1])
+                cur.redirs.append(nxt)
                 i += 2
                 continue
             if "<" in tok:
+                cur.inputs.append(nxt)
                 i += 2
                 continue
-            if words or redirs:
-                segs.append((words, redirs))
-            words, redirs = [], []
+            if cur.words or cur.redirs or cur.inputs:
+                segs.append(cur)
+            cur = _Seg([], [], [], tok in ("|", "|&"))
             i += 1
             continue
-        words.append(tok)
+        cur.words.append(tok)
         i += 1
-    if words or redirs:
-        segs.append((words, redirs))
+    if cur.words or cur.redirs or cur.inputs:
+        segs.append(cur)
     return segs
 
 
@@ -375,6 +421,11 @@ _WRAPPERS: dict[str, tuple[set[str], int]] = {
 }
 
 
+_RUNNERS = {"uv", "poetry", "pipenv", "pdm", "hatch", "rye"}
+_RUN_VALUE = {"--with", "--python", "-p", "--project", "--directory", "--extra", "--group", "--env-file", "--index",
+              "--index-url", "--extra-index-url", "--package", "-e", "--env", "-C", "--directory"}
+
+
 def _strip_prefix(words: list[str]) -> list[str]:
     words = list(words)
     i = 0
@@ -384,6 +435,14 @@ def _strip_prefix(words: list[str]) -> list[str]:
             i += 1
             continue
         b = os.path.basename(w)
+        if b in _RUNNERS and i + 1 < len(words) and words[i + 1] == "run":
+            i += 2
+            while i < len(words) and words[i].startswith("-") and words[i] != "--":
+                a = words[i]
+                i += 2 if (a in _RUN_VALUE and "=" not in a) else 1
+            if i < len(words) and words[i] == "--":
+                i += 1
+            continue
         if b not in _WRAPPERS:
             break
         values, npos = _WRAPPERS[b]
@@ -594,7 +653,19 @@ def _expand(tok: str, cwd: str) -> list[str]:
     return sorted(os.path.normpath(m) for m in _glob.glob(_abspath(tok, cwd)))
 
 
+def _dot_component(tok: str) -> bool:
+    return re.search(r"(?:^|/)\.[^/.]", os.path.expanduser(_home_vars(tok))) is not None
+
+
+def _check_dest(p: str, acc: _Acc) -> None:
+    if _config_kind(p):
+        acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
+    if _bawwab_path(p):
+        acc.protect("bawwab state change")
+
+
 def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
+    """cp/mv/ln/rsync/install: only the destination decides; sources are scanned when it is an install dir."""
     target_dir = None
     values = {"-t", "--target-directory", "-S", "--suffix", "-e", "--rsh", "-m", "--mode", "-o", "--owner",
               "-g", "--group"}
@@ -610,10 +681,20 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
         dest, srcs = pos[-1], pos[:-1]
     else:
         return
+    if exe == "mv":
+        for s in srcs:
+            if _bawwab_path(_abspath(s, cwd)):
+                acc.protect("bawwab state change")
     dests = _expand(dest, cwd)
     if not dests:
-        acc.protect(f"unresolvable glob: {dest}")
+        if _dot_component(dest):  # may have been meant for a hidden dir such as ~/.claude
+            acc.protect(f"unresolvable glob: {dest}")
         return
+    for d in dests:
+        _check_dest(d, acc)
+        if os.path.isdir(d):  # cp x dir/ lands at dir/<basename>
+            for s in srcs:
+                _check_dest(os.path.join(d, os.path.basename(s.rstrip("/"))), acc)
     if not any(install_dir(d) for d in dests):
         return
     for s in srcs:
@@ -691,41 +772,61 @@ def _bawwab_decision(words: list[str]) -> bool:
     return False
 
 
-def _interpreter_write(exe: str, args: list[str], redirs: list[str]) -> bool:
-    """An interpreter/editor whose arguments mention a sensitive path (it may rewrite it)."""
-    if re.fullmatch(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|tee|dd|install|rsync", exe):
-        pass
-    elif exe in _SHELLS:
-        pass
-    elif exe in ("sed", "gsed"):
-        if not any(a.startswith("-i") or a.startswith("--in-place") or (
-                a.startswith("-") and not a.startswith("--") and "i" in a[1:]) for a in args):
-            return False
-    elif exe in ("awk", "gawk"):
-        if not any(a == "inplace" or a.endswith("inplace") for a in args):
-            return False
-    elif exe == "jq":
-        if not redirs:
-            return False
-    else:
-        return False
-    return _mentions_sensitive(" ".join(args))
+_INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")
+
+
+def _is_interpreter(exe: str, args: list[str]) -> bool:
+    """A program that may rewrite files named in its script or arguments."""
+    if _INTERPRETER.fullmatch(exe):
+        return True
+    if exe in ("sed", "gsed"):
+        return any(a.startswith(("-i", "--in-place")) or (a.startswith("-") and not a.startswith("--") and "i" in a[1:])
+                   for a in args)
+    if exe in ("awk", "gawk"):
+        return any(a == "inplace" or a.endswith("inplace") for a in args)
+    return False
+
+
+def _sensitive_text(text: str, cwd: str) -> bool:
+    """Mentions a Claude config / install dir / bawwab path, literally or relative to cwd."""
+    if _mentions_sensitive(text):
+        return True
+    for c in re.findall(r"[A-Za-z0-9_./~${}+@-]+", text):
+        if "." not in c and "/" not in c:
+            continue
+        p = _abspath(c, cwd)
+        if _config_kind(p) or install_dir(p) or _bawwab_path(p):
+            return True
+    return False
 
 
 def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
     if depth > 3:
         acc.protect("shell nesting too deep")
         return
-    for words, redirs in _segments(_tokens(cmd)):
+    cmd, bodies = _extract_heredocs(cmd)
+    written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
+    pipeline = ""  # text of the segments piped into the current one
+
+    def body_of(tok: str) -> str:
+        for n, body in enumerate(bodies):
+            if tok == _HEREDOC_TOKEN.format(n):
+                return body
+        return written.get(_abspath(tok, cwd), tok)
+
+    for seg in _segments(_tokens(cmd)):
+        redirs, raw_words = seg.redirs, seg.words
+        stdin_text = "\n".join(body_of(t) for t in seg.inputs)
+        upstream = pipeline if seg.piped else ""
+        pipeline = (upstream + "\n" if seg.piped else "") + " ".join(raw_words) + "\n" + stdin_text
         for r in redirs:
             p = _abspath(r, cwd)
             if install_dir(p):
                 acc.protect("shell write into install dir")
-            if _config_kind(p):
-                acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
-            if _bawwab_path(p):
-                acc.protect("bawwab state change")
-        words = _strip_prefix(words)
+            _check_dest(p, acc)
+            if seg.inputs:
+                written[p] = stdin_text
+        words = _strip_prefix(raw_words)
         if not words:
             continue
         if _bawwab_decision(words):
@@ -749,8 +850,10 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             dest = next((a for a in args if not a.startswith("-")), None)
             cwd = str(Path.home()) if dest is None else (cwd if dest == "-" else _abspath(dest, cwd))
             continue
-        if _interpreter_write(exe, args, redirs):
-            acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
+        if _is_interpreter(exe, args):
+            script_files = "\n".join(written[p] for a in args if (p := _abspath(a, cwd)) in written)
+            if _sensitive_text("\n".join([" ".join(args), stdin_text, upstream, script_files]), cwd):
+                acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
         if exe in _SHELLS:
             for j, a in enumerate(args):
                 if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
@@ -764,21 +867,26 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             _git(args, cwd, acc)
         elif exe in ("cp", "mv", "ln", "rsync", "install"):
             _copy(exe, args, cwd, acc)
+            continue
         elif exe in ("curl", "wget"):
             _download(exe, args, cwd, acc)
         elif exe in ("tar", "bsdtar", "unzip"):
             _extract(exe, args, cwd, acc)
-        if exe in _READ_ONLY or (exe in ("sed", "gsed", "awk", "gawk") and not _interpreter_write(exe, args, redirs)
-                                 and not any(a.startswith("-i") or a == "inplace" for a in args)):
+        elif exe == "dd":
+            for a in args:
+                if a.startswith("of="):
+                    p = _abspath(a[3:], cwd)
+                    if install_dir(p):
+                        acc.protect("shell write into install dir")
+                    _check_dest(p, acc)
+            continue
+        if exe in _READ_ONLY or (exe in ("sed", "gsed", "awk", "gawk") and not _is_interpreter(exe, args)):
             continue
         for a in args:
             p = _abspath(a.split("=", 1)[-1] if a.startswith("-") or re.match(r"^\w+=", a) else a, cwd)
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
-            if _config_kind(p):
-                acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
-            if _bawwab_path(p):
-                acc.protect("bawwab state change")
+            _check_dest(p, acc)
 
 
 # ------------------------------------------------------------------ write / edit

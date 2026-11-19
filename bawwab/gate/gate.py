@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bawwab.config import load_config
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install
-from bawwab.gate.pin import pin_input
+from bawwab.gate.pin import pin_changes
 from bawwab.report import format_report, sanitise
 from bawwab.scan import scan_target, synthetic_report
 from bawwab.store import Store, open_store
@@ -169,14 +169,11 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         return decision("deny", "\n\n".join(blocks)), keys
     if isinstance(det, Targets) and det.pinnable:
         try:
-            updated = pin_input(inp, {t: r.resolved_version for t, r in results})
+            updated, changes = pin_changes(inp, {t: r.resolved_version for t, r in results})
         except Exception:  # noqa: BLE001 - a failed rewrite never blocks; just no pin
-            updated = None
-        if updated is not None:
-            pinned = ", ".join(
-                f"{t.name} to {r.resolved_version}" for t, r in results
-                if t.kind in ("npm", "pypi") and t.version in (None, "latest")
-            )
+            updated, changes = None, []
+        if updated is not None and changes:
+            pinned = ", ".join(f"{name} to {version}" for name, version in changes)
             return decision("ask", sanitise(f"bawwab: scanned clean; pinned {pinned}", 500), updated), keys
     return None, keys
 

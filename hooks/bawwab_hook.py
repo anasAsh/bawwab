@@ -21,6 +21,8 @@ _FILE_TOOLS = ("Write", "Edit", "MultiEdit")
 _CLAUDE_SUBCMD = re.compile(
     r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
 )
+# ...and only when a path could reach a hidden dir (~, $HOME, a ".x" component) or names an install dir.
+_GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")
 _GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
 
 
@@ -49,7 +51,7 @@ def prefilter(data: dict) -> bool:
         s = cmd.replace('"', "").replace("'", "").replace("\\", "")
         if any(n in s for n in needles):
             return True
-        if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s)):
+        if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
             return True
         return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
     if tool in _FILE_TOOLS:
