@@ -47,6 +47,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) ->
 
 
 _MIGRATIONS = [_migrate_1]
+_VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
 
 def _now() -> datetime:
@@ -109,9 +110,12 @@ def report_from_dict(d: dict) -> ScanReport:
     )
 
 
-def _finding_id(key: str, f: Finding) -> str:
-    h = hashlib.sha256(f"{key}\0{f.rule}\0{f.file}\0{f.line}".encode()).hexdigest()
-    return "F" + h[:6]
+def _hash(material: str) -> str:
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _finding_material(key: str, f: Finding, ordinal: int) -> str:
+    return f"{key}\0{f.rule}\0{f.file}\0{f.line}\0{f.evidence}\0{ordinal}"
 
 
 class Store:
@@ -136,27 +140,52 @@ class Store:
     # --- scans ---
     def get_cached(self, key: str) -> ScanReport | None:
         row = self._conn.execute("SELECT report FROM scans WHERE key=?", (key,)).fetchone()
-        return report_from_dict(json.loads(row[0])) if row else None
+        if not row:
+            return None
+        try:
+            return report_from_dict(json.loads(row[0]))
+        except (ValueError, KeyError, TypeError):
+            self.audit("store.corrupt", table="scans", key=key)
+            return None
 
     def put_report(self, r: ScanReport) -> None:
-        for f in r.findings:
-            f.id = _finding_id(r.key, f)
-        data = json.dumps(report_to_dict(r))
+        data = None
         with self._tx():
+            self._conn.execute("DELETE FROM findings WHERE key=?", (r.key,))
+            for i, f in enumerate(r.findings):
+                digest = _hash(_finding_material(r.key, f, i))
+                n = 6
+                while True:
+                    f.id = "F" + digest[:n]
+                    payload = json.dumps(report_to_dict(_one(r, f))["findings"][0])
+                    row = self._conn.execute(
+                        "SELECT key, finding FROM findings WHERE id=?", (f.id,)
+                    ).fetchone()
+                    if row is None:
+                        self._conn.execute(
+                            "INSERT INTO findings(id, key, finding) VALUES (?,?,?)", (f.id, r.key, payload)
+                        )
+                        break
+                    if row["key"] == r.key and row["finding"] == payload:
+                        break  # identical finding already stored: no-op
+                    n += 2
+                    if n > len(digest):  # pragma: no cover - unreachable in practice
+                        raise sqlite3.IntegrityError("finding id space exhausted")
+            data = json.dumps(report_to_dict(r))
             self._conn.execute(
                 "INSERT OR REPLACE INTO scans(key, report, scanned_at) VALUES (?,?,?)",
                 (r.key, data, _iso(r.scanned_at)),
             )
-            self._conn.execute("DELETE FROM findings WHERE key=?", (r.key,))
-            for f in r.findings:
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO findings(id, key, finding) VALUES (?,?,?)",
-                    (f.id, r.key, json.dumps(report_to_dict(_one(r, f))["findings"][0])),
-                )
 
     def get_finding(self, finding_id: str) -> tuple[Finding, str] | None:
         row = self._conn.execute("SELECT key, finding FROM findings WHERE id=?", (finding_id,)).fetchone()
-        return (_finding_from_dict(json.loads(row["finding"])), row["key"]) if row else None
+        if not row:
+            return None
+        try:
+            return _finding_from_dict(json.loads(row["finding"])), row["key"]
+        except (ValueError, KeyError, TypeError):
+            self.audit("store.corrupt", table="findings", id=finding_id)
+            return None
 
     # --- approvals ---
     def create_pending(self, r: ScanReport, now: datetime | None = None) -> str:
@@ -168,6 +197,10 @@ class Store:
                 row = self._conn.execute("SELECT expires_at FROM pending WHERE id=?", (pid,)).fetchone()
                 if row is None or datetime.fromisoformat(row[0]) <= now:
                     break
+            self._conn.execute(
+                "UPDATE pending SET status='superseded' WHERE key=? AND status='pending' AND expires_at>?",
+                (r.key, _iso(now)),
+            )
             self._conn.execute(
                 "INSERT OR REPLACE INTO pending(id, key, report, created_at, expires_at, status)"
                 " VALUES (?,?,?,?,?, 'pending')",
@@ -189,7 +222,22 @@ class Store:
                 return True, key
             if datetime.fromisoformat(row["expires_at"]) <= now:
                 return False, "expired"
-            if json.loads(row["report"])["verdict"] == Verdict.MALICIOUS.value and not force:
+            if row["status"] == "superseded":
+                newest = self._conn.execute(
+                    "SELECT id FROM pending WHERE key=? AND status!='superseded' ORDER BY rowid DESC LIMIT 1",
+                    (key,),
+                ).fetchone()
+                return False, f"superseded: use {newest[0]}" if newest else "superseded"
+            verdict = Verdict(json.loads(row["report"])["verdict"])
+            cur = self._conn.execute("SELECT report FROM scans WHERE key=?", (key,)).fetchone()
+            if cur:
+                try:
+                    cv = Verdict(json.loads(cur[0])["verdict"])
+                    if _VERDICT_RANK[cv] > _VERDICT_RANK[verdict]:
+                        verdict = cv  # worst of frozen pending verdict and current scan
+                except (ValueError, KeyError, TypeError):
+                    verdict = Verdict.MALICIOUS  # corrupt current scan: fail closed
+            if verdict == Verdict.MALICIOUS and not force:
                 return False, "malicious: use --force"
             self._conn.execute(
                 "INSERT OR REPLACE INTO approvals(key, approved_at) VALUES (?,?)", (key, _iso(now))

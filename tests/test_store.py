@@ -150,3 +150,66 @@ def test_reopen_persists_and_two_connections(tmp_path, monkeypatch):
     pid = s1.create_pending(mk("K"), now=T0)
     assert s2.approve(pid, now=T0) == (True, "K")
     assert s1.is_approved("K")
+
+
+def test_stale_pending_cannot_bypass_malicious(tmp_path, monkeypatch):
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path))
+    s = open_store()
+    p1 = s.create_pending(mk("K", Verdict.SUSPICIOUS), now=T0)
+    s.put_report(mk("K", Verdict.MALICIOUS))  # deep rescan, same key
+    assert s.approve(p1, now=T0) == (False, "malicious: use --force")
+    assert not s.is_approved("K")
+    assert s.approve(p1, force=True, now=T0) == (True, "K")
+
+
+def test_superseded_pending(tmp_path, monkeypatch):
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path))
+    s = open_store()
+    p1 = s.create_pending(mk("K"), now=T0)
+    p2 = s.create_pending(mk("K"), now=T0 + timedelta(minutes=1))
+    assert s.approve(p1, now=T0) == (False, f"superseded: use {p2}")
+    assert not s.is_approved("K")
+    assert s.approve(p2, now=T0) == (True, "K")
+
+
+def test_same_rule_no_file_distinct_ids(tmp_path, monkeypatch):
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path))
+    s = open_store()
+    r = mk("K", findings=[Finding("j", Severity.MED, "judge", "one"), Finding("j", Severity.MED, "judge", "two")])
+    s.put_report(r)
+    a, b = r.findings
+    assert a.id != b.id
+    assert s.get_finding(a.id)[0].evidence == "one"
+    assert s.get_finding(b.id)[0].evidence == "two"
+
+
+def test_forced_hash_collision_across_keys(tmp_path, monkeypatch):
+    import bawwab.store as st
+
+    monkeypatch.setattr(st, "_hash", lambda m: "a" * 64)
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path))
+    s = open_store()
+    r1 = mk("K1", findings=[Finding("r", Severity.MED, "static", "e1")])
+    r2 = mk("K2", findings=[Finding("r", Severity.MED, "static", "e2")])
+    s.put_report(r1)
+    s.put_report(r2)
+    i1, i2 = r1.findings[0].id, r2.findings[0].id
+    assert i1 != i2
+    assert s.get_finding(i1)[0].evidence == "e1" and s.get_finding(i1)[1] == "K1"
+    assert s.get_finding(i2)[0].evidence == "e2" and s.get_finding(i2)[1] == "K2"
+    s.put_report(r1)  # identical re-insert keeps the same id
+    assert r1.findings[0].id == i1
+
+
+def test_corrupt_rows_return_none(tmp_path, monkeypatch):
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path))
+    s = open_store()
+    r = mk("K")
+    s.put_report(r)
+    fid = r.findings[0].id
+    s._conn.execute("UPDATE scans SET report='{bad'")
+    s._conn.execute("UPDATE findings SET finding='{\"x\":1}'")
+    assert s.get_cached("K") is None
+    assert s.get_finding(fid) is None
+    n = s._conn.execute("select count(*) from audit where event='store.corrupt'").fetchone()[0]
+    assert n == 2

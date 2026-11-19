@@ -82,10 +82,13 @@ def _tighten(cfg: Config, d: dict) -> Config:
     tr = d.get("trusted")
     if isinstance(tr, list) and all(isinstance(x, str) for x in tr):
         base = cfg.trusted
-        # Intersection: a global pattern survives if some project pattern covers it;
-        # a project entry survives (narrowed) if the global list already covers it.
-        kept = [g for g in base if any(fnmatch.fnmatchcase(g, p) for p in tr)]
-        kept += [p for p in dict.fromkeys(tr) if p not in kept and is_trusted(cfg, p)]
+        # Exact, glob-unaware intersection: a global pattern survives only if listed
+        # literally; a project entry survives if it equals a global pattern, or is a
+        # plain name (no glob metacharacters) that the global patterns already trust.
+        kept = [g for g in base if g in tr]
+        for e in dict.fromkeys(tr):
+            if e not in kept and not any(c in e for c in "*?[") and is_trusted(cfg, e):
+                kept.append(e)
         out.trusted = kept
     return out
 

@@ -31,7 +31,7 @@ def test_project_only_tightens(tmp_path, monkeypatch):
     cfg = load_config(proj)
     assert cfg.mode == Mode.DEEP
     assert cfg.suspicious == Severity.LOW
-    assert cfg.trusted == ["@modelcontextprotocol/*"]
+    assert cfg.trusted == []  # "*" is not literally in the global list: tightened away
     assert cfg.llm_backend == "claude-cli"
 
 
@@ -75,3 +75,20 @@ def test_unknown_keys_and_bad_enums(tmp_path, monkeypatch):
     assert cfg.mode == Mode.STANDARD
     assert cfg.suspicious == Severity.HIGH
     assert cfg.malicious == DEFAULT_CONFIG.malicious
+
+
+def _trusted_with(tmp_path, monkeypatch, proj_trusted):
+    monkeypatch.setenv("BAWWAB_HOME", str(tmp_path / "h"))
+    proj = tmp_path / "p"
+    _write(proj / ".claude" / "bawwab.json", {"trusted": proj_trusted})
+    return load_config(proj).trusted
+
+
+def test_trusted_glob_metachars_not_widening(tmp_path, monkeypatch):
+    assert _trusted_with(tmp_path, monkeypatch, ["@modelcontextprotocol/?"]) == []
+    assert _trusted_with(tmp_path, monkeypatch, ["[ab]x"]) == []
+    assert _trusted_with(tmp_path, monkeypatch, []) == []
+    assert _trusted_with(tmp_path, monkeypatch, ["@modelcontextprotocol/*"]) == ["@modelcontextprotocol/*"]
+    assert _trusted_with(tmp_path, monkeypatch, ["@modelcontextprotocol/server-git"]) == [
+        "@modelcontextprotocol/server-git"
+    ]
