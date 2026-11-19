@@ -177,10 +177,15 @@ _GLOB_CHARS = re.compile(r"[*?\[]")
 _STATE_FILES = ("fp", "quarantine.flag", "bawwab.db", "effects.error", "effects.lock")
 
 
+def _xdg_state() -> str:
+    return os.path.normpath(os.environ.get("XDG_STATE_HOME") or os.path.join(str(Path.home()), ".local", "state"))
+
+
 def _state_targets() -> list[str]:
     """bawwab's own state: its home and key files, and the install markers (paths a glob must not reach)."""
     home = os.path.normpath(str(bawwab_home()))
-    out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER)]
+    out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER),
+           os.path.join(_xdg_state(), "bawwab", _MARKER)]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd:
         out.append(os.path.join(os.path.normpath(pd), _MARKER))
@@ -196,8 +201,6 @@ def _comp_match(pat: str, name: str, icase: bool = False) -> bool:
 def _glob_hits_state(p: str) -> bool:
     """A glob path that matches bawwab state, or a directory that contains it (rm -rf ~/.baw*)."""
     pparts = p.rstrip("/").split("/")
-    if _comp_match(pparts[-1], _MARKER):
-        return True
     for t in _state_targets():
         tparts = t.split("/")
         for n in range(2, len(tparts) + 1):  # the target and each ancestor (deleting it deletes the target)
@@ -206,7 +209,46 @@ def _glob_hits_state(p: str) -> bool:
     return False
 
 
+_BRACE = re.compile(r"\{([^{}]*)\}")
+_MAX_BRACES = 64
+
+
+def _brace_expand(s: str) -> list[str]:
+    """Bash brace expansion ({a,b}, {1..3}, {a..c}), bounded to _MAX_BRACES results."""
+    out, todo = [], [s]
+    while todo and len(out) < _MAX_BRACES:
+        cur = todo.pop(0)
+        m = next((m for m in _BRACE.finditer(cur) if "," in m.group(1) or ".." in m.group(1)), None)
+        if m is None:
+            out.append(cur)
+            continue
+        body = m.group(1)
+        r = re.fullmatch(r"(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])", body)
+        if r and "," not in body:
+            a, b = r.groups()
+            if a.lstrip("-").isdigit() and b.lstrip("-").isdigit():
+                lo, hi = int(a), int(b)
+                alts = [str(i) for i in (range(lo, hi + 1) if lo <= hi else range(lo, hi - 1, -1))][:_MAX_BRACES]
+            elif a.isalpha() and b.isalpha():
+                lo, hi = ord(a), ord(b)
+                alts = [chr(i) for i in (range(lo, hi + 1) if lo <= hi else range(lo, hi - 1, -1))][:_MAX_BRACES]
+            else:
+                alts = [body]
+        else:
+            alts = body.split(",")
+        todo += [cur[:m.start()] + alt + cur[m.end():] for alt in alts]
+    return out
+
+
 def _bawwab_path(p: str) -> bool:
+    if "{" in p and "}" in p:
+        alts = _brace_expand(p)
+        if len(alts) > 1 or alts != [p]:
+            return any(_bawwab_path1(os.path.normpath(a)) for a in alts)
+    return _bawwab_path1(p)
+
+
+def _bawwab_path1(p: str) -> bool:
     if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER:
         return True
     if _GLOB_CHARS.search(p) and _glob_hits_state(os.path.normpath(p)):
@@ -895,36 +937,59 @@ def _moves_config(p: str) -> bool:
     return any(_under(os.path.normpath(r), p) for r in roots)
 
 
-_FIND_PATTERNS = {"-name": (False, False), "-iname": (False, True), "-path": (True, False),
-                  "-ipath": (True, True), "-wholename": (True, False), "-iwholename": (True, True)}
+_FIND_PATTERNS = {"-name": ("name", False), "-iname": ("name", True), "-path": ("path", False),
+                  "-ipath": ("path", True), "-wholename": ("path", False), "-iwholename": ("path", True),
+                  "-regex": ("regex", False), "-iregex": ("regex", True)}
+_FIND_ACTIONS = {"-delete", "-exec", "-execdir", "-ok", "-okdir"}
+_DESTRUCTIVE = {"rm", "mv", "unlink", "shred", "rmdir", "cp", "rsync", "truncate"}
 
 
-def _find(args: list[str], cwd: str, acc: _Acc) -> None:
-    """find whose start dir contains bawwab state and whose -name/-path pattern matches it (-delete,
-    -exec rm, | xargs rm all start here): protected."""
+def _find_hits(kind: str, icase: bool, pat: str, t: str) -> bool:
+    if kind == "name":  # find's -name has no leading-dot rule: '*' matches .bawwab
+        name = t.rsplit("/", 1)[-1]
+        return fnmatch.fnmatchcase(name.lower(), pat.lower()) if icase else fnmatch.fnmatchcase(name, pat)
+    if kind == "path":
+        return fnmatch.fnmatchcase(t.lower(), pat.lower()) if icase else fnmatch.fnmatchcase(t, pat)
+    if len(pat) > 300:
+        return True  # can't judge: fail closed (only reached for a destructive find over bawwab state)
+    try:
+        return re.fullmatch(pat, t, re.IGNORECASE if icase else 0) is not None
+    except (re.error, RecursionError):
+        return True
+
+
+def _find(args: list[str], cwd: str, acc: _Acc, destructive: bool = False) -> None:
+    """A destructive find (-delete, -exec/-ok…, or piped into xargs / `while read`) whose start dir
+    contains bawwab state and whose -name/-path/-regex patterns (or none: everything) reach it."""
+    destructive = destructive or any(a in _FIND_ACTIONS for a in args)
+    if not destructive:
+        return
     starts = []
     for a in args:
         if a.startswith(("-", "(", "!")):
             break
         starts.append(_abspath(a, cwd))
     starts = starts or [cwd]
-    targets = [t for t in _state_targets() if any(_under(t, st) for st in starts)]
-    for j, a in enumerate(args[:-1]):
-        spec = _FIND_PATTERNS.get(a)
-        if spec is None or not targets:
-            continue
-        whole, icase = spec
-        pat = args[j + 1]
-        for t in targets:
-            names = [t] if whole else [t.rsplit("/", 1)[-1]]
-            if whole:
-                hit = any(fnmatch.fnmatchcase(t.lower() if icase else t, pat.lower() if icase else pat)
-                          for t in names)
-            else:
-                hit = _comp_match(pat, names[0], icase) or (pat in ("*", ".*"))
-            if hit:
-                acc.protect("bawwab state change")
-                return
+    targets = [t for t in _state_targets() if any(_under(t, st) and t != st for st in starts)]
+    if not targets:
+        return
+    pats = [(args[j + 1], *_FIND_PATTERNS[a]) for j, a in enumerate(args[:-1]) if a in _FIND_PATTERNS]
+    if not pats or any(_find_hits(kind, icase, pat, t) for pat, kind, icase in pats for t in targets):
+        acc.protect("bawwab state change")
+
+
+_PIPED_READ = re.compile(r"\|\s*(?:xargs\b|while\s+read\b)")
+
+
+def _xargs_upstream(up_words: list[str], cwd: str, acc: _Acc) -> None:
+    """`ls ~/.baw* | xargs rm -rf`, `find … | xargs rm`: what the upstream lists is what gets removed."""
+    if os.path.basename(up_words[0]) == "find":
+        _find(up_words[1:], cwd, acc, destructive=True)
+        return
+    for w in up_words[1:]:
+        if not w.startswith("-") and _bawwab_path(_abspath(w, cwd)):
+            acc.protect("bawwab state change")
+            return
 
 
 def _check_dest(p: str, acc: _Acc) -> None:
@@ -1364,7 +1429,7 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
     if exe == "git":
         _git(args, cwd, acc)
     elif exe == "find":
-        _find(args, cwd, acc)
+        _find(args, cwd, acc, destructive=_PIPED_READ.search(acc.root or "") is not None)
     elif exe in ("cp", "mv", "ln", "rsync", "install"):
         _copy(exe, args, cwd, acc)
     elif exe in ("curl", "wget"):
@@ -1509,6 +1574,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             acc.protect("bawwab approval via tool call")
         exe = os.path.basename(words[0])
         args = words[1:]
+        if up_words and exe in _DESTRUCTIVE and _via_xargs(raw_words, words):
+            _xargs_upstream(up_words, cwd, acc)
         ci = _claude_index(words)
         if ci is not None:
             if _via_xargs(raw_words, words):
@@ -1563,7 +1630,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
         elif exe == "git":
             _git(args, cwd, acc)
         elif exe == "find":
-            _find(args, cwd, acc)
+            _find(args, cwd, acc, destructive=_PIPED_READ.search(cmd) is not None)
+            continue  # its -name/-path values are patterns, not paths
         elif exe in ("cp", "mv", "ln", "rsync", "install"):
             _copy(exe, args, cwd, acc)
             continue
@@ -1749,6 +1817,25 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
             return
 
 
+_NESTED_CLAUDE = re.compile(
+    r"\bclaude\b[^\n;|&]*?\s--(?:settings|setting-sources|dangerously-skip-permissions"
+    r"|allow-dangerously-skip-permissions|plugin-dir)\b"
+)
+_BAWWAB_ENV = re.compile(
+    r"\bBAWWAB_(?:CHILD|HOME)\s*\+?=|\b(?:export|declare|typeset|readonly|local|unset)\b[^\n;|&]*\bBAWWAB_(?:CHILD|HOME)\b"
+)
+
+
+def _whole_command_checks(cmd: str, acc: _Acc) -> None:
+    """Things no reading of the shell grammar may miss: a nested claude without bawwab's hooks, and
+    overriding the variables that locate or switch off bawwab."""
+    s = cmd.replace('"', "").replace("'", "").replace("\\", "")
+    if "disableAllHooks" in s or _NESTED_CLAUDE.search(s):
+        acc.protect("nested claude without bawwab hooks")
+    if _BAWWAB_ENV.search(s):
+        acc.protect("bawwab environment override")
+
+
 def detect_install(inp: HookInput) -> Targets | Protected | None:
     acc = _Acc()
     ti = inp.tool_input if isinstance(inp.tool_input, dict) else {}
@@ -1758,6 +1845,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
         if isinstance(cmd, str):
             acc.budget = 4 * len(cmd) + 1_000_000
             acc.root = cmd
+            _whole_command_checks(cmd, acc)
             try:
                 _bash(cmd, inp.cwd, acc)
             except _TooComplex:

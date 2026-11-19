@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import re
 
-_NEEDLES = ("claude", "bawwab", ".mcp.json")
+_NEEDLES = ("claude", "bawwab", ".mcp.json", "BAWWAB_", "disableAllHooks")
 _FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
 _FILE_TOOLS = ("Write", "Edit", "MultiEdit")
 # A shell glob may hide ".claude" from the substring check (cp x ~/.c*/skills/).

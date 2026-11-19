@@ -148,6 +148,11 @@ def _walk(root: str, h, item_root: bool = False) -> None:
     for it in items:  # always, whatever the budgets: the files that decide what runs
         for rel in always:
             _stat_into(h, os.path.join(it, rel))
+        for ref in t.entry_refs(it, skipped_only=True):  # entry points config names inside node_modules & co
+            _stat_into(h, ref)
+            pkg = t.package_dir(it, ref)
+            if pkg:
+                _bfs(pkg, h, t.PKG_BUDGET, set(), frozenset())
         subtrees += [p for p in (_entry(h, e, seen, skip, "D\0") for e in _entries(it, h)) if p]
     left = ROOT_BUDGET
     for sub in subtrees:
@@ -211,7 +216,10 @@ def semantic_digest(cwd: str, home: str) -> str:
 # ------------------------------------------------------------------ install marker (outside $BAWWAB_HOME)
 
 def marker_paths(home: str) -> list[str]:
-    out = [os.path.join(home, ".claude", MARKER)]
+    """Every copy of the install marker: ~/.claude, the XDG state dir, and bawwab's plugin data dir. A
+    wipe has to find all of them, or the missing state is noticed (fail closed)."""
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local", "state")
+    out = [os.path.join(home, ".claude", MARKER), os.path.join(state, "bawwab", MARKER)]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd and is_bawwab_plugin_dir(pd):  # another plugin's data dir is not ours to write
         out.append(os.path.join(pd, MARKER))
@@ -219,10 +227,10 @@ def marker_paths(home: str) -> list[str]:
 
 
 def is_bawwab_plugin_dir(path: str) -> bool:
-    """A path with a bawwab plugin id segment (e.g. ~/.claude/plugins/data/bawwab-<marketplace>)."""
+    """A plugin data dir whose own name is a bawwab plugin id (e.g. ~/.claude/plugins/data/bawwab-<mkt>)."""
     import re
 
-    return any(re.fullmatch(r"bawwab(?:[-@_.].*)?", part) for part in os.path.normpath(path).split(os.sep))
+    return re.fullmatch(r"bawwab(?:[-@_.].*)?", os.path.basename(os.path.normpath(path))) is not None
 
 
 def initialised(home: str, bawwab_home: str) -> bool:

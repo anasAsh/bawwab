@@ -191,6 +191,10 @@ def _restore_marker(store: Store) -> dict | None:
         write_marker(installed, store.init_state())
         store.audit("install.marker_restored")
         marker = read_marker()
+    elif marker and not marker.get("corrupt") and installed == marker.get("installed_at") and not all(
+            os.path.exists(p) for p in fp_module().marker_paths(str(Path.home()))):
+        write_marker(installed, store.init_state())  # one copy was removed: put it back while state is good
+        store.audit("install.marker_restored")
     return marker
 
 

@@ -151,6 +151,18 @@ def _subtree_files(top: Path, out: list, skipped: list) -> None:
             n += 1
 
 
+def _package_files(pkg: Path) -> list[Path]:
+    """Files of a referenced file's package (breadth-first, at most watch.PKG_BUDGET)."""
+    out: list[Path] = []
+    for dp, dns, fns in os.walk(pkg):
+        dns.sort()
+        for fn in sorted(fns):
+            out.append(Path(dp) / fn)
+            if len(out) >= watch.PKG_BUDGET:
+                return out
+    return out
+
+
 def _tree_hash(root: Path) -> str:
     """Content hash of a directory (or file), resolving a symlinked root. The files that decide what runs
     (ALWAYS_FILES and every file directly in the root) are always hashed in full; each top-level subtree
@@ -168,6 +180,11 @@ def _tree_hash(root: Path) -> str:
     else:
         base = root
         always_l = [root / rel for rel in watch.ALWAYS_FILES if (root / rel).is_file()]
+        for ref in watch.entry_refs(str(root)):  # entry points config names, even inside node_modules & co
+            always_l.append(Path(ref))
+            pkg = watch.package_dir(str(root), ref)
+            if pkg:
+                always_l += _package_files(Path(pkg))
         files, skipped, subtrees = list(always_l), [], []
         try:
             entries = sorted(root.iterdir(), key=lambda p: p.name)

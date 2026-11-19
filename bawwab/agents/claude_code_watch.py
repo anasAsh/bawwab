@@ -7,6 +7,7 @@ In a key path, "{project}" stands for every ~/.claude.json `projects` key that r
 """
 import json
 import os
+import re
 
 NAME = "claude-code"
 
@@ -109,3 +110,101 @@ def project_keys(projects: object, cwd: str, home: str) -> list[str]:
 
 def watched_paths(cwd: str, home: str) -> list[str]:
     return [p for p, _ in json_files(cwd, home)] + dirs(cwd, home) + plugin_dirs(cwd, home)
+
+
+# ------------------------------------------------------------------ entry points named by config
+
+_JSON_REFS = (  # (file under the item root, keys whose string values may name a file to run)
+    ("hooks/hooks.json", ("command",)),
+    (".mcp.json", ("command", "args")),
+    (".claude-plugin/plugin.json", ("command", "args")),
+    ("package.json", ("main", "bin", "scripts", "exports", "module")),
+)
+_MD_GLOBS = ("SKILL.md", "commands", "agents")
+_MAX_READ = 512 * 1024
+MAX_REFS = 64
+PKG_BUDGET = 200  # entries walked in the package dir of a referenced file inside a skipped dir
+_TOKEN = re.compile(r"[\w${}@%./+~-]+")
+
+
+def _strings(v: object, keys: tuple, inside: bool = False) -> list[str]:
+    out: list[str] = []
+    if isinstance(v, str):
+        if inside:
+            out.append(v)
+    elif isinstance(v, list):
+        for x in v:
+            out += _strings(x, keys, inside)
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            out += _strings(x, keys, inside or k in keys)
+    return out
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path, "rb") as f:
+            return f.read(_MAX_READ).decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def _texts(root: str) -> list[str]:
+    out: list[str] = []
+    for rel, keys in _JSON_REFS:
+        raw = _read(os.path.join(root, rel))
+        if raw:
+            try:
+                out += _strings(json.loads(raw), keys)
+            except (ValueError, RecursionError):
+                out.append(raw)
+    for name in _MD_GLOBS:
+        p = os.path.join(root, name)
+        if name.endswith(".md"):
+            out.append(_read(p))
+            continue
+        try:
+            with os.scandir(p) as it:
+                out += [_read(e.path) for e in it if e.name.endswith(".md") and e.is_file()]
+        except OSError:
+            pass
+    return out
+
+
+def entry_refs(root: str, skipped_only: bool = False) -> list[str]:
+    """Files inside an item root that its hooks/MCP/plugin/package config or its markdown names (after
+    ${CLAUDE_PLUGIN_ROOT} expansion, or relative to the root). They are always checked, even inside a
+    skipped dir (node_modules...), because they are what runs."""
+    out: list[str] = []
+    for text in _texts(root):
+        if skipped_only and not any(d in text for d in SKIP_DIRS):
+            continue  # the hot path only needs what the normal walk can't see
+        for tok in _TOKEN.findall(text):
+            if "/" not in tok and "." not in tok:
+                continue
+            if skipped_only and not any(f"{d}/" in tok for d in SKIP_DIRS):
+                continue
+            t = tok.replace("${CLAUDE_PLUGIN_ROOT}", root).replace("$CLAUDE_PLUGIN_ROOT", root)
+            p = os.path.normpath(t if os.path.isabs(t) else os.path.join(root, t))
+            if p in out or not p.startswith(root.rstrip("/") + "/"):
+                continue
+            if os.path.isfile(p):
+                out.append(p)
+                if len(out) >= MAX_REFS:
+                    return out
+    return out
+
+
+def package_dir(root: str, path: str) -> str | None:
+    """The package a referenced file belongs to when it lies in a skipped dir: node_modules/<pkg> (or
+    @scope/<pkg>), site-packages/<top>, else the file's own directory inside the skipped dir."""
+    parts = os.path.relpath(path, root).split(os.sep)
+    for i, part in enumerate(parts[:-1]):
+        if part == "node_modules" and i + 1 < len(parts) - 1:
+            n = 3 if parts[i + 1].startswith("@") and i + 2 < len(parts) - 1 else 2
+            return os.path.join(root, *parts[: i + n])
+        if part == "site-packages" and i + 1 < len(parts) - 1:
+            return os.path.join(root, *parts[: i + 2])
+        if part in SKIP_DIRS:
+            return os.path.dirname(path)
+    return None
