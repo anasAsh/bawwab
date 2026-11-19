@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 MAX_DIFF_LINES = 40
 CHUNK = 150  # diff lines stay under the report's per-line cap so appended text is never cut off
+_SANDBOX = "[sandbox] "
 _MORE = "… ({n} more lines; run ! bawwab diff <name>)"
 MAX_SUMMARY_LINES = 120
 _PLACEHOLDERS = {"(unnamed)", "(unparsed)"}
@@ -117,10 +118,27 @@ def _text_diff(label: str, old: str | None, new: str) -> list[str]:
     return _capped(list(diff))
 
 
+def _has_sandbox(snap: dict) -> bool:
+    return any(_SANDBOX in k for sec in ("files", "text", "tools") for k in snap.get(sec, {}))
+
+
+def _comparable(old: dict, new: dict) -> tuple[dict, dict]:
+    """Sandbox-derived labels exist only in deep scans: compare them only when both sides have them."""
+    if _has_sandbox(old) and _has_sandbox(new):
+        return old, new
+
+    def strip(snap: dict) -> dict:
+        return {sec: {k: v for k, v in snap.get(sec, {}).items() if _SANDBOX not in k}
+                for sec in ("files", "text", "tools")}
+
+    return strip(old), strip(new)
+
+
 def diff_snapshots(old: dict, new: dict) -> tuple[list[Finding], str]:
     """Findings and a human summary for what changed in `new` relative to the trusted `old`."""
     findings: list[Finding] = []
     summary: list[str] = []
+    old, new = _comparable(old, new)
     old_text, new_text = old.get("text", {}), new.get("text", {})
     for label in sorted(new_text):
         if old_text.get(label) == new_text[label]:

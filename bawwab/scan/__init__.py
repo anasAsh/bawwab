@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -121,24 +122,58 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[F
             f"nesting depth limit reached; bundled server(s) not scanned: {', '.join(sorted(servers))[:150]}",
         )]
     out: list[Finding] = []
-    for name, spec in servers.items():
-        t = _child_target(spec, f.root)
+    prefetched = ctx.prefetched if f is ctx.prefetch_for else None
+    resolved = prefetched if prefetched is not None else _resolve_children(f, servers, ctx)
+    for name, (t, cf) in resolved.items():
         if t is None:
             out.append(Finding(
                 "plugin.unresolved-server", Severity.MED, "gate",
                 f"[server {name}] cannot resolve how this bundled MCP server starts; it was not scanned",
             ))
             continue
-        try:
-            cf = fetch_target(t, ctx.fetch_opts)
-        except FetchError as e:
-            out.append(Finding("fetch.failed", Severity.MED, "gate", f"[server {name}] {e}"))
+        if isinstance(cf, FetchError):
+            out.append(Finding("fetch.failed", Severity.MED, "gate", f"[server {name}] {cf}"))
             continue
         try:
             out.extend(_prefix(_analyze(cf, ctx, depth + 1, f"{label}[server {name}] "), name))
         finally:
-            cf.cleanup()
+            if prefetched is None:
+                cf.cleanup()
     return out
+
+
+def _resolve_children(f: Fetched, servers: dict[str, dict], ctx: _Ctx) -> dict[str, tuple[Target | None, Fetched | FetchError | None]]:
+    out: dict[str, tuple[Target | None, Fetched | FetchError | None]] = {}
+    for name, spec in servers.items():
+        t = _child_target(spec, f.root) if f.root is not None else None
+        if t is None:
+            out[name] = (None, None)
+            continue
+        try:
+            out[name] = (t, fetch_target(t, ctx.fetch_opts))
+        except FetchError as e:
+            out[name] = (t, e)
+    return out
+
+
+def _prefetch_children(f: Fetched, ctx: _Ctx) -> str:
+    """Fetch a plugin's bundled servers once, for both the cache key and the analysis. Returns key material."""
+    if f.artifact_type != "plugin" or f.root is None:
+        return ""
+    servers = _bundled_servers(f.root)
+    if not servers:
+        return ""
+    ctx.prefetch_for, ctx.prefetched = f, _resolve_children(f, servers, ctx)
+    lines = []
+    for name, (t, cf) in ctx.prefetched.items():
+        if isinstance(cf, Fetched):
+            lines.append(f"{name}@{cf.resolved_version}#{cf.content_hash}")
+            if _remote_children(cf):  # nested drift is not in this key: never serve from cache
+                ctx.no_cache = True
+        else:
+            lines.append(f"{name}!{'unresolved' if t is None else 'unfetched'}")
+            ctx.no_cache = True
+    return "\n".join(sorted(lines))
 
 
 # ------------------------------------------------------------- pipeline steps
@@ -148,8 +183,16 @@ class _Ctx:
                  sandbox: SandboxRunner | None, judge: bool = True) -> None:
         self.cfg, self.mode, self._backend = cfg, mode, backend
         self.fetch_opts, self.sandbox, self.judge = fetch_opts, sandbox, judge
+        self.prefetch_for: Fetched | None = None
+        self.prefetched: dict | None = None
+        self.no_cache = False
         # (label prefix, files, extra, remote tools) for the target, each plugin child and sandbox results
         self.parts: list[tuple[str, list[ScanFile], list[ExtraText], list[ToolInfo]]] = []
+
+    def cleanup_children(self) -> None:
+        for _, cf in (self.prefetched or {}).values():
+            if isinstance(cf, Fetched):
+                cf.cleanup()
 
     @property
     def backend(self) -> Backend:
@@ -283,15 +326,20 @@ def scan_target(
         store.put_report(r)
         store.audit("scan", key=r.key, verdict=r.verdict.value, mode=mode.value)
         return r
+    ctx = None
     try:
-        key = target_key(t, f.resolved_version, f.content_hash)
-        if not no_cache:
+        ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
+        child_material = _prefetch_children(f, ctx)
+        chash = f.content_hash
+        if child_material:
+            chash = hashlib.sha256(f"{chash}\n{child_material}".encode()).hexdigest()
+        key = target_key(t, f.resolved_version, chash)
+        if not no_cache and not ctx.no_cache:
             cached = store.get_cached(key)
-            if cached is not None and not _remote_children(f) and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
+            if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
                 if cached.verdict == Verdict.CLEAN:
                     _baseline_cached(f, t, key, store)
                 return cached
-        ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
         try:
             findings = _analyze(f, ctx)
             snap = _build_snapshot(ctx.parts)
@@ -322,4 +370,6 @@ def scan_target(
         store.audit("scan", key=key, verdict=verdict.value, mode=mode.value)
         return report
     finally:
+        if ctx is not None:
+            ctx.cleanup_children()
         f.cleanup()
