@@ -119,8 +119,8 @@ def target_from_command(command: str, args: list[str]) -> Target | None:
     return None
 
 
-_NPX_OTHER_VALUE_FLAGS = {"--registry", "--userconfig", "--node-options", "--cache", "--prefix", "-c", "--call",
-                          "--workspace", "-w"}
+_NPX_OTHER_VALUE_FLAGS = {"--registry", "--userconfig", "--globalconfig", "--node-options", "--cache", "--prefix",
+                          "-c", "--call", "--workspace", "-w", "--loglevel", "--script-shell", "--tag"}
 
 
 def _npx_spec_pos(args: list[str]) -> tuple[int, int] | None:

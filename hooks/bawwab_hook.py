@@ -23,6 +23,8 @@ _CLAUDE_SUBCMD = re.compile(
 )
 # ...and only when a path could reach a hidden dir (~, $HOME, a ".x" component) or names an install dir.
 _GLOB_HIDDEN = re.compile(r"~|\$HOME|\$\{HOME\}|(?:^|[\s/=])\.[^\s/.]|skills|commands|agents|plugins|\.mcp\.json")
+# mv/rsync of a directory that contains ~/.claude, ~/.claude.json or the bawwab home (mv ~ /x).
+_MOVE = re.compile(r"(?:^|[\s;&|(])(?:mv|rsync)\s")
 _GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
 
 
@@ -51,6 +53,8 @@ def prefilter(data: dict) -> bool:
         s = cmd.replace('"', "").replace("'", "").replace("\\", "")
         if any(n in s for n in needles):
             return True
+        if _MOVE.search(s) and _moves_ancestor(s, cwd, home):
+            return True
         if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
             return True
         return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
@@ -61,6 +65,17 @@ def prefilter(data: dict) -> bool:
         p = os.path.normpath(os.path.join(cwd or "/", fp))
         s = p + "\0" + os.path.realpath(p)
         return any(n in s for n in _FILE_NEEDLES + extra)
+    return False
+
+
+def _moves_ancestor(s: str, cwd: str, home: str) -> bool:
+    user = os.path.expanduser("~")
+    roots = (os.path.join(user, ".claude"), os.path.join(user, ".claude.json"), home)
+    for tok in s.split():
+        t = tok.replace("${HOME}", user).replace("$HOME", user)
+        t = os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(t)))
+        if any(r == t or r.startswith(t.rstrip("/") + "/") for r in roots):
+            return True
     return False
 
 

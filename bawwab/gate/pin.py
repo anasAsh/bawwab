@@ -205,7 +205,7 @@ def _pin_document(text: str, pins: list[tuple[Target, str]]) -> tuple[str, list[
 
 
 def _pin_fragment(text: str, pins: list[tuple[Target, str]]) -> tuple[str, list[Change]]:
-    """Edit new_string fragments: rewrite whole JSON string values (never object keys)."""
+    """Edit new_string fragments: rewrite whole JSON string values inside "args" arrays only."""
     changes: list[Change] = []
 
     def repl(m: re.Match[str]) -> str:
@@ -219,7 +219,14 @@ def _pin_fragment(text: str, pins: list[tuple[Target, str]]) -> tuple[str, list[
                 return f'"{got[0]}"'
         return m.group(0)
 
-    return re.sub(r'"((?:[^"\\\n]|\\.)*)"(\s*:)?', repl, text), changes
+    string = re.compile(r'"((?:[^"\\\n]|\\.)*)"(\s*:)?')
+    out, pos = [], 0
+    for m in re.finditer(r'"args"\s*:\s*\[([^\]]*)\]', text):  # only server args arrays
+        out.append(text[pos:m.start(1)])
+        out.append(string.sub(repl, m.group(1)))
+        pos = m.end(1)
+    out.append(text[pos:])
+    return "".join(out), changes
 
 
 def pin_changes(inp: HookInput, resolved: dict[Target, str]) -> tuple[dict | None, list[Change]]:

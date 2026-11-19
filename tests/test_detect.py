@@ -721,3 +721,107 @@ def test_prefilter_superset_round2(home):
     for inp in _round2_positive_cases(home):
         assert detect_install(inp) is not None, inp
         assert hook.prefilter({"tool_name": inp.tool_name, "tool_input": inp.tool_input, "cwd": inp.cwd}), inp
+
+
+# ------------------------------------------------------------- fix round 3
+
+@pytest.mark.parametrize("cmd,kind", [
+    ('echo "<<EOF"\ncp -r evil ~/.claude/skills/', "local"),
+    ("echo $((1<<FOO))\nclaude mcp add x -- npx evilpkg", "npm"),
+    ("# see <<END\nclaude plugin install foo@mk", "local"),
+    ("cat <<< foo\nclaude mcp add x -- npx evilpkg", "npm"),
+    ("echo '<<X'\nclaude mcp add x -- npx evilpkg\nX", "npm"),
+    ("cat <<EOF\nunterminated\nclaude mcp add x -- npx evilpkg", "npm"),
+])
+def test_heredoc_misparse_never_hides_commands(home, cmd, kind):
+    proj = home.parent / "proj"
+    (proj / "evil").mkdir()
+    r = detect_install(bash(cmd, cwd=str(proj)))
+    assert isinstance(r, Targets) and r.targets[0].kind == kind, r
+
+
+@pytest.mark.parametrize("cmd", [
+    "bash <<EOF\nclaude mcp add x -- npx evilpkg\nEOF",
+    "sh <<'EOF'\nclaude mcp add x -- npx evilpkg\nEOF",
+    "cat > /tmp/i.sh <<EOF\nclaude mcp add x -- npx evilpkg\nEOF\nbash /tmp/i.sh",
+    "bash <<< 'claude mcp add x -- npx evilpkg'",
+    "cat <<EOF > /tmp/notes.txt\nclaude mcp add x -- npx evilpkg\nEOF",  # fail-safe: every body is scanned
+])
+def test_heredoc_bodies_parsed_as_commands(home, cmd):
+    r = detect_install(bash(cmd))
+    assert isinstance(r, Targets) and [t.name for t in r.targets] == ["evilpkg"], r
+
+
+@pytest.mark.parametrize("cmd", [
+    "mv ~/.claude/settings.json /tmp/bak.json",
+    "mv {proj}/.mcp.json /tmp/x",
+    "mv ~/.claude.json /tmp/x",
+    "rsync -a --remove-source-files ~/.claude/settings.json /tmp/x",
+    "mv ~/.claude/plugins /tmp/p",
+    "mv ~/.claude ~/claude-old",
+    "mv ~/.bawwab /tmp/b",
+    "mv ~ /tmp/oldhome",
+    "rsync -a --delete empty/ ~/.claude/",
+])
+def test_moving_config_protected(home, cmd):
+    proj = home.parent / "proj"
+    r = detect_install(bash(cmd.format(proj=proj), cwd=str(proj)))
+    assert isinstance(r, Protected), r
+
+
+def test_rsync_without_remove_source_is_not_a_move(home):
+    assert detect_install(bash("rsync -a ~/.claude/settings.json /tmp/x")) is None
+    assert detect_install(bash("cp ~/.claude/settings.json /tmp/x")) is None
+
+
+@pytest.mark.parametrize("cmd,cwd", [
+    ("python3 ~/.claude/skills/pdf/scripts/fill.py", "/tmp"),
+    ("node ~/.claude/plugins/cache/mk/p/1.0/scripts/a.js --flag", "/tmp"),
+    ("cd ~/.claude/skills/pdf && python3 scripts/fill.py", "/tmp"),
+    ("bash ~/.claude/skills/x/run.sh", "/tmp"),
+])
+def test_running_bundled_scripts_is_execute(home, cmd, cwd):
+    assert detect_install(bash(cmd, cwd=cwd)) is None
+
+
+@pytest.mark.parametrize("cmd", [
+    "python3 ~/.claude/skills/pdf/scripts/fill.py ~/.claude/settings.json",
+    "python3 ~/.claude/skills/pdf/scripts/fill.py --out .mcp.json",
+    "echo \"open('.mcp.json','w')\" | python3 ~/.claude/skills/x/a.py",
+])
+def test_bundled_script_with_sensitive_args_protected(home, cmd):
+    assert isinstance(detect_install(bash(cmd, cwd=str(home.parent / "proj"))), Protected)
+
+
+@pytest.mark.parametrize("flags", [
+    "--loglevel warn", "--cache /tmp/c", "--prefix /tmp/p", "-c 'echo hi'", "--call x", "-w ws",
+    "--workspace ws", "--globalconfig /tmp/g",
+])
+def test_npx_more_value_flags(home, flags):
+    r = detect_install(bash(f"claude mcp add x -- npx {flags} okpkg"))
+    assert r.targets[0].name == "okpkg", flags
+
+
+def _round3_positive_cases(home: Path) -> list[HookInput]:
+    proj = str(home.parent / "proj")
+    return [bash(c, cwd=proj) for c in (
+        'echo "<<EOF"\ncp -r evil ~/.claude/skills/',
+        "echo $((1<<FOO))\nclaude mcp add x -- npx evilpkg",
+        "cat <<< foo\nclaude mcp add x -- npx evilpkg",
+        "bash <<EOF\nclaude mcp add x -- npx evilpkg\nEOF",
+        "cat > /tmp/i.sh <<EOF\nclaude mcp add x -- npx evilpkg\nEOF\nbash /tmp/i.sh",
+        "mv ~/.claude/settings.json /tmp/bak.json",
+        "mv .mcp.json /tmp/x",
+        "rsync -a --remove-source-files ~/.claude/settings.json /tmp/x",
+        "mv ~/.bawwab /tmp/b",
+        "mv ~ /tmp/oldhome",
+        "python3 ~/.claude/skills/pdf/scripts/fill.py ~/.claude/settings.json",
+    )]
+
+
+def test_prefilter_superset_round3(home):
+    (home.parent / "proj" / "evil").mkdir(exist_ok=True)
+    hook = _load_hook()
+    for inp in _round3_positive_cases(home):
+        assert detect_install(inp) is not None, inp
+        assert hook.prefilter({"tool_name": inp.tool_name, "tool_input": inp.tool_input, "cwd": inp.cwd}), inp

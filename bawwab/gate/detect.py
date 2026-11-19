@@ -309,40 +309,94 @@ def _strip_fd_numbers(cmd: str) -> str:
     return "".join(out)
 
 
-_HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 _HEREDOC_TOKEN = "__bawwab_heredoc_{}__"
+_HEREDOC_DELIM = re.compile(r"(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([A-Za-z0-9_.-]+))")
 
 
 def _extract_heredocs(cmd: str) -> tuple[str, list[str]]:
-    """Replace each `<<DELIM … DELIM` with `< __bawwab_heredoc_N__` and return the bodies."""
-    bodies: list[str] = []
+    """Replace each real `<<DELIM … DELIM` with `< __bawwab_heredoc_N__` and return the bodies.
+
+    Only operators outside quotes, comments and $((…)) count, and never `<<<`. An unterminated heredoc
+    leaves the following lines in place (they stay normal command lines). Callers also scan every body
+    as shell commands, so a misparse can never hide a command.
+    """
     out: list[str] = []
-    pos = 0
-    while True:
-        m = _HEREDOC.search(cmd, pos)
-        if m is None or cmd[m.start():m.start() + 3] == "<<<":
-            if m is not None:  # here-string: keep as is, continue after it
-                out.append(cmd[pos:m.start() + 3])
-                pos = m.start() + 3
+    bodies: list[str] = []
+    pending: list[tuple[bool, str, int]] = []  # (strip tabs, delimiter, body index)
+    quote = None
+    arith = 0
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < n:
+                out.append(cmd[i:i + 2])
+                i += 2
                 continue
-            out.append(cmd[pos:])
-            break
-        nl = cmd.find("\n", m.end())
-        if nl < 0:
-            out.append(cmd[pos:])
-            break
-        delim = m.group(3)
-        lines = cmd[nl + 1:].split("\n")
-        body: list[str] = []
-        consumed = nl + 1
-        for line in lines:
-            consumed += len(line) + 1
-            if (line.lstrip("\t") if m.group(1) else line) == delim:
-                break
-            body.append(line)
-        out.append(cmd[pos:m.start()] + f"< {_HEREDOC_TOKEN.format(len(bodies))}" + cmd[m.end():nl + 1])
-        bodies.append("\n".join(body))
-        pos = min(consumed, len(cmd))
+            if c == quote:
+                quote = None
+            out.append(c)
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|("):
+            j = cmd.find("\n", i)
+            j = n if j < 0 else j
+            out.append(cmd[i:j])
+            i = j
+            continue
+        elif cmd.startswith("$((", i):
+            arith += 1
+            out.append("$((")
+            i += 3
+            continue
+        elif arith and cmd.startswith("))", i):
+            arith -= 1
+            out.append("))")
+            i += 2
+            continue
+        elif not arith and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):
+            m = _HEREDOC_DELIM.match(cmd, i + 2)
+            delim = next((g for g in (m.group(2), m.group(3), m.group(4)) if g is not None), None) if m else None
+            if delim:
+                pending.append((m.group(1) == "-", delim, len(bodies)))
+                bodies.append("")
+                out.append(f"< {_HEREDOC_TOKEN.format(len(bodies) - 1)}")
+                i = m.end()
+                continue
+        elif c == "\n" and pending:
+            out.append(c)
+            i += 1
+            for strip, delim, idx in pending:
+                lines: list[str] = []
+                j = i
+                found = False
+                while j <= n:
+                    k = cmd.find("\n", j)
+                    k = n if k < 0 else k
+                    line = cmd[j:k]
+                    if (line.lstrip("\t") if strip else line) == delim:
+                        found, j = True, k + 1
+                        break
+                    lines.append(line)
+                    if k >= n:
+                        break
+                    j = k + 1
+                if found:
+                    bodies[idx] = "\n".join(lines)
+                    i = min(j, n)
+                else:  # unterminated: keep the rest as normal command lines (and scan it as a body)
+                    bodies[idx] = cmd[i:]
+                    break
+            pending = []
+            continue
+        out.append(c)
+        i += 1
     return "".join(out), bodies
 
 
@@ -657,6 +711,15 @@ def _dot_component(tok: str) -> bool:
     return re.search(r"(?:^|/)\.[^/.]", os.path.expanduser(_home_vars(tok))) is not None
 
 
+def _moves_config(p: str) -> bool:
+    """p is, or contains, a Claude config/install path or the bawwab home."""
+    p = os.path.normpath(p)
+    if _config_kind(p) or _bawwab_path(p) or install_dir(p) or os.path.basename(p) == ".claude":
+        return True
+    roots = (str(claude_home()), str(claude_json()), str(bawwab_home()))
+    return any(_under(os.path.normpath(r), p) for r in roots)
+
+
 def _check_dest(p: str, acc: _Acc) -> None:
     if _config_kind(p):
         acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
@@ -681,10 +744,17 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
         dest, srcs = pos[-1], pos[:-1]
     else:
         return
-    if exe == "mv":
-        for s in srcs:
-            if _bawwab_path(_abspath(s, cwd)):
-                acc.protect("bawwab state change")
+    removes_src = exe == "mv" or (exe == "rsync" and any(
+        a.startswith(("--remove-source-files", "--remove-sent-files")) for a in args))
+    if removes_src:
+        for src in srcs:
+            for sp in _expand(src, cwd) or [_abspath(src, cwd)]:
+                if _moves_config(sp):
+                    acc.protect("moves Claude config")
+    if exe == "rsync" and any(a.startswith("--delete") for a in args):
+        for d in _expand(dest, cwd) or [_abspath(dest, cwd)]:
+            if _moves_config(d) or install_dir(d):
+                acc.protect("moves Claude config")
     dests = _expand(dest, cwd)
     if not dests:
         if _dot_component(dest):  # may have been meant for a hidden dir such as ~/.claude
@@ -787,6 +857,20 @@ def _is_interpreter(exe: str, args: list[str]) -> bool:
     return False
 
 
+def _script_index(exe: str, args: list[str]) -> int | None:
+    """Index of the script file an interpreter runs, or None (-c/-e code, -m module, stdin)."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-c", "-e", "-m", "-", "--eval", "-p", "--print", "-r", "-E"):
+            return None
+        if a.startswith("-"):
+            i += 1
+            continue
+        return i
+    return None
+
+
 def _sensitive_text(text: str, cwd: str) -> bool:
     """Mentions a Claude config / install dir / bawwab path, literally or relative to cwd."""
     if _mentions_sensitive(text):
@@ -805,6 +889,9 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
         acc.protect("shell nesting too deep")
         return
     cmd, bodies = _extract_heredocs(cmd)
+    for body in bodies:  # fail-safe: heredoc bodies are scanned as commands too
+        if body.strip():
+            _bash(body, cwd, acc, depth + 1)
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
     pipeline = ""  # text of the segments piped into the current one
 
@@ -851,9 +938,19 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             cwd = str(Path.home()) if dest is None else (cwd if dest == "-" else _abspath(dest, cwd))
             continue
         if _is_interpreter(exe, args):
+            script_i = _script_index(exe, args)
+            script_path = _abspath(args[script_i], cwd) if script_i is not None else None
             script_files = "\n".join(written[p] for a in args if (p := _abspath(a, cwd)) in written)
-            if _sensitive_text("\n".join([" ".join(args), stdin_text, upstream, script_files]), cwd):
+            # running a skill's/plugin's own bundled script is execution, not a write of that path
+            own = [a for j, a in enumerate(args) if not (j == script_i and script_path and install_dir(script_path))]
+            if _sensitive_text("\n".join([" ".join(own), stdin_text, upstream, script_files]), cwd):
                 acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
+            if exe in _SHELLS:
+                for text in (stdin_text, script_files):
+                    if text.strip():
+                        _bash(text, cwd, acc, depth + 1)
+            if script_path and install_dir(script_path):
+                args = own
         if exe in _SHELLS:
             for j, a in enumerate(args):
                 if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:

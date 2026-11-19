@@ -140,3 +140,18 @@ def test_edit_fragment_skips_json_keys():
                              "new_string": '{"okpkg": {"command": "npx", "args": ["-y", "okpkg"]}}'}, "/tmp")
     out = pin_input(inp, {npm("okpkg"): "1.0.0"})
     assert out["new_string"] == '{"okpkg": {"command": "npx", "args": ["-y", "okpkg@1.0.0"]}}'
+
+
+def test_fragment_pins_only_args_entries():
+    inp = HookInput("Edit", {"file_path": "/p/.mcp.json", "old_string": "a", "new_string":
+                             '"okpkg": {"command":"npx","args":["okpkg"],"description":"okpkg"}'}, "/tmp")
+    out = pin_input(inp, {npm("okpkg"): "1.0.0"})
+    assert out["new_string"] == '"okpkg": {"command":"npx","args":["okpkg@1.0.0"],"description":"okpkg"}'
+    inp = HookInput("Edit", {"file_path": "/p/.mcp.json", "old_string": "a",
+                             "new_string": '"description": "okpkg"'}, "/tmp")
+    assert pin_input(inp, {npm("okpkg"): "1.0.0"}) is None
+
+
+def test_pin_npx_loglevel_value_not_package():
+    ti, ch = _bash_pin("claude mcp add x -- npx --loglevel warn okpkg", {npm("okpkg"): "1.0.0"})
+    assert ti["command"] == "claude mcp add x -- npx --loglevel warn okpkg@1.0.0"
