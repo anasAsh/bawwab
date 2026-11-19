@@ -90,7 +90,10 @@ Claude tool call ──► PreToolUse hook ──► fast detector (stdlib only)
 - **PreToolUse** (`Bash|Write|Edit|MultiEdit`): a tiny stdlib-only Python
   script decides in well under 100 ms whether the call is an install
   action. Only then does it run the full scanner.
-  - clean → `allow` (with the version pinned, below)
+  - clean → **no decision** (Claude Code's normal permission rules apply).
+    If the version was pinned, `ask` with the rewritten command. *Revised
+    during build: Bawwab never emits `allow`. An `allow` would approve the
+    whole tool call, including anything chained after the install.*
   - suspicious → `deny` with the report and an approval id. The user runs
     `! bawwab approve <id>` and Claude retries. Decided instead of the
     hook's `ask` because auto-approve modes can skip an `ask` prompt.
@@ -112,8 +115,41 @@ Claude tool call ──► PreToolUse hook ──► fast detector (stdlib only)
   check. Warnings are shown on the user's next message
   (**UserPromptSubmit**), because SessionStart can't block.
 - Hook timeout 600 s. If the scan isn't done by then → suspicious.
-- Bash detection is best-effort; the inventory is the backstop, and also
-  covers installs made outside Claude.
+- Bash detection is best-effort: no static reading of bash is complete. It
+  handles the normal path (scan, pin and approve before the install runs).
+  The guarantee comes from the effect check below.
+
+### 1b. Effect check (added during build, user-approved 2026-11-19)
+
+The check watches what actually changed, not what the command looked like.
+
+- **Watched set:** `~/.claude.json` (`mcpServers`, `projects.*.mcpServers`),
+  user and project `settings*.json` (`enabledPlugins`, `hooks`,
+  marketplaces, keys that execute code), project `.mcp.json`,
+  `~/.claude/{skills,commands,agents}`, project
+  `.claude/{skills,commands,agents}`, and `installed_plugins.json` /
+  `known_marketplaces.json`.
+- **Fingerprint:** a cheap, stdlib-only fingerprint (stat data, plus one
+  level of directory listing) on every tool call, in a few ms.
+- **When the fingerprint changes:** compare the *semantic* state (server
+  entries, enabled plugins, hook entries, skill directories and their
+  content hash) with the last accepted state. Noise such as
+  `numStartups` is ignored.
+- **New or changed items:** each one is scanned. An item that was already
+  scanned clean or approved (including through the gate) is accepted
+  silently. Anything else is **quarantined**.
+- **While anything is quarantined,** every tool call except read-only ones
+  (Read, Grep, Glob, TodoWrite) is denied with the report and an
+  approval id. The user runs `! bawwab approve <id>`, or
+  `! bawwab reject <id>`, which removes the entry and moves a skill
+  directory into `~/.bawwab/quarantine/`.
+- **When it runs:** after every Bash/Write/Edit call (PostToolUse), and
+  before every tool call (PreToolUse, all tools). The PreToolUse run also
+  catches changes made outside Claude during the session.
+- **Limit:** the effect check runs after the command, so code an install
+  executes right away (for example a postinstall run through `npx`) may
+  already have run. The parser-based gate stays the first line of
+  defence for that.
 
 ### 2. Fetch (download only)
 
