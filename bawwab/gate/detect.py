@@ -8,6 +8,7 @@ directory listings only for shell globs in cp/mv/rsync arguments.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import glob as _glob
 import json
 import os
@@ -79,12 +80,27 @@ class _Unevaluable(Exception):
     pass
 
 
+class _TooComplex(Exception):
+    """The command needs more analysis work than the per-call budget allows."""
+
+
+_MAX_DEPTH = 3
+
+
 class _Acc:
-    def __init__(self) -> None:
+    def __init__(self, budget: int = 1 << 62) -> None:
         self.targets: list[Target] = []
         self.protected: list[str] = []
         self.pinnable = False
         self.overlays: dict[Target, dict[str, str]] = {}
+        self.budget = budget  # bytes of shell text we may still analyse in this detect_install call
+        self.scanned: set[tuple[str, str]] = set()  # (text, cwd) already run through _bash
+        self.scanned_text: set[str] = set()
+
+    def spend(self, n: int) -> None:
+        self.budget -= n
+        if self.budget < 0:
+            raise _TooComplex
 
     def add(self, t: Target, pinnable: bool = False) -> None:
         if t not in self.targets:
@@ -106,12 +122,16 @@ class _Acc:
 # ------------------------------------------------------------------ paths
 
 def _home_vars(tok: str) -> str:
+    if "$" not in tok:
+        return tok
     home = str(Path.home())
     return re.sub(r"\$\{HOME\}|\$HOME(?![A-Za-z0-9_])", lambda _: home, tok)
 
 
 def _abspath(tok: str, cwd: str) -> str:
-    p = os.path.expanduser(_home_vars(tok))
+    p = _home_vars(tok)
+    if p.startswith("~"):
+        p = os.path.expanduser(p)
     if not os.path.isabs(p):
         p = os.path.join(cwd or "/", p)
     return os.path.normpath(p)
@@ -126,12 +146,21 @@ def install_dir(p: str) -> tuple[str, str] | None:
     return None
 
 
+def _bawwab_root() -> str:
+    return _norm_root(os.environ.get("BAWWAB_HOME"), os.environ.get("HOME"))
+
+
+@functools.lru_cache(maxsize=16)
+def _norm_root(_bawwab_env: str | None, _home_env: str | None) -> str:  # args are the cache key
+    return os.path.normpath(str(bawwab_home()))
+
+
 def _under(p: str, root: str) -> bool:
     return p == root or p.startswith(root.rstrip("/") + "/")
 
 
 def _bawwab_path(p: str) -> bool:
-    if _under(p, os.path.normpath(str(bawwab_home()))):
+    if _under(p, _bawwab_root()):
         return True
     return os.path.basename(p) == "bawwab.json" and os.path.basename(os.path.dirname(p)) == ".claude"
 
@@ -154,7 +183,7 @@ def _config_kind(p: str) -> str | None:
     name = os.path.basename(p)
     if name == ".mcp.json":
         return "mcp"
-    if p == os.path.normpath(str(claude_json())):
+    if name == ".claude.json" and p == os.path.normpath(str(claude_json())):
         return "claude_json"
     if os.path.basename(os.path.dirname(p)) == ".claude" and name.startswith("settings") and name.endswith(".json"):
         return "settings"
@@ -310,18 +339,45 @@ def _strip_fd_numbers(cmd: str) -> str:
 
 
 _HEREDOC_TOKEN = "__bawwab_heredoc_{}__"
+_HEREDOC_TOKEN_RE = re.compile(r"__bawwab_heredoc_(\d+)__")
 _HEREDOC_DELIM = re.compile(r"(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([A-Za-z0-9_.-]+))")
 
 
-def _extract_heredocs(cmd: str) -> tuple[str, list[str]]:
+def _arith_command_end(cmd: str, i: int) -> int | None:
+    """End of a `(( … ))` arithmetic command starting at i, or None if it isn't one.
+
+    Bash reads `((` as arithmetic only when it closes with `))` at the same nesting level; otherwise
+    (e.g. `((cat <<X) )`) it is nested subshells and `<<` inside is a real heredoc. Only the current
+    line is searched, so this stays linear.
+    """
+    if i > 0 and cmd[i - 1] in "$<>":
+        return None
+    depth = 0
+    j, n = i + 2, len(cmd)
+    while j < n and cmd[j] != "\n":
+        c = cmd[j]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            if depth == 0:
+                return j + 2 if cmd.startswith("))", j) else None
+            depth -= 1
+        j += 1
+    return None
+
+
+def _extract_heredocs(cmd: str) -> tuple[str, list[str], dict[int, int]]:
     """Replace each real `<<DELIM … DELIM` with `< __bawwab_heredoc_N__` and return the bodies.
 
-    Only operators outside quotes, comments and $((…)) count, and never `<<<`. An unterminated heredoc
-    leaves the following lines in place (they stay normal command lines). Callers also scan every body
-    as shell commands, so a misparse can never hide a command.
+    Only operators outside quotes, comments, `$((…))` and `((…))` count, and never `<<<`. An
+    unterminated heredoc consumes nothing: the following lines stay normal command lines (and are
+    scanned there). Its body is not recorded as text; instead the third value maps its index to the
+    offset where its (implicit, to end of input) body starts, for callers that need it as stdin.
     """
     out: list[str] = []
     bodies: list[str] = []
+    open_from: dict[int, int] = {}
+    missing: set[tuple[bool, str]] = set()  # delimiters known not to occur from some offset on
     pending: list[tuple[bool, str, int]] = []  # (strip tabs, delimiter, body index)
     quote = None
     arith = 0
@@ -360,6 +416,10 @@ def _extract_heredocs(cmd: str) -> tuple[str, list[str]]:
             out.append("))")
             i += 2
             continue
+        elif not arith and cmd.startswith("((", i) and (end := _arith_command_end(cmd, i)) is not None:
+            out.append(cmd[i:end])
+            i = end
+            continue
         elif not arith and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):
             m = _HEREDOC_DELIM.match(cmd, i + 2)
             delim = next((g for g in (m.group(2), m.group(3), m.group(4)) if g is not None), None) if m else None
@@ -373,31 +433,33 @@ def _extract_heredocs(cmd: str) -> tuple[str, list[str]]:
             out.append(c)
             i += 1
             for strip, delim, idx in pending:
-                lines: list[str] = []
-                j = i
                 found = False
-                while j <= n:
-                    k = cmd.find("\n", j)
-                    k = n if k < 0 else k
-                    line = cmd[j:k]
-                    if (line.lstrip("\t") if strip else line) == delim:
-                        found, j = True, k + 1
-                        break
-                    lines.append(line)
-                    if k >= n:
-                        break
-                    j = k + 1
+                if (strip, delim) not in missing:
+                    lines: list[str] = []
+                    j = i
+                    while j <= n:
+                        k = cmd.find("\n", j)
+                        k = n if k < 0 else k
+                        line = cmd[j:k]
+                        if (line.lstrip("\t") if strip else line) == delim:
+                            found, j = True, k + 1
+                            break
+                        lines.append(line)
+                        if k >= n:
+                            break
+                        j = k + 1
                 if found:
                     bodies[idx] = "\n".join(lines)
                     i = min(j, n)
-                else:  # unterminated: keep the rest as normal command lines (and scan it as a body)
-                    bodies[idx] = cmd[i:]
+                else:  # unterminated: the rest stays in place as normal command lines
+                    missing.add((strip, delim))  # not found from i on, so not from any later offset either
+                    open_from[idx] = i
                     break
             pending = []
             continue
         out.append(c)
         i += 1
-    return "".join(out), bodies
+    return "".join(out), bodies, open_from
 
 
 def _tokens(cmd: str) -> list[str]:
@@ -885,21 +947,33 @@ def _sensitive_text(text: str, cwd: str) -> bool:
 
 
 def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
-    if depth > 3:
+    if depth > _MAX_DEPTH:
         acc.protect("shell nesting too deep")
         return
-    cmd, bodies = _extract_heredocs(cmd)
-    for body in bodies:  # fail-safe: heredoc bodies are scanned as commands too
-        if body.strip():
-            _bash(body, cwd, acc, depth + 1)
+    if depth:  # nested text (heredoc bodies, -c scripts, stdin) is analysed once per cwd
+        if (cmd, cwd) in acc.scanned:
+            return
+        acc.scanned.add((cmd, cwd))
+        acc.scanned_text.add(cmd)
+    acc.spend(len(cmd))
+    start_cwd = cwd
+    full = cmd
+    cmd, bodies, open_from = _extract_heredocs(cmd)
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
     pipeline = ""  # text of the segments piped into the current one
 
+    def heredoc_index(tok: str) -> int | None:
+        m = _HEREDOC_TOKEN_RE.fullmatch(tok)
+        return int(m.group(1)) if m and int(m.group(1)) < len(bodies) else None
+
     def body_of(tok: str) -> str:
-        for n, body in enumerate(bodies):
-            if tok == _HEREDOC_TOKEN.format(n):
-                return body
-        return written.get(_abspath(tok, cwd), tok)
+        idx = heredoc_index(tok)
+        if idx is None:
+            return written.get(_abspath(tok, cwd), tok)
+        if idx in open_from:  # unterminated: bash feeds it everything up to end of input
+            acc.spend(len(full) - open_from[idx])
+            return full[open_from[idx]:]
+        return bodies[idx]
 
     for seg in _segments(_tokens(cmd)):
         redirs, raw_words = seg.redirs, seg.words
@@ -943,10 +1017,14 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             script_files = "\n".join(written[p] for a in args if (p := _abspath(a, cwd)) in written)
             # running a skill's/plugin's own bundled script is execution, not a write of that path
             own = [a for j, a in enumerate(args) if not (j == script_i and script_path and install_dir(script_path))]
-            if _sensitive_text("\n".join([" ".join(own), stdin_text, upstream, script_files]), cwd):
+            text = "\n".join([" ".join(own), stdin_text, upstream, script_files])
+            acc.spend(len(text))
+            if _sensitive_text(text, cwd):
                 acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
             if exe in _SHELLS:
-                for text in (stdin_text, script_files):
+                stdin_scan = "\n".join(body_of(t) for t in seg.inputs
+                                       if (k := heredoc_index(t)) is None or k not in open_from)
+                for text in (stdin_scan, script_files):
                     if text.strip():
                         _bash(text, cwd, acc, depth + 1)
             if script_path and install_dir(script_path):
@@ -984,6 +1062,10 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
             _check_dest(p, acc)
+    # fail-safe: every terminated heredoc body is scanned as commands too (unless a shell already did)
+    for body in dict.fromkeys(bodies):
+        if body.strip() and body not in acc.scanned_text:
+            _bash(body, start_cwd, acc, depth + 1)
 
 
 # ------------------------------------------------------------------ write / edit
@@ -1150,7 +1232,11 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
     if inp.tool_name == "Bash":
         cmd = ti.get("command")
         if isinstance(cmd, str):
-            _bash(cmd, inp.cwd, acc)
+            acc.budget = 4 * len(cmd) + 1_000_000
+            try:
+                _bash(cmd, inp.cwd, acc)
+            except _TooComplex:
+                return Protected("command too complex to analyse")
     elif inp.tool_name in ("Write", "Edit", "MultiEdit"):
         _file_tool(inp, acc)
     return acc.result()

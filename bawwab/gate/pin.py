@@ -219,12 +219,33 @@ def _pin_fragment(text: str, pins: list[tuple[Target, str]]) -> tuple[str, list[
                 return f'"{got[0]}"'
         return m.group(0)
 
+    # Walk each `"args": [` array with a string-aware scanner: a `]` inside a JSON string does not end it,
+    # and only string entries at the array's own level (not object keys or nested values) are rewritten.
     string = re.compile(r'"((?:[^"\\\n]|\\.)*)"(\s*:)?')
     out, pos = [], 0
-    for m in re.finditer(r'"args"\s*:\s*\[([^\]]*)\]', text):  # only server args arrays
-        out.append(text[pos:m.start(1)])
-        out.append(string.sub(repl, m.group(1)))
-        pos = m.end(1)
+    for m in re.finditer(r'"args"\s*:\s*\[', text):
+        if m.start() < pos:  # inside an array we already walked
+            continue
+        out.append(text[pos:m.end()])
+        i, depth = m.end(), 0
+        while i < len(text):
+            c = text[i]
+            if c == '"':
+                sm = string.match(text, i)
+                if not sm:  # unterminated string: leave the rest alone
+                    break
+                out.append(repl(sm) if depth == 0 else sm.group(0))
+                i = sm.end()
+                continue
+            out.append(c)
+            i += 1
+            if c in "[{":
+                depth += 1
+            elif c in "]}":
+                if depth == 0:
+                    break
+                depth -= 1
+        pos = i
     out.append(text[pos:])
     return "".join(out), changes
 

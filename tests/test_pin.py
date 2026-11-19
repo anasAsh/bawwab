@@ -155,3 +155,16 @@ def test_fragment_pins_only_args_entries():
 def test_pin_npx_loglevel_value_not_package():
     ti, ch = _bash_pin("claude mcp add x -- npx --loglevel warn okpkg", {npm("okpkg"): "1.0.0"})
     assert ti["command"] == "claude mcp add x -- npx --loglevel warn okpkg@1.0.0"
+
+
+def test_fragment_args_with_bracket_inside_string():
+    t = npm("okpkg")
+    for frag, want in [
+        ('"args": ["--x=]", "okpkg"]', '"args": ["--x=]", "okpkg@1.0.0"]'),
+        ('"args": ["a\\"]", "okpkg"]', '"args": ["a\\"]", "okpkg@1.0.0"]'),
+        ('"args": ["okpkg"], "env": ["okpkg"]', '"args": ["okpkg@1.0.0"], "env": ["okpkg"]'),
+        ('"args": ["--a", "okpkg"', '"args": ["--a", "okpkg@1.0.0"'),  # fragment cut mid-array
+    ]:
+        inp = HookInput("Edit", {"file_path": "/p/.mcp.json", "old_string": "a", "new_string": frag}, "/tmp")
+        out = pin_input(inp, {t: "1.0.0"})
+        assert out is not None and out["new_string"] == want, (frag, out)
