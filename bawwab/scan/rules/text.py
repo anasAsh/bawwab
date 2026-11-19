@@ -209,7 +209,7 @@ def model_facing_text(files: list[ScanFile], extra: list[ExtraText]) -> list[Ext
 _APOS = r"['\u2019]"
 OVERRIDE_RES = [
     re.compile(
-        r"\b(?:ignore|disregard|forget)\s+(?:(?:all|any|the|your|of)\s+){0,2}"
+        r"\b(?:ignore|disregard|forget)\s+(?:(?:all|any|the|your|of|system)\s+){0,2}"
         r"(?:(?:previous|prior|above|earlier|preceding)\s+){0,2}(?:instructions?|prompts?|rules|directions|context)\b",
         re.I,
     ),
@@ -227,6 +227,14 @@ OVERRIDE_RES = [
     ),
 ]
 _OVERRIDE_QUALIFIER = re.compile(r"\b(?:all|any|previous|prior|above|earlier|preceding)\b", re.I)
+_INSTRUCTIONS_DET = re.compile(r"\b(?:your|the|system)\s+(?:(?:system|previous|prior)\s+)?instructions?\b", re.I)
+
+
+def _override_ok(m: re.Match) -> bool:
+    if m.re is not OVERRIDE_RES[0]:
+        return True
+    g = m.group()
+    return _OVERRIDE_QUALIFIER.search(g) is not None or _INSTRUCTIONS_DET.search(g) is not None
 
 _SENSITIVE_PATH = (
     r"(?:~/|/home/\S+/|/root/)?\.ssh\b|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\.env\b(?!\.(?:example|sample|template))"
@@ -234,10 +242,14 @@ _SENSITIVE_PATH = (
     r"|\bkeychain\b|\bcookies\.sqlite\b|\bLogin Data\b"
 )
 _EXFIL_VERB = r"(?:send|upload|post|forward|attach|append|exfiltrate|leak|email|transmit)"
-_IN_REPLY = r"\binclude\b[^.\n]{0,30}?\bin\s+(?:your|the)\s+(?:reply|response|output|request|answer|message)"
+_DELIVER_VERB = r"(?:put|paste|write|embed|base64|encode|pipe|dump|attach|append|include|send|upload|post|forward|copy|insert)"
+_DEST = (
+    r"\b(?:in|into|to|as)\s+(?:(?:your|the|a)\s+)?(?:\w+\s+)?"
+    r"(?:answers?|repl(?:y|ies)|responses?|output|messages?|arguments?|args|url|parameters?|quer(?:y|ies)|requests?)\b|\bhere\b"
+)
 CONCEAL_RE = re.compile(
     rf"\b(?:do\s+not|don{_APOS}?t|never|must\s+not|without)\s+(?:(?:ever|even)\s+)?(?:tell|inform|mention|notify|alert|show)\w*\s+(?:\w+\s+)?(?:the\s+)?user\b"
-    r"|\bsilently\b|\bsecretly\b|\bwithout\s+(?:telling|informing|mentioning)\b|\bhide\s+this\b",
+    r"|\bsilently\b|\bquietly\b|\bsecretly\b|\bwithout\s+(?:telling|informing|mentioning)\b|\bhide\s+this\b",
     re.I,
 )
 COVERT_RES = [
@@ -249,9 +261,11 @@ COVERT_RES = [
     ),
     re.compile(rf"\b{_EXFIL_VERB}\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})", re.I),
     re.compile(
-        rf"(?:{_SENSITIVE_PATH})[^.\n]{{0,80}}?(?:\b{_EXFIL_VERB}\b|{_IN_REPLY}|https?://|[\w.-]+@[\w-]+\.)", re.I
+        rf"(?:{_SENSITIVE_PATH})[^.\n]{{0,80}}?(?:\b{_EXFIL_VERB}\b|https?://|[\w.-]+@[\w-]+\.)", re.I
     ),
-    re.compile(rf"\binclude\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})[^.\n]{{0,40}}?\bin\s+(?:your|the)\s+(?:reply|response|output|request|answer|message)", re.I),
+    # target, then a delivery verb, then a destination the model's output goes to
+    re.compile(rf"(?:{_SENSITIVE_PATH})[^.\n]{{0,80}}?\b{_DELIVER_VERB}\b[^.\n]{{0,40}}?(?:{_DEST})", re.I),
+    re.compile(rf"\b{_DELIVER_VERB}\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})[^.\n]{{0,40}}?(?:{_DEST})", re.I),
     re.compile(
         r"\b(?:send|upload|post|forward|email|transmit|exfiltrate|leak|include|append|attach)\b[^.\n]{0,60}?"
         r"\b(?:secrets?|credentials|passwords?|api[ _-]?keys?|private\s+keys?|tokens?|ssh\s+keys?|env(?:ironment)?\s+(?:vars|variables))\b"
@@ -400,7 +414,7 @@ class TextRules:
 
     def _one(self, t: _Text, tool_names: set[str]) -> list[Finding]:
         out: list[Finding] = []
-        m = _first(OVERRIDE_RES, t, lambda m: m.re is not OVERRIDE_RES[0] or _OVERRIDE_QUALIFIER.search(m.group()))
+        m = _first(OVERRIDE_RES, t, _override_ok)
         if m:
             out.append(_mk("injection.override", Severity.HIGH, t, m.start(), m.end()))
         m = _first(COVERT_RES, t, _covert_ok)
