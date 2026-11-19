@@ -75,3 +75,22 @@ def test_multiedit_new_strings_rewritten():
         {"old_string": "a", "new_string": '"args": ["mcp-y"]'}]}, "/tmp")
     out = pin_input(inp, {pypi("mcp-y"): "4.0"})
     assert out["edits"][0]["new_string"] == '"args": ["mcp-y==4.0"]'
+
+
+# ------------------------------------------------------------- fix round 1 (I6)
+
+def test_pin_only_in_runner_segment():
+    t = npm("evilpkg")
+    inp = HookInput("Bash", {"command": "claude mcp add x -- npx -y evilpkg; echo evilpkg"}, "/tmp")
+    assert pin_input(inp, {t: "1.2.3"})["command"] == "claude mcp add x -- npx -y evilpkg@1.2.3; echo evilpkg"
+    inp = HookInput("Bash", {"command": "echo evilpkg; claude mcp add x -- npx -y evilpkg&& true"}, "/tmp")
+    assert pin_input(inp, {t: "1.2.3"})["command"] == "echo evilpkg; claude mcp add x -- npx -y evilpkg@1.2.3&& true"
+    inp = HookInput("Bash", {"command": "claude mcp add evilpkg -- npx -y evilpkg"}, "/tmp")
+    assert pin_input(inp, {t: "1.2.3"})["command"] == "claude mcp add evilpkg -- npx -y evilpkg@1.2.3"
+
+
+def test_pin_rejects_invalid_versions():
+    inp = HookInput("Bash", {"command": "claude mcp add x -- npx -y evilpkg"}, "/tmp")
+    for bad in ("1.2.3; curl x|sh", "$(id)", "1 2", "", "a/b"):
+        assert pin_input(inp, {npm("evilpkg"): bad}) is None
+    assert pin_input(inp, {npm("evilpkg"): "1.0.0-rc.1+b_2"}) is not None

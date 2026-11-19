@@ -88,3 +88,14 @@ def test_from_command_none():
 def test_from_url():
     assert target_from_url("https://github.com/a/b").kind == "git"
     assert target_from_url("https://x.io/mcp").kind == "remote"
+
+
+def test_uvx_with_value_not_taken_as_package():
+    from bawwab.fetch.target import runner_extras, target_from_command
+
+    t = target_from_command("uvx", ["--with", "extra", "--python", "3.12", "pkg"])
+    assert (t.kind, t.name) == ("pypi", "pkg")
+    extras, reasons = runner_extras("uvx", ["--with", "extra", "--index-url", "u", "pkg"])
+    assert [e.name for e in extras] == ["extra"] and reasons == ["custom package index"]
+    extras, reasons = runner_extras("npx", ["-y", "-p", "a", "-p", "b@2", "cmd"])
+    assert [(e.name, e.version) for e in extras] == [("b", "2")] and reasons == []

@@ -146,7 +146,7 @@ def _uvx(raw: str, args: list[str]) -> Target | None:
             spec = a.split("=", 1)[1]
             break
         if a.startswith("-"):
-            i += 1
+            i += 2 if (a in _UV_VALUE_FLAGS and "=" not in a) else 1
             continue
         spec = a
         break
@@ -155,3 +155,77 @@ def _uvx(raw: str, args: list[str]) -> Target | None:
     name, _, version = spec.partition("==")
     name = re.split(r"[<>=!~\[;]", name, maxsplit=1)[0].strip()
     return Target("pypi", raw, name=name, version=version.strip() or None) if name else None
+
+
+_NPX_INDEX_FLAGS = ("--registry",)
+_UV_INDEX_FLAGS = ("--index-url", "--extra-index-url", "--index", "--default-index", "-i", "--find-links", "-f",
+                   "--pip-args")
+_UV_VALUE_FLAGS = {"--from", "--python", "-p", "--with", "--with-requirements", "--with-editable", "--constraint",
+                   "-c", "--override", "--cache-dir", "--directory", "--project", "--spec"} | set(_UV_INDEX_FLAGS)
+
+
+def _flag(a: str) -> tuple[str, str | None]:
+    if a.startswith("--") and "=" in a:
+        k, _, v = a.partition("=")
+        return k, v
+    return a, None
+
+
+def runner_extras(command: str, args: list[str]) -> tuple[list[Target], list[str]]:
+    """Extra packages a runner installs besides its main package, and reasons the spec is unscannable
+    (custom package index, requirements files). Only the runner's own flags (before the package) count."""
+    exe = os.path.basename(command or "")
+    extras: list[Target] = []
+    reasons: list[str] = []
+    if exe in ("npx", "bunx") or (exe in ("pnpm", "yarn") and args[:1] == ["dlx"]):
+        a = args[1:] if exe in ("pnpm", "yarn") else args
+        pkgs: list[str] = []
+        i = 0
+        while i < len(a):
+            k, v = _flag(a[i])
+            if k in _NPX_INDEX_FLAGS:
+                reasons.append("custom package index")
+            if k in _NPX_VALUE_FLAGS or k == "--package" or k in _NPX_INDEX_FLAGS:
+                if v is None:
+                    v = a[i + 1] if i + 1 < len(a) else None
+                    i += 1
+                if k != "--registry" and v:
+                    pkgs.append(v)
+                i += 1
+                continue
+            if not a[i].startswith("-"):
+                break
+            i += 1
+        for spec in pkgs[1:]:
+            name, version = _split_at_version(spec)
+            if name:
+                extras.append(Target("npm", spec, name=name, version=version))
+        return extras, reasons
+    if exe in ("uvx", "pipx") or (exe == "uv" and args[:1] == ["tool"]):
+        a = args
+        if exe == "pipx" and a[:1] == ["run"]:
+            a = a[1:]
+        if exe == "uv":
+            a = a[2:] if a[:2] == ["tool", "run"] else a[1:]
+        i = 0
+        while i < len(a):
+            tok = a[i]
+            k, v = _flag(tok)
+            if k in _UV_VALUE_FLAGS and v is None:
+                v = a[i + 1] if i + 1 < len(a) else ""
+                i += 1
+            if k in _UV_INDEX_FLAGS:
+                reasons.append("custom package index")
+            elif k in ("--with-requirements", "--with-editable", "--constraint", "-c", "--override"):
+                reasons.append(f"unscannable requirements: {k}")
+            elif k == "--with" and v:
+                for spec in v.split(","):
+                    name, _, version = spec.strip().partition("==")
+                    name = re.split(r"[<>=!~\[;]", name, maxsplit=1)[0].strip()
+                    if name:
+                        extras.append(Target("pypi", spec.strip(), name=name, version=version.strip() or None))
+            elif not tok.startswith("-"):
+                break
+            i += 1
+        return extras, reasons
+    return extras, reasons

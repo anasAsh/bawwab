@@ -9,12 +9,19 @@ output and without importing bawwab. Install-like calls are handed to
 """
 import json
 import os
+import re
 import sys
 
 CHILD_TIMEOUT_S = 590
 _NEEDLES = ("claude", "bawwab", ".mcp.json")
 _FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
 _FILE_TOOLS = ("Write", "Edit", "MultiEdit")
+# A shell glob may hide ".claude" from the substring check (cp x ~/.c*/skills/).
+# claude reached through $(…), `…` or $VAR: detected by its subcommand.
+_CLAUDE_SUBCMD = re.compile(
+    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
+)
+_GLOB_COPY = re.compile(r"(?:^|[\s;&|(])(?:cp|mv|rsync|ln|install)\s")
 
 
 def _bawwab_home() -> str:
@@ -41,6 +48,8 @@ def prefilter(data: dict) -> bool:
             return False
         s = cmd.replace('"', "").replace("'", "").replace("\\", "")
         if any(n in s for n in needles):
+            return True
+        if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[") and _GLOB_COPY.search(s)):
             return True
         return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
     if tool in _FILE_TOOLS:

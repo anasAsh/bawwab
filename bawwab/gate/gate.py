@@ -1,4 +1,10 @@
-"""run_gate: turn a PreToolUse hook input into an allow / deny decision."""
+"""run_gate: turn a PreToolUse hook input into a decision.
+
+The gate never emits "allow" (that would bypass Claude Code's own permission
+prompt for the whole call). Clean or approved installs get no output; when
+the call is rewritten to pin a version it gets "ask" with updatedInput, so the
+normal permission flow still decides. Everything else is "deny".
+"""
 from __future__ import annotations
 
 import hashlib
@@ -19,6 +25,17 @@ from bawwab.types import ScanReport, Target, Verdict
 
 __all__ = ["HookInput", "decision", "protected_key", "run_gate"]
 
+_KEY_FIELDS = {
+    "Bash": ("command",),
+    "Write": ("file_path", "content"),
+    "Edit": ("file_path", "old_string", "new_string", "replace_all"),
+    "MultiEdit": ("file_path", "edits"),
+}
+
+
+class SymlinkInPath(Exception):
+    pass
+
 
 def decision(kind: str, reason: str, updated: dict | None = None) -> dict:
     out = {"hookEventName": "PreToolUse", "permissionDecision": kind, "permissionDecisionReason": reason}
@@ -27,9 +44,13 @@ def decision(kind: str, reason: str, updated: dict | None = None) -> dict:
     return {"hookSpecificOutput": out}
 
 
-def protected_key(inp: HookInput) -> str:
+def protected_key(inp: HookInput, reason: str = "") -> str:
+    """Bound to the effective action (not description/timeout) and to the protected reason."""
+    ti = inp.tool_input if isinstance(inp.tool_input, dict) else {}
+    fields = _KEY_FIELDS.get(inp.tool_name)
+    material = {k: ti.get(k) for k in fields} if fields else ti
     canon = json.dumps(
-        {"tool_name": inp.tool_name, "tool_input": inp.tool_input},
+        {"tool_name": inp.tool_name, "tool_input": material, "reason": reason},
         sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str,
     )
     return "protected:" + hashlib.sha256(canon.encode()).hexdigest()[:16]
@@ -40,6 +61,22 @@ def _audit(store: Store | None, event: str, **fields) -> None:
         (store or open_store()).audit(event, **fields)
     except Exception:  # noqa: BLE001 - auditing must never change the decision
         pass
+
+
+def _safe_dest(root: Path, rel: str) -> Path:
+    """root/rel, refusing any symlink on the way (from root down) and any escape from root."""
+    parts = Path(rel).parts
+    if not parts or Path(rel).is_absolute() or ".." in parts:
+        raise SymlinkInPath(rel)
+    cur = root
+    for part in parts:
+        cur = cur / part
+        if cur.is_symlink():
+            raise SymlinkInPath(rel)
+    real_root = os.path.realpath(root)
+    if not os.path.realpath(cur).startswith(real_root.rstrip("/") + "/"):
+        raise SymlinkInPath(rel)
+    return cur
 
 
 def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Callable[[], None]]:
@@ -57,12 +94,10 @@ def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Cal
                 dst.mkdir()
             for fpath, content in overlay.items():
                 rel = os.path.relpath(fpath, src)
-                if rel.startswith(".."):
-                    raise ValueError(f"overlay outside target: {fpath}")
-                out = dst / rel
-                out.parent.mkdir(parents=True, exist_ok=True)
-                if out.is_symlink():
-                    out.unlink()
+                out = _safe_dest(dst, rel)
+                parent = out.parent
+                parent.mkdir(parents=True, exist_ok=True)
+                _safe_dest(dst, rel)  # re-check after creating parents
                 out.write_text(content)
         else:
             dst.mkdir()
@@ -79,57 +114,75 @@ def _label(r: ScanReport) -> str:
     return sanitise(f"{t.name or t.url or t.path or t.raw}@{r.resolved_version}", 200)
 
 
-def _protected(inp: HookInput, det: Protected, store: Store) -> tuple[dict, list[str]]:
-    key = protected_key(inp)
-    reason = sanitise(det.reason, 300)
+def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | None, str]:
+    """(deny text or None when approved, key)."""
+    key = protected_key(inp, reason)
+    shown = sanitise(reason, 300)
     if store.is_rejected(key):
-        return decision("deny", f"⛔ bawwab: previously rejected — protected action ({reason})"), [key]
+        return f"⛔ bawwab: previously rejected — protected action ({shown})", key
     if store.is_approved(key):
-        return decision("allow", f"bawwab: approved protected action ({reason})"), [key]
-    r = synthetic_report(det.reason, key, Target("local", key, name="protected action"), rule="gate.protected")
+        return None, key
+    r = synthetic_report(reason, key, Target("local", key, name="protected action"), rule="gate.protected")
     pid = store.create_pending(r)
-    text = (
-        f"⛔ bawwab: blocked a protected action — {reason}\n"
+    return (
+        f"⛔ bawwab: blocked a protected action — {shown}\n"
         f"Blocked pending your approval. To allow:  ! bawwab approve {sanitise(pid)}"
-    )
-    return decision("deny", text), [key]
+    ), key
 
 
-def _targets(inp: HookInput, det: Targets, scan: Callable[..., ScanReport], store: Store) -> tuple[dict, list[str]]:
+def _scan_all(inp: HookInput, det: Targets, scan: Callable[..., ScanReport], store: Store,
+              protected: list[str]) -> list[tuple[Target, ScanReport]]:
     cfg = load_config(Path(inp.cwd) if inp.cwd else None)
     results: list[tuple[Target, ScanReport]] = []
     for t in det.targets:
-        st, cleanup = _materialize(t, det.overlays.get(t))
+        try:
+            st, cleanup = _materialize(t, det.overlays.get(t))
+        except SymlinkInPath:
+            protected.append(f"symlink in skill path: {t.path}")
+            continue
         try:
             r = scan(st, mode=cfg.mode, cfg=cfg, store=store)
         finally:
             cleanup()
         results.append((t, r))
-    keys = [r.key for _, r in results]
+    return results
+
+
+def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanReport],
+            store: Store) -> tuple[dict | None, list[str]]:
+    protected = [det.reason] if isinstance(det, Protected) else list(det.protected)
+    results = _scan_all(inp, det, scan, store, protected) if isinstance(det, Targets) else []
     blocks: list[str] = []
-    allowed: list[str] = []
+    keys: list[str] = []
+    for reason in protected:
+        text, key = _protected_block(inp, reason, store)
+        keys.append(key)
+        if text:
+            blocks.append(text)
     for _, r in results:
+        keys.append(r.key)
         if store.is_rejected(r.key):
             blocks.append(f"⛔ bawwab: previously rejected — {_label(r)}\n{format_report(r)}")
-        elif r.verdict == Verdict.CLEAN:
-            allowed.append(f"bawwab: clean — {_label(r)}")
-        elif store.is_approved(r.key):
-            allowed.append(f"bawwab: approved — {_label(r)}")
-        else:
+        elif r.verdict != Verdict.CLEAN and not store.is_approved(r.key):
             blocks.append(format_report(r, store.create_pending(r)))
     if blocks:
         return decision("deny", "\n\n".join(blocks)), keys
-    updated = None
-    if det.pinnable:
+    if isinstance(det, Targets) and det.pinnable:
         try:
             updated = pin_input(inp, {t: r.resolved_version for t, r in results})
-        except Exception:  # noqa: BLE001 - a failed rewrite never blocks an allowed install
+        except Exception:  # noqa: BLE001 - a failed rewrite never blocks; just no pin
             updated = None
-    return decision("allow", "\n".join(allowed), updated), keys
+        if updated is not None:
+            pinned = ", ".join(
+                f"{t.name} to {r.resolved_version}" for t, r in results
+                if t.kind in ("npm", "pypi") and t.version in (None, "latest")
+            )
+            return decision("ask", sanitise(f"bawwab: scanned clean; pinned {pinned}", 500), updated), keys
+    return None, keys
 
 
 def run_gate(inp: HookInput, scan: Callable[..., ScanReport] | None = None, store: Store | None = None) -> dict | None:
-    """Hook JSON for an install-like call, or None to make no decision."""
+    """Hook JSON ("deny", or "ask" with a pinned updatedInput) for an install-like call, or None."""
     try:
         det = detect_install(inp)
     except Exception as e:  # noqa: BLE001 - detection bugs never block ordinary calls
@@ -140,12 +193,9 @@ def run_gate(inp: HookInput, scan: Callable[..., ScanReport] | None = None, stor
     keys: list[str] = []
     try:
         store = store or open_store()
-        if isinstance(det, Protected):
-            out, keys = _protected(inp, det, store)
-        else:
-            out, keys = _targets(inp, det, scan or scan_target, store)
+        out, keys = _decide(inp, det, scan or scan_target, store)
     except Exception as e:  # noqa: BLE001 - fail closed for install-like calls
         out = decision("deny", f"bawwab error: {sanitise(f'{type(e).__name__}: {e}', 300)}")
-    _audit(store, "gate.decision", decision=out["hookSpecificOutput"]["permissionDecision"], keys=keys,
-           tool_name=inp.tool_name)
+    kind = out["hookSpecificOutput"]["permissionDecision"] if out else "none"
+    _audit(store, "gate.decision", decision=kind, keys=keys, tool_name=inp.tool_name)
     return out

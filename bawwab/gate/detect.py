@@ -1,12 +1,14 @@
 """Pure install detection for PreToolUse tool calls.
 
 No network and no scanning. File reads are limited to the config file being
-edited (to compute its new content), the marketplace JSONs and
-known_marketplaces.json.
+edited (to compute its new content), a project's .mcp.json (for
+enabledMcpjsonServers), the marketplace JSONs and known_marketplaces.json;
+directory listings only for shell globs in cp/mv/rsync arguments.
 """
 from __future__ import annotations
 
 import dataclasses
+import glob as _glob
 import json
 import os
 import posixpath
@@ -15,7 +17,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bawwab.fetch.target import target_from_command, target_from_url
+from bawwab.fetch.target import runner_extras, target_from_command, target_from_url
 from bawwab.paths import bawwab_home, claude_home, claude_json
 from bawwab.types import Target
 
@@ -34,6 +36,8 @@ class Targets:
     # target -> {absolute file path: new content}; run_gate scans a temp copy of the
     # target dir with these files overlaid (Write/Edit under a skill/command/agent dir).
     overlays: dict[Target, dict[str, str]] = field(default_factory=dict)
+    # Protected reasons found in the same call; each needs its own approval.
+    protected: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -50,6 +54,24 @@ _READ_ONLY = {
     "bat", "git", "true", "false", "which", "type",
 }
 _SHELL_WRITERS = {"tee", "sed", "perl", "dd", "truncate", "patch", "python", "python3", "node"}
+_SENSITIVE = (
+    ".claude.json", ".mcp.json", ".claude/settings", ".claude/skills", ".claude/commands", ".claude/agents",
+    ".claude/plugins",
+)
+# Environment variables that make an interpreter load extra code, or that switch the package index.
+_CODE_ENV = {
+    "NODE_OPTIONS", "NODE_PATH", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH",
+    "BASH_ENV", "ENV", "PERL5OPT", "PERL5LIB", "RUBYOPT", "RUBYLIB", "JAVA_TOOL_OPTIONS",
+}
+_INDEX_ENV = {
+    "NPM_CONFIG_REGISTRY", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_INDEX", "UV_DEFAULT_INDEX", "UV_FIND_LINKS",
+    "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_FIND_LINKS",
+}
+_EXEC_SETTINGS = ("statusLine", "apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper", "env")
+_PROTECTED_KEYS = ("hooks", "disableAllHooks", "extraKnownMarketplaces", "enableAllProjectMcpServers")
+_CLAUDE_SUBCMD = re.compile(
+    r"\b(?:mcp\s+(?:add|add-json|add-from-claude-desktop)|plugins?\s+(?:install|i|enable|update|marketplace))\b"
+)
 
 
 class _Unevaluable(Exception):
@@ -73,10 +95,10 @@ class _Acc:
             self.protected.append(reason)
 
     def result(self) -> Targets | Protected | None:
+        if self.targets:
+            return Targets(self.targets, self.pinnable, self.overlays, self.protected)
         if self.protected:
             return Protected("; ".join(self.protected))
-        if self.targets:
-            return Targets(self.targets, self.pinnable, self.overlays)
         return None
 
 
@@ -113,6 +135,20 @@ def _bawwab_path(p: str) -> bool:
     return os.path.basename(p) == "bawwab.json" and os.path.basename(os.path.dirname(p)) == ".claude"
 
 
+def _bawwab_mentions() -> tuple[str, ...]:
+    home = os.path.normpath(str(bawwab_home()))
+    out = [home, ".claude/bawwab.json"]
+    user = str(Path.home())
+    if _under(home, user) and home != user:
+        rel = os.path.relpath(home, user)
+        out += [f"~/{rel}", f"$HOME/{rel}", f"${{HOME}}/{rel}"]
+    return tuple(out)
+
+
+def _mentions_sensitive(text: str) -> bool:
+    return any(s in text for s in _SENSITIVE + _bawwab_mentions())
+
+
 def _config_kind(p: str) -> str | None:
     name = os.path.basename(p)
     if name == ".mcp.json":
@@ -133,26 +169,44 @@ def _read_json(p: Path) -> object:
 
 # ------------------------------------------------------------------ MCP specs
 
-def _server_target(cmd: str, args: list[str], cwd: str) -> Target | None:
+def _env_checks(env: dict[str, str], name: str, acc: _Acc) -> None:
+    for k in env:
+        if k in _CODE_ENV or k.startswith("DYLD_"):
+            acc.protect(f"server env loads code: {k} ({name})")
+        elif k.upper() in _INDEX_ENV:
+            acc.protect(f"custom package index: {k} ({name})")
+
+
+def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: str, acc: _Acc) -> None:
+    _env_checks(env, name, acc)
     t = target_from_command(cmd, args)
-    if t is not None and t.kind == "local":
+    if t is None:
+        acc.protect(f"unrecognized MCP command: {name}")
+        return
+    if t.kind == "local":
         script = next((a for a in args if not a.startswith("-")), None)
         if script and not os.path.isabs(script):
             t = dataclasses.replace(t, path=_abspath(posixpath.dirname(script) or ".", cwd))
-    return t
+    acc.add(t, pinnable=True)
+    extras, reasons = runner_extras(cmd, args)
+    for r in reasons:
+        acc.protect(f"{r} ({name})")
+    for e in extras:
+        acc.add(e, pinnable=False)
 
 
 def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
+    env = spec.get("env")
+    env = {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
     url = spec.get("url")
     if isinstance(url, str) and url:
+        _env_checks(env, name, acc)
         acc.add(target_from_url(url), pinnable=True)
         return
     cmd, args = spec.get("command"), spec.get("args", [])
     if isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
-        t = _server_target(cmd, args, cwd)
-        if t is not None:
-            acc.add(t, pinnable=True)
-            return
+        _add_server(name, cmd, args, env, cwd, acc)
+        return
     acc.protect(f"unrecognized MCP command: {name}")
 
 
@@ -209,10 +263,53 @@ def _plugin(spec: str, acc: _Acc) -> None:
         acc.add(t)
 
 
+def _is_bawwab_plugin(spec: str) -> bool:
+    return str(spec).split("@", 1)[0] == "bawwab"
+
+
 # ------------------------------------------------------------------ bash
 
+def _strip_fd_numbers(cmd: str) -> str:
+    """Drop fd numbers glued to redirections (2>x, 2>&1, 1>>x, 0<x) outside quotes."""
+    out: list[str] = []
+    quote = None
+    i = 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < len(cmd):
+                out.append(cmd[i:i + 2])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            out.append(c)
+            i += 1
+            continue
+        if c == "\\" and i + 1 < len(cmd):
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        if c.isdigit() and (i == 0 or cmd[i - 1] in " \t\n;&|()"):
+            j = i
+            while j < len(cmd) and cmd[j].isdigit():
+                j += 1
+            if j < len(cmd) and cmd[j] in "<>":
+                out.append(" ")
+                i = j
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def _tokens(cmd: str) -> list[str]:
-    cmd = cmd.replace("\\\n", " ").replace("`", " ; ")
+    cmd = _strip_fd_numbers(cmd.replace("\\\n", " ")).replace("`", " ; ")
     lex = shlex.shlex(cmd, posix=True, punctuation_chars=_PUNCT)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
@@ -221,6 +318,10 @@ def _tokens(cmd: str) -> list[str]:
         return list(lex)
     except ValueError:  # unbalanced quotes: crude split, quotes dropped
         return re.findall(r"[();<>|&\n]+|[^\s();<>|&\n]+", re.sub(r"[\"'\\]", "", cmd))
+
+
+def _words(cmd: str) -> list[str]:
+    return [t for t in _tokens(cmd) if not (t and all(c in _PUNCT for c in t))]
 
 
 def _segments(tokens: list[str]) -> list[tuple[list[str], list[str]]]:
@@ -252,11 +353,30 @@ def _segments(tokens: list[str]) -> list[tuple[list[str], list[str]]]:
     return segs
 
 
-_SUDO_VALUE = {"-u", "-g", "-U", "-C", "-h", "-p", "-r", "-t", "-D", "-R", "-T"}
-_ENV_VALUE = {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}
+# wrapper -> flags that take a value; positional count it consumes after flags (timeout's DURATION)
+_WRAPPERS: dict[str, tuple[set[str], int]] = {
+    "sudo": ({"-u", "-g", "-U", "-C", "-h", "-p", "-r", "-t", "-D", "-R", "-T", "--user", "--group"}, 0),
+    "doas": ({"-u", "-C"}, 0),
+    "env": ({"-u", "--unset", "-C", "--chdir"}, 0),
+    "command": (set(), 0),
+    "builtin": (set(), 0),
+    "exec": ({"-a"}, 0),
+    "nohup": (set(), 0),
+    "time": ({"-f", "--format", "-o", "--output"}, 0),
+    "nice": ({"-n", "--adjustment"}, 0),
+    "ionice": ({"-c", "--class", "-n", "--classdata", "-p", "--pid", "-P", "--pgid", "-u", "--uid"}, 0),
+    "stdbuf": ({"-i", "-o", "-e", "--input", "--output", "--error"}, 0),
+    "timeout": ({"-s", "--signal", "-k", "--kill-after"}, 1),
+    "xargs": ({"-I", "-i", "-n", "-P", "-L", "-l", "-d", "-E", "-e", "-s", "-a", "--arg-file", "--delimiter",
+               "--max-args", "--max-procs", "--max-lines", "--max-chars", "--replace", "--eof"}, 0),
+    "chronic": (set(), 0),
+    "unbuffer": (set(), 0),
+    "caffeinate": (set(), 0),
+}
 
 
 def _strip_prefix(words: list[str]) -> list[str]:
+    words = list(words)
     i = 0
     while i < len(words):
         w = words[i]
@@ -264,14 +384,57 @@ def _strip_prefix(words: list[str]) -> list[str]:
             i += 1
             continue
         b = os.path.basename(w)
-        if b in ("sudo", "doas", "env", "command", "builtin", "exec", "nohup", "time", "nice", "stdbuf"):
-            values = _SUDO_VALUE if b in ("sudo", "doas") else _ENV_VALUE if b == "env" else {"-n"}
+        if b not in _WRAPPERS:
+            break
+        values, npos = _WRAPPERS[b]
+        i += 1
+        while i < len(words) and words[i].startswith("-") and words[i] not in ("-", "--"):
+            a = words[i]
+            if b == "env" and (a in ("-S", "--split-string") or a.startswith(("-S", "--split-string="))):
+                if a in ("-S", "--split-string"):
+                    val = words[i + 1] if i + 1 < len(words) else ""
+                    words[i:i + 2] = _words(val)
+                else:
+                    words[i:i + 1] = _words(a[2:] if a.startswith("-S") else a.split("=", 1)[1])
+                break
+            if a.startswith("--") and "=" in a:
+                i += 1
+            elif a in values:
+                i += 2
+            elif len(a) > 2 and not a.startswith("--") and a[:2] in values:  # -n10, -s9
+                i += 1
+            else:
+                i += 1
+        if i < len(words) and words[i] == "--":
             i += 1
-            while i < len(words) and words[i].startswith("-") and words[i] != "-":
-                i += 2 if words[i] in values else 1
-            continue
-        break
+        i += npos
     return words[i:]
+
+
+def _claude_index(words: list[str]) -> int | None:
+    """Index of the first claude argument when words invoke Claude Code (claude, npx @anthropic-ai/claude-code,
+    node …/claude-code/cli.js), else None."""
+    if not words:
+        return None
+    exe = os.path.basename(words[0])
+    if exe == "claude":
+        return 1
+    if exe in ("npx", "bunx", "pnpm", "yarn"):
+        i = 1
+        if exe in ("pnpm", "yarn"):
+            if words[1:2] != ["dlx"]:
+                return None
+            i = 2
+        while i < len(words) and words[i].startswith("-"):
+            i += 2 if words[i] in ("-p", "--package") else 1
+        if i < len(words) and re.fullmatch(r"@anthropic-ai/claude-code(@[^\s]*)?", words[i]):
+            return i + 1
+        return None
+    if re.fullmatch(r"node(js)?|bun|deno", exe):
+        script = next((x for x in words[1:] if not x.startswith("-")), None)
+        if script and "claude-code" in script and re.search(r"cli\.m?js$", script):
+            return words.index(script) + 1
+    return None
 
 
 def _positionals(args: list[str], value_flags: set[str]) -> list[str]:
@@ -295,6 +458,7 @@ _MCP_ADD_VALUE = {"-s", "--scope", "-t", "--transport", "--client-id", "--callba
 def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
     pos: list[str] = []
     rest: list[str] = []
+    env: dict[str, str] = {}
     transport = None
     dashdash = False
     i = 0
@@ -307,6 +471,9 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
             transport = args[i + 1]
         elif a.startswith("--transport="):
             transport = a.split("=", 1)[1]
+        elif a.startswith("--env="):
+            k, _, v = a.split("=", 1)[1].partition("=")
+            env[k] = v
         if a in _MCP_ADD_VALUE:
             i += 2
             continue
@@ -314,6 +481,9 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
             i += 1
             pat = r"[A-Za-z_][A-Za-z0-9_]*=" if a in ("-e", "--env") else r"[^\s:/]+:"
             while i < len(args) and re.match(pat, args[i]) and not args[i].startswith(("http:", "https:")):
+                if a in ("-e", "--env"):
+                    k, _, v = args[i].partition("=")
+                    env[k] = v
                 i += 1
             continue
         if a.startswith("-"):
@@ -330,17 +500,18 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
         cmd, cargs = pos[1], rest
     else:
         cmd, cargs = None, []
+    name = pos[0] if pos else "?"
     if not cmd:
         acc.protect("unrecognized MCP command")
         return
     if transport in ("http", "sse") or cmd.startswith(("http://", "https://")):
+        _env_checks(env, name, acc)
         acc.add(target_from_url(cmd), pinnable=True)
         return
-    t = _server_target(cmd, cargs, cwd)
-    if t is None:
-        acc.protect(f"unrecognized MCP command: {cmd}")
-    else:
-        acc.add(t, pinnable=True)
+    before = len(acc.protected)
+    _add_server(name, cmd, cargs, env, cwd, acc)
+    if len(acc.protected) > before and acc.protected[-1] == f"unrecognized MCP command: {name}":
+        acc.protected[-1] = f"unrecognized MCP command: {cmd}"
 
 
 def _claude(args: list[str], cwd: str, acc: _Acc) -> None:
@@ -368,14 +539,16 @@ def _claude(args: list[str], cwd: str, acc: _Acc) -> None:
         elif sub == "add-from-claude-desktop":
             acc.protect("import of MCP servers from Claude Desktop")
         return
+    pos = _positionals(rest, {"-s", "--scope"})
     if sub in ("install", "i", "enable", "update"):
-        pos = _positionals(rest, {"-s", "--scope"})
         if pos:
             _plugin(pos[0], acc)
         else:
             acc.protect("unrecognized plugin command")
+    elif sub in ("disable", "uninstall", "remove", "rm"):
+        if any(_is_bawwab_plugin(p) for p in pos):
+            acc.protect("disables bawwab")
     elif sub in ("marketplace", "marketplaces"):
-        pos = _positionals(rest, {"-s", "--scope"})
         if pos[:1] == ["add"]:
             acc.protect(f"new marketplace: {pos[1] if len(pos) > 1 else '?'}")
 
@@ -411,10 +584,20 @@ def _git(args: list[str], cwd: str, acc: _Acc) -> None:
         acc.add(Target("git", url, url=url, version=branch or None))
 
 
+def _has_glob(s: str) -> bool:
+    return any(c in s for c in "*?[")
+
+
+def _expand(tok: str, cwd: str) -> list[str]:
+    if not _has_glob(tok):
+        return [_abspath(tok, cwd)]
+    return sorted(os.path.normpath(m) for m in _glob.glob(_abspath(tok, cwd)))
+
+
 def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
     target_dir = None
     values = {"-t", "--target-directory", "-S", "--suffix", "-e", "--rsh", "-m", "--mode", "-o", "--owner",
-              "-g", "--group"} if exe in ("cp", "mv", "ln", "install", "rsync") else set()
+              "-g", "--group"}
     for j, a in enumerate(args):
         if a in ("-t", "--target-directory") and j + 1 < len(args):
             target_dir = args[j + 1]
@@ -427,14 +610,21 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
         dest, srcs = pos[-1], pos[:-1]
     else:
         return
-    if not install_dir(_abspath(dest, cwd)):
+    dests = _expand(dest, cwd)
+    if not dests:
+        acc.protect(f"unresolvable glob: {dest}")
+        return
+    if not any(install_dir(d) for d in dests):
         return
     for s in srcs:
         if re.match(r"^[^/.~$][^/]*:", s) or s.startswith(("http://", "https://")):
             acc.protect("unscannable download")
             continue
-        p = _abspath(s, cwd)
-        acc.add(Target("local", s, name=p, path=p))
+        matches = _expand(s, cwd)
+        if not matches:
+            acc.protect(f"unresolvable glob: {s}")
+        for p in matches:
+            acc.add(Target("local", s, name=p, path=p))
 
 
 def _download(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
@@ -501,6 +691,27 @@ def _bawwab_decision(words: list[str]) -> bool:
     return False
 
 
+def _interpreter_write(exe: str, args: list[str], redirs: list[str]) -> bool:
+    """An interpreter/editor whose arguments mention a sensitive path (it may rewrite it)."""
+    if re.fullmatch(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|tee|dd|install|rsync", exe):
+        pass
+    elif exe in _SHELLS:
+        pass
+    elif exe in ("sed", "gsed"):
+        if not any(a.startswith("-i") or a.startswith("--in-place") or (
+                a.startswith("-") and not a.startswith("--") and "i" in a[1:]) for a in args):
+            return False
+    elif exe in ("awk", "gawk"):
+        if not any(a == "inplace" or a.endswith("inplace") for a in args):
+            return False
+    elif exe == "jq":
+        if not redirs:
+            return False
+    else:
+        return False
+    return _mentions_sensitive(" ".join(args))
+
+
 def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
     if depth > 3:
         acc.protect("shell nesting too deep")
@@ -519,12 +730,27 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             continue
         if _bawwab_decision(words):
             acc.protect("bawwab approval via tool call")
-        exe = os.path.basename(words[0]).lstrip("(")
+        exe = os.path.basename(words[0])
         args = words[1:]
+        ci = _claude_index(words)
+        if ci is not None:
+            _claude(words[ci:], cwd, acc)
+            continue
+        # claude behind an unknown wrapper: scan its arguments too (the rest of the segment is still checked).
+        fb = next((i + 1 for i in range(1, len(words)) if os.path.basename(words[i]) == "claude"
+                   and any(w in ("mcp", "plugin", "plugins") for w in words[i + 1:])), None)
+        if fb is not None:
+            _claude(words[fb:], cwd, acc)
+        if (exe in ("mcp", "plugin", "plugins") or words[0].startswith("$") or "`" in words[0]) and \
+                _CLAUDE_SUBCMD.search(" ".join(words)):
+            acc.protect("unrecognised claude invocation")
+            continue
         if exe == "cd":
             dest = next((a for a in args if not a.startswith("-")), None)
             cwd = str(Path.home()) if dest is None else (cwd if dest == "-" else _abspath(dest, cwd))
             continue
+        if _interpreter_write(exe, args, redirs):
+            acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
         if exe in _SHELLS:
             for j, a in enumerate(args):
                 if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
@@ -534,8 +760,6 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
                     break
         elif exe == "eval":
             _bash(" ".join(args), cwd, acc, depth + 1)
-        elif exe == "claude":
-            _claude(args, cwd, acc)
         elif exe == "git":
             _git(args, cwd, acc)
         elif exe in ("cp", "mv", "ln", "rsync", "install"):
@@ -544,13 +768,14 @@ def _bash(cmd: str, cwd: str, acc: _Acc, depth: int = 0) -> None:
             _download(exe, args, cwd, acc)
         elif exe in ("tar", "bsdtar", "unzip"):
             _extract(exe, args, cwd, acc)
-        if exe in _READ_ONLY:
+        if exe in _READ_ONLY or (exe in ("sed", "gsed", "awk", "gawk") and not _interpreter_write(exe, args, redirs)
+                                 and not any(a.startswith("-i") or a == "inplace" for a in args)):
             continue
         for a in args:
             p = _abspath(a.split("=", 1)[-1] if a.startswith("-") or re.match(r"^\w+=", a) else a, cwd)
             if exe in _SHELL_WRITERS and install_dir(p):
                 acc.protect("shell write into install dir")
-            if _config_kind(p) and exe not in ("claude", "cd"):
+            if _config_kind(p):
                 acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
             if _bawwab_path(p):
                 acc.protect("bawwab state change")
@@ -602,10 +827,20 @@ def _servers(d: dict) -> dict[tuple[str, str], object]:
     return out
 
 
-_PROTECTED_KEYS = ("hooks", "disableAllHooks", "extraKnownMarketplaces", "enableAllProjectMcpServers")
+def _mcpjson_enabled(d: dict, top_dir: str) -> dict[tuple[str, str], None]:
+    """(project dir, server name) pairs from enabledMcpjsonServers (top level and projects.*)."""
+    out: dict[tuple[str, str], None] = {}
+    lists = [(top_dir, d.get("enabledMcpjsonServers"))]
+    projects = d.get("projects")
+    if isinstance(projects, dict):
+        lists += [(str(k), v.get("enabledMcpjsonServers")) for k, v in projects.items() if isinstance(v, dict)]
+    for proj, names in lists:
+        if isinstance(names, list):
+            out.update({(proj, str(n)): None for n in names})
+    return out
 
 
-def _config_change(inp: HookInput, path: str, acc: _Acc) -> None:
+def _config_change(inp: HookInput, path: str, kind: str, acc: _Acc) -> None:
     name = os.path.basename(path)
     try:
         new_text = _new_content(inp, path)
@@ -629,6 +864,10 @@ def _config_change(inp: HookInput, path: str, acc: _Acc) -> None:
     for k in _PROTECTED_KEYS:
         if new.get(k) != old.get(k):
             acc.protect(f"{k} changed in {name}")
+    if kind in ("settings", "claude_json"):
+        for k in _EXEC_SETTINGS:
+            if new.get(k) != old.get(k):
+                acc.protect(f"settings key executes code: {k}")
     old_servers = _servers(old)
     for key, spec in _servers(new).items():
         if spec == old_servers.get(key):
@@ -638,11 +877,28 @@ def _config_change(inp: HookInput, path: str, acc: _Acc) -> None:
             continue
         _spec_target(key[1], spec, inp.cwd, acc)
     newp, oldp = new.get("enabledPlugins"), old.get("enabledPlugins")
-    if isinstance(newp, dict):
-        oldp = oldp if isinstance(oldp, dict) else {}
-        for plugin, on in newp.items():
-            if on is True and oldp.get(plugin) is not True:
-                _plugin(str(plugin), acc)
+    newp = newp if isinstance(newp, dict) else {}
+    oldp = oldp if isinstance(oldp, dict) else {}
+    for plugin, on in newp.items():
+        if on is True and oldp.get(plugin) is not True:
+            _plugin(str(plugin), acc)
+    for plugin, on in oldp.items():
+        if on is True and _is_bawwab_plugin(plugin) and newp.get(plugin) is not True:
+            acc.protect("disables bawwab")
+    if kind == "settings" and os.path.dirname(path) != os.path.normpath(str(claude_home())):
+        top_dir = os.path.dirname(os.path.dirname(path))
+    else:
+        top_dir = inp.cwd
+    old_en = _mcpjson_enabled(old, top_dir)
+    for proj, server in _mcpjson_enabled(new, top_dir):
+        if (proj, server) in old_en:
+            continue
+        data = _read_json(Path(proj) / ".mcp.json")
+        spec = _servers(data).get(("", server)) if isinstance(data, dict) else None
+        if isinstance(spec, dict):
+            _spec_target(server, spec, proj, acc)
+        else:
+            acc.protect(f"unresolvable project MCP server: {server}")
 
 
 def _install_write(inp: HookInput, path: str, acc: _Acc) -> None:
@@ -672,8 +928,9 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
         acc.protect("bawwab state change")
         return
     for c in cands:
-        if _config_kind(c):
-            _config_change(inp, c, acc)
+        kind = _config_kind(c)
+        if kind:
+            _config_change(inp, c, kind, acc)
             return
     for c in cands:
         if install_dir(c):
