@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,8 +36,14 @@ BINARY_MAGIC = (
 # Source files that run if left unscanned: a NUL byte must not hide them (R27 minor 7).
 CODE_EXT = (
     ".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx", ".sh", ".bash", ".zsh", ".ps1",
-    ".rb", ".pl", ".php", ".bat", ".cmd",
+    ".rb", ".pl", ".php", ".bat", ".cmd", ".ksh", ".fish", ".command", ".csh", ".tcsh",
 )
+# Text files that name what runs: manifests, hook configs and install/shell scripts (round 4, R30d).
+LAUNCHER_BASES = {
+    "package.json", "pyproject.toml", "setup.py", "setup.cfg", "Makefile", "Dockerfile", ".mcp.json", "mcp.json",
+    "plugin.json", "hooks.json", "marketplace.json", "settings.json", "settings.local.json", "manifest.json",
+}
+SHELL_EXT = (".sh", ".bash", ".zsh", ".ksh", ".fish", ".command", ".csh", ".tcsh", ".ps1", ".bat", ".cmd")
 
 
 def _is_pe(head: bytes) -> bool:
@@ -94,6 +101,23 @@ def _is_code_name(rel: str, head: bytes) -> bool:
     return rel.endswith(CODE_EXT) or head.startswith(b"#!")
 
 
+def _is_launcher(rel: str) -> bool:
+    base = rel.rsplit("/", 1)[-1]
+    return base in LAUNCHER_BASES or rel.endswith(SHELL_EXT) or bool(re.search(r"(?:^|/)hooks/", rel))
+
+
+def _referenced(rel: str, launchers: list[ScanFile]) -> bool:
+    """A manifest, hook config or install script names this file as something to run (R30d)."""
+    if "/" in rel:
+        rx = re.compile(r"(?<![\w.-])(?:\./)?" + re.escape(rel) + r"(?![\w./-])")
+    else:
+        rx = re.compile(
+            r"(?:\./|/)" + re.escape(rel) + r"(?![\w./-])"
+            r"|\b(?:sh|bash|zsh|ksh|fish|source|exec)\s+" + re.escape(rel) + r"(?![\w./-])"
+        )
+    return any(rx.search(f.text) for f in launchers)
+
+
 def _binary_unscanned(n: int) -> list[Finding]:
     if not n:
         return []
@@ -111,12 +135,28 @@ def load_files(
 
     Oversized text files, source files with NUL bytes and the file cap give
     `files.truncated` (med). Files with a binary magic (executables, archives,
-    images) are aggregated into one low finding.
+    images) are aggregated into one low finding, unless a manifest, hook config or
+    install script names them as something to run (then `files.truncated`).
     """
     root = Path(root)
     files: list[ScanFile] = []
     findings: list[Finding] = []
+    # Non-executable files that look binary by magic (media, documents, archives); decided after
+    # every text file is read, because a file that a manifest/hook/install script runs is never
+    # taken as media (R30d): bash runs line 2 of a "%PDF" script.
+    pending: list[tuple[str, str, bool]] = []  # (rel, evidence if referenced, counts as binary otherwise)
     binaries = 0
+
+    def finish() -> tuple[list[ScanFile], list[Finding]]:
+        nonlocal binaries
+        launchers = [f for f in files if _is_launcher(f.rel)]
+        for rel, evidence, counted in pending:
+            if _referenced(rel, launchers):
+                findings.append(_truncated(evidence, rel))
+            elif counted:
+                binaries += 1
+        return files, findings + _binary_unscanned(binaries)
+
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for name in sorted(filenames):
@@ -126,15 +166,18 @@ def load_files(
             rel = path.relative_to(root).as_posix()
             if len(files) >= max_files:
                 findings.append(_truncated(f"file limit of {max_files} reached; remaining files not scanned"))
-                return files, findings + _binary_unscanned(binaries)
+                return finish()
             try:
                 size = path.stat().st_size
                 if size > max_file_bytes:
                     with path.open("rb") as fh:
                         head = fh.read(8192)
-                    # A code/script name is never taken as media: bash runs line 2 of a "%PDF" script (round 3).
+                    # A code/script name (or #!) is never taken as media: bash runs line 2 of a "%PDF" script.
                     if _is_binary(head) and not _is_code_name(rel, head):
-                        binaries += 1
+                        if _is_executable(head):  # a real executable: what a launcher runs, but not a script
+                            binaries += 1
+                        else:
+                            pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", True))
                     else:
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
                     continue
@@ -145,8 +188,10 @@ def load_files(
                 head = data[:8192]
                 if _is_code_name(rel, head):
                     findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
-                elif _is_executable(head):  # small images/archives stay silent; prebuilt executables are counted
+                elif _is_executable(head):  # prebuilt executables are counted
                     binaries += 1
+                else:  # small images/archives stay silent unless a launcher runs them
+                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", False))
                 continue
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
-    return files, findings + _binary_unscanned(binaries)
+    return finish()

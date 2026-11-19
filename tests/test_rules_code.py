@@ -184,7 +184,10 @@ def test_combo_requires_same_function(tmp_path):
     )
     findings = _scan_dir(tmp_path)
     assert ("credential-access", Severity.HIGH) in pairs(findings)
-    assert not any(f.rule == "exfil.combo" for f in findings)
+    # no same-function combo; the file can still reach the network (fetch), so the R27 floor
+    # backstop keeps a credential read there at MED (round 4, R30b)
+    assert ("exfil.combo", Severity.CRITICAL) not in pairs(findings)
+    assert ("exfil.combo", Severity.MED) in pairs(findings)
 
 
 def test_combo_same_function_js_and_py(tmp_path):

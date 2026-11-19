@@ -252,9 +252,11 @@ DENY_LOW = {("credential-access", Severity.LOW)}
 def test_deny_list_contexts_are_low():
     # R27 I4: a deny-list mention is listed as low, not dropped
     assert rules_on("const BAD = /\\.(keychain|keychain-db)$/;\nfunction f() { return fetch(u); }\n") == DENY_LOW
+    assert rules_on("const SENSITIVE_PATHS = [\n  '~/.ssh/id_rsa',\n  '~/.aws/credentials',\n];\n") == DENY_LOW
+    # R29: only a regex literal is combo-exempt; a string deny-list in a network-capable file hits the floor
     assert rules_on(
         "const SENSITIVE_PATHS = [\n  '~/.ssh/id_rsa',\n  '~/.aws/credentials',\n];\nfunction f() { return fetch(u); }\n"
-    ) == DENY_LOW
+    ) == DENY_LOW | {("exfil.combo", Severity.MED)}
     assert rules_on("const denyList = new Set(['.ssh/', '.netrc']);\n") == DENY_LOW
     assert rules_on("BLOCKED = {\n    '.ssh/id_rsa',\n}\nimport re\nPAT = re.compile(r'\\.ssh/')\n", "a.py") == DENY_LOW
     assert rules_on("const SENSITIVE = [\n  path.join(os.homedir(), '.ssh/id_rsa'),\n];\n") == DENY_LOW
