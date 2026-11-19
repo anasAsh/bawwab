@@ -68,7 +68,23 @@ def _migrate_4(conn: sqlite3.Connection) -> None:
         )
 
 
-_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4]
+def _migrate_5(conn: sqlite3.Connection) -> None:
+    """Effect check: first-run state, the accepted semantic state and the quarantine."""
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS effect_state (ident TEXT PRIMARY KEY, hash TEXT NOT NULL, scope TEXT NOT NULL,"
+        " status TEXT NOT NULL, key TEXT, ts TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS quarantine (qrow INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL,"
+        " ident TEXT NOT NULL, hash TEXT NOT NULL, key TEXT NOT NULL, item TEXT NOT NULL, report TEXT NOT NULL,"
+        " status TEXT NOT NULL, created_at TEXT NOT NULL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS quarantine_id ON quarantine(id)")
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4, _migrate_5]
+INIT_STATES = ("none", "scanned", "skipped")
 _VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
 
@@ -373,6 +389,84 @@ class Store:
 
     def get_baseline(self) -> dict[str, str]:
         return {r["ident"]: r["key"] for r in self._conn.execute("SELECT ident, key FROM baseline")}
+
+    # --- first run / effect check ---
+    def get_meta(self, k: str) -> str | None:
+        row = self._conn.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, k: str, v: str) -> None:
+        with self._tx():
+            self._conn.execute("INSERT OR REPLACE INTO meta(k, v) VALUES (?,?)", (k, v))
+
+    def init_state(self) -> str:
+        v = self.get_meta("init_state")
+        return v if v in INIT_STATES else "none"
+
+    def set_init_state(self, v: str) -> None:
+        if v not in INIT_STATES:
+            raise ValueError(v)
+        self.set_meta("init_state", v)
+        self.audit("init", state=v)
+
+    def effect_rows(self, scopes) -> dict[str, dict]:
+        scopes = list(scopes)
+        q = "SELECT * FROM effect_state WHERE scope IN (%s)" % ",".join("?" * len(scopes))
+        return {r["ident"]: dict(r) for r in self._conn.execute(q, scopes)}
+
+    def all_effect_rows(self) -> dict[str, dict]:
+        return {r["ident"]: dict(r) for r in self._conn.execute("SELECT * FROM effect_state")}
+
+    def put_effect(self, ident: str, hash_: str, scope: str, status: str, key: str | None = None,
+                   only_new: bool = False) -> None:
+        verb = "INSERT OR IGNORE" if only_new else "INSERT OR REPLACE"
+        with self._tx():
+            self._conn.execute(
+                f"{verb} INTO effect_state(ident, hash, scope, status, key, ts) VALUES (?,?,?,?,?,?)",
+                (ident, hash_, scope, status, key, _iso(_now())),
+            )
+
+    def drop_effect(self, ident: str) -> None:
+        with self._tx():
+            self._conn.execute("DELETE FROM effect_state WHERE ident=?", (ident,))
+
+    def promote_provisional(self, status: str) -> int:
+        with self._tx():
+            return self._conn.execute(
+                "UPDATE effect_state SET status=?, ts=? WHERE status='provisional'", (status, _iso(_now()))
+            ).rowcount
+
+    def add_quarantine(self, qid: str, ident: str, hash_: str, key: str, item: dict, report: dict) -> None:
+        with self._tx():
+            self._conn.execute(
+                "INSERT INTO quarantine(id, ident, hash, key, item, report, status, created_at)"
+                " VALUES (?,?,?,?,?,?, 'active', ?)",
+                (qid, ident, hash_, key, json.dumps(item), json.dumps(report), _iso(_now())),
+            )
+
+    def active_quarantine(self) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM quarantine WHERE status='active' ORDER BY qrow").fetchall()
+        return [dict(r) for r in rows]
+
+    def quarantine_by_id(self, qid: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM quarantine WHERE id=? ORDER BY (status='active') DESC, qrow DESC LIMIT 1",
+            (qid.strip().upper(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def set_quarantine(self, qrow: int, status: str | None = None, qid: str | None = None) -> None:
+        with self._tx():
+            if status is not None:
+                self._conn.execute("UPDATE quarantine SET status=? WHERE qrow=?", (status, qrow))
+            if qid is not None:
+                self._conn.execute("UPDATE quarantine SET id=? WHERE qrow=?", (qid, qrow))
+
+    def pending_expired(self, pid: str, now: datetime | None = None) -> bool:
+        row = self._conn.execute("SELECT expires_at, status FROM pending WHERE id=?", (pid,)).fetchone()
+        if row is None or row["status"] != "pending":
+            return True
+        return datetime.fromisoformat(row["expires_at"]) <= _utc(now or _now())
 
     # --- snapshots ---
     def put_snapshot(self, name: str, key: str, snap: dict) -> None:

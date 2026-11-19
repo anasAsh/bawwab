@@ -1024,7 +1024,7 @@ def test_hook_prefilter_raising_takes_slow_path(monkeypatch, capsys):
         raise ValueError("embedded null byte")
 
     monkeypatch.setattr(hook, "prefilter", boom)
-    monkeypatch.setattr(hook, "_run_gate", lambda raw: calls.append(raw) or None)
+    monkeypatch.setattr(hook, "_run_gate", lambda raw, **kw: calls.append(raw) or None)
     monkeypatch.setattr(hook.sys, "stdin", __import__("io").StringIO(json.dumps(
         {"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/tmp"})))
     assert hook.gate() == 0

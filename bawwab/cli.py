@@ -38,6 +38,9 @@ def _build() -> argparse.ArgumentParser:
     i.add_argument("--background", action="store_true", help="run the scan in this process (used by the hook's child)")
     i.add_argument("--cwd", help="project directory (default: from hook JSON on stdin, else the current directory)")
     sub.add_parser("notify", help="UserPromptSubmit hook: print queued warnings")
+    sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
+    fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
+    fx.add_argument("--cwd", help="project directory (default: the current directory)")
     return p
 
 
@@ -76,10 +79,18 @@ def _scan(args) -> int:
 def _decide(args) -> int:
     from bawwab.store import open_store
 
+    from bawwab import effects
+
     store = open_store()
+    q = store.quarantine_by_id(args.id)
     if args.cmd == "approve":
         ok, msg = store.approve(args.id, force=args.force)
         verb = "approved"
+        if ok and q is not None:
+            effects.quarantined(store)  # settle it now: the gate stops blocking at once
+    elif q is not None and q["status"] == "active":
+        ok, msg = effects.reject_quarantined(args.id, store)
+        verb = "rejected and removed:"
     else:
         ok, msg = store.reject(args.id)
         verb = "rejected"
@@ -99,6 +110,15 @@ def _gate() -> int:
         return 0
     ti = data.get("tool_input")
     raw = (str(data.get("tool_name") or ""), ti if isinstance(ti, dict) else {}, str(data.get("cwd") or os.getcwd()))
+    try:  # effect check + quarantine first: while anything is quarantined, only read-only tools run
+        from bawwab.effects import pre_tool_decision
+
+        out = pre_tool_decision(raw[0], Path(raw[2]))
+    except Exception:  # noqa: BLE001 - refresh records its own failures as a quarantine; this is a bawwab bug
+        out = None
+    if out is not None:
+        print(json.dumps(out))
+        return 0
     try:
         from bawwab.gate.gate import HookInput, run_gate
 
@@ -170,6 +190,45 @@ def _notify() -> int:
     return 0
 
 
+def _hook_json() -> dict | None:
+    try:
+        data = json.loads(sys.stdin.read())
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _post() -> int:
+    """PostToolUse hook. Always exits 0; prints {"decision": "block", ...} when something new is quarantined."""
+    if os.environ.get("BAWWAB_CHILD", "") not in ("", "0"):
+        return 0
+    data = _hook_json()
+    if data is None:
+        return 0
+    try:
+        from bawwab.effects import post_tool_decision
+
+        out = post_tool_decision(Path(str(data.get("cwd") or os.getcwd())))
+    except Exception:  # noqa: BLE001 - refresh records its own failures as a quarantine
+        out = None
+    if out is not None:
+        print(json.dumps(out))
+    return 0
+
+
+def _effects(args) -> int:
+    from bawwab import effects
+
+    cwd = Path(args.cwd) if args.cwd else Path.cwd()
+    effects.refresh(cwd, force=True)
+    entries = effects.quarantined()
+    if not entries:
+        print("bawwab: nothing is quarantined")
+        return 0
+    print(effects.quarantine_text(entries))
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = _build().parse_args(argv)
@@ -181,7 +240,11 @@ def main(argv: list[str] | None = None) -> int:
         return _inventory(args)
     if args.cmd == "notify":
         return _notify()
+    if args.cmd == "post":
+        return _post()
     try:
+        if args.cmd == "effects":
+            return _effects(args)
         if args.cmd == "scan":
             return _scan(args)
         if args.cmd in ("approve", "reject"):

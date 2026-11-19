@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Bawwab Claude Code hook entry point. Stdlib only.
 
-Usage: bawwab_hook.py <subcommand>   (gate | inventory | notify)
+Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify)
 
-`gate` (PreToolUse): a cheap pre-filter lets ordinary tool calls through with no
-output and without importing bawwab. Install-like calls are handed to
-`bawwab gate`; if that fails, the call is denied (fail closed).
+`gate` (PreToolUse, every tool): a cheap pre-filter and the effect-check fingerprint
+(hooks/fingerprint.py) let ordinary calls through with no output and without importing
+bawwab. `bawwab gate` runs when the call is install-like, when the watched config really
+changed, or (for any non-read-only tool) while something is quarantined. If it fails, an
+install-like call or a quarantine is denied (fail closed); an ordinary call is not.
+
+`post` (PostToolUse, Bash|Write|Edit|MultiEdit|NotebookEdit): when the fingerprint moved,
+`bawwab post` runs the effect check and blocks if something new was quarantined.
+
+A timed-out effect check leaves $BAWWAB_HOME/effects.error, which bawwab turns into a
+quarantine (fail closed).
 
 `inventory` (SessionStart) and `notify` (UserPromptSubmit) never block: any failure exits 0 silently.
 `notify` first checks for $BAWWAB_HOME/warnings.flag and does nothing (no bawwab import) when it is absent.
@@ -33,6 +41,47 @@ def _load_prefilter():
 
 prefilter = _load_prefilter()
 
+READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"})
+POST_TOOLS = frozenset({"Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"})
+
+
+def _load_fingerprint():
+    import importlib.util
+
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fingerprint.py")
+    spec = importlib.util.spec_from_file_location("_bawwab_fingerprint", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _bawwab_home() -> str:
+    return os.environ.get("BAWWAB_HOME") or os.path.join(os.path.expanduser("~"), ".bawwab")
+
+
+def _config_changed(cwd: str) -> bool:
+    """Effect-check fingerprint: False only when nothing that matters changed (any doubt: True)."""
+    try:
+        return _load_fingerprint().check(cwd, os.path.expanduser("~"), _bawwab_home()) == "changed"
+    except Exception:  # noqa: BLE001 - can't tell: let bawwab look
+        return True
+
+
+def _quarantine_flag() -> bool:
+    return os.path.exists(os.path.join(_bawwab_home(), "quarantine.flag"))
+
+
+def _mark_effects_error(reason: str) -> None:
+    """The effect check could not finish: leave a marker bawwab turns into a quarantine, and the flag."""
+    home = _bawwab_home()
+    try:
+        os.makedirs(home, mode=0o700, exist_ok=True)
+        with open(os.path.join(home, "effects.error"), "w") as f:
+            f.write(reason)
+        open(os.path.join(home, "quarantine.flag"), "a").close()
+    except OSError:
+        pass
+
 
 def _deny(reason: str) -> str:
     return json.dumps({"hookSpecificOutput": {
@@ -50,28 +99,40 @@ def _bawwab_cmd(sub: str) -> list[str]:
     return ["uv", "run", "--project", root, "--quiet", "bawwab", sub]
 
 
-def _run_gate(raw: str) -> str | None:
+def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
+    """(stdout JSON or None, failure description or None)."""
     import subprocess
 
-    cmd = _bawwab_cmd("gate")
-    unavailable = "bawwab error: gate unavailable"
     try:
-        r = subprocess.run(cmd, input=raw, capture_output=True, text=True, timeout=CHILD_TIMEOUT_S)
+        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=CHILD_TIMEOUT_S)
     except subprocess.TimeoutExpired:
-        return _deny(f"{unavailable} (timed out)")
+        return None, "timed out"
     except OSError as e:
-        return _deny(f"{unavailable} ({type(e).__name__})")
+        return None, type(e).__name__
     if r.returncode != 0:
-        return _deny(f"{unavailable} (exit {r.returncode})")
+        return None, f"exit {r.returncode}"
     out = r.stdout.strip()
     if not out:
-        return None
+        return None, None
     try:
         if not isinstance(json.loads(out), dict):
             raise ValueError
     except ValueError:
-        return _deny(f"{unavailable} (invalid output)")
-    return out
+        return None, "invalid output"
+    return out, None
+
+
+def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> str | None:
+    out, err = _run_child("gate", raw)
+    if err is None:
+        return out
+    if effects and err == "timed out":
+        _mark_effects_error(f"effect check timed out after {CHILD_TIMEOUT_S} s")
+        return _deny("bawwab: the effect check timed out; tool calls are blocked until the user runs "
+                     "`! bawwab effects` and decides (fail closed)")
+    if deny_on_error:
+        return _deny(f"bawwab error: gate unavailable ({err})")
+    return None
 
 
 def gate() -> int:
@@ -86,12 +147,38 @@ def gate() -> int:
         install_like = prefilter(data)
     except Exception:  # noqa: BLE001 - can't tell (e.g. NUL in a path): treat as install-like, fail closed
         install_like = True
-    if not install_like:
+    cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
+    changed = _config_changed(cwd)
+    blocked = data.get("tool_name") not in READ_ONLY_TOOLS and _quarantine_flag()
+    if not (install_like or changed or blocked):
         return 0
     try:
-        out = _run_gate(raw)
-    except Exception as e:  # noqa: BLE001 - the pre-filter matched: fail closed
-        out = _deny(f"bawwab error: gate unavailable ({type(e).__name__})")
+        # a broken bawwab never blocks an ordinary call; it does block installs and an active quarantine
+        out = _run_gate(raw, deny_on_error=bool(install_like or blocked), effects=changed)
+    except Exception as e:  # noqa: BLE001
+        out = _deny(f"bawwab error: gate unavailable ({type(e).__name__})") if (install_like or blocked) else None
+    if out:
+        print(out)
+    return 0
+
+
+def post() -> int:
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return 0
+    if not isinstance(data, dict) or data.get("tool_name") not in POST_TOOLS:
+        return 0
+    cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
+    if not _config_changed(cwd):
+        return 0
+    out, err = _run_child("post", raw)
+    if err == "timed out":
+        _mark_effects_error(f"effect check timed out after {CHILD_TIMEOUT_S} s")
+        out = json.dumps({"decision": "block", "reason": (
+            "bawwab: the effect check timed out; tool calls are blocked until the user runs "
+            "`! bawwab effects` and decides (fail closed)")})
     if out:
         print(out)
     return 0
@@ -116,8 +203,7 @@ def _passthrough(sub: str, timeout: int) -> int:
 
 
 def _flag_present() -> bool:
-    home = os.environ.get("BAWWAB_HOME") or os.path.join(os.path.expanduser("~"), ".bawwab")
-    return os.path.exists(os.path.join(home, "warnings.flag"))
+    return os.path.exists(os.path.join(_bawwab_home(), "warnings.flag"))
 
 
 def main(argv: list[str]) -> int:
@@ -127,6 +213,11 @@ def main(argv: list[str]) -> int:
         try:
             return gate()
         except Exception:  # noqa: BLE001 - only reached before dispatch (bad input): never block
+            return 0
+    if argv[1:2] == ["post"]:
+        try:
+            return post()
+        except Exception:  # noqa: BLE001 - never break the tool result
             return 0
     if argv[1:2] == ["inventory"]:
         return _passthrough("inventory", 60)
