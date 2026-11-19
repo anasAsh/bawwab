@@ -37,7 +37,7 @@ def test_child_env_short_circuits():
 
 
 def test_unknown_subcommand_silent():
-    for args in (("inventory",), ("notify",), ()):
+    for args in (("bogus",), ()):
         r = run(INSTALL, *args)
         assert r.returncode == 0 and r.stdout == ""
 
