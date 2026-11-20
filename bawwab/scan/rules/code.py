@@ -288,22 +288,9 @@ FB_EVAL_FETCH_RE = re.compile(
     re.I,
 )
 
-CRED_RES = [
-    r"\.ssh/", r"\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\b", r"\.aws/credentials",
-    # anchored: "oauth.credentials.json" is not Claude's credentials file (Task 10c)
-    r"(?<![\w.-])\.credentials\.json",
-    # Segment-joined key paths: path.join(home, '.ssh', 'id_x'), Path.home() / '.ssh' / 'id_x' (round 4, R30e).
-    r"\.ssh['\"`]\s*[,/+]\s*[frbu]?['\"`]/?id_",
-    # `options?.env` is optional chaining, not a .env file (Task 10c)
-    r"(?<![\w.?])\.env\b", r"\.claude\.json",
-    r"\.npmrc\b", r"\.netrc\b", r"\.pypirc\b",
-    # "--use-mock-keychain" is a Chrome flag; dump-keychain / login.keychain-db still count (R42)
-    r"security\s+find-generic-password", r"(?<!mock-)\bkeychain\b",
-    r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
-    r"\.mozilla/firefox", r"\bLogin Data\b",
-    # serialised environments; whole-environment copies are found on the syntax tree (R45, envflow.py)
-    r"\bjson\.dumps\(\s*os\.environ\b", r"\bstr\(\s*os\.environ\s*\)", r"JSON\.stringify\(\s*process\.env\b",
-]
+# Pattern catalogs live in data/patterns.json (R52): data, not code, so bawwab's own source does not match them.
+_PATTERNS = json.loads(open(join(dirname(__file__), "data", "patterns.json"), encoding="utf-8").read())
+CRED_RES = [e["re"] for e in _PATTERNS["credential_paths"]]
 DOTENV_RE = re.compile(
     r"\b(?:load_dotenv|dotenv_values|find_dotenv)\b|require\(\s*['\"]dotenv['\"]\s*\)"
     r"|import\s+['\"]dotenv(?:/config)?['\"]|\bfrom\s+['\"]dotenv['\"]|^\s*(?:import|from)\s+dotenv\b",
@@ -313,14 +300,8 @@ CRED_RE = re.compile("|".join(CRED_RES), re.I)
 # Copies of the whole environment (Task 10c B), as text: only for files that do not parse (R45 5).
 # Parsed files are read on the tree (envflow.py). Serialising the env (json.dumps, JSON.stringify,
 # str) stays a plain credential hit.
-ENV_COPY_RE = re.compile(
-    r"dict\(\s*os\.environ\s*\)|os\.environ\.(?:copy|items)\(\)|Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
-    re.I,
-)
-SPREAD_COPY_RE = re.compile(
-    r"\{\s*\.\.\.\s*process\.env\s*[,}]|\{\s*\*\*\s*os\.environ\s*[,}]|Object\.assign\(\s*\{\s*\}\s*,\s*process\.env\s*[,)]",
-    re.I,
-)
+ENV_COPY_RE = re.compile("|".join(e["re"] for e in _PATTERNS["env_copies"]), re.I)
+SPREAD_COPY_RE = re.compile("|".join(e["re"] for e in _PATTERNS["env_spreads"]), re.I)
 # References into a .claude dir, as "/.claude/<sub>" or path.join(..., ".claude", "<sub>") (R26d, R27 I5).
 # ".claude/x", or ".claude" then a string join: path.join(..., '.claude', 'x'), '.claude' + '/x',
 # pathlib Path.home() / '.claude' / 'x' (round 3).
@@ -343,12 +324,7 @@ CONTAINER_CALLEES = {"Set", "Array", "Array.of", "Map", "set", "frozenset", "lis
 PATH_CALLEES = {"path.join", "path.resolve", "path.posix.join", "os.path.join", "os.path.expanduser", "Path", "String", "str"}
 COLLECTION_METHODS = {"add", "has", "includes", "push", "test", "match", "indexOf", "some", "append", "extend", "update", "set"}
 _DECL_TAIL_RE = re.compile(r"""(?:['"]?([\w$.]+)['"]?\s*[:=]\s*)?(?:new\s+)?([\w$.]*)\s*\(?\s*$""")
-EXFIL_HOST_RE = re.compile(
-    r"webhook\.site|requestbin|pipedream\.net|(?<![\w-])pipedream(?![\w-]*\.)|ngrok|pastebin|transfer\.sh"
-    r"|discord(?:app)?\.com/api/webhooks|api\.telegram\.org/bot"
-    r"|https?://(?!127\.|0\.0\.0\.0)\d{1,3}(?:\.\d{1,3}){3}",
-    re.I,
-)
+EXFIL_HOST_RE = re.compile("|".join(e["re"] for e in _PATTERNS["exfil_hosts"]), re.I)
 NET_RE = re.compile(
     r"\b(?:fetch|axios|XMLHttpRequest|urlopen|urllib|httpx|requests\.\w+|http\.request|https\.request|http\.get|https\.get|curl|wget|socket)\b"
     r"|\bgot\(|Invoke-WebRequest|\bnc\s|\b(?:net|tls)\.(?:connect|createConnection)\b"

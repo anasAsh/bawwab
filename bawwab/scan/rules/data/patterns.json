@@ -1,0 +1,121 @@
+{
+ "_comment": "Pattern catalogs for bawwab/scan/rules/code.py, kept as data (R52) so the scanner's own source does not read as code that touches these paths. Python regex syntax.",
+ "credential_paths": [
+  {
+   "re": "\\.ssh/"
+  },
+  {
+   "re": "\\bid_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?\\b"
+  },
+  {
+   "re": "\\.aws/credentials"
+  },
+  {
+   "re": "(?<![\\w.-])\\.credentials\\.json",
+   "note": "anchored: \"oauth.credentials.json\" is not Claude's credentials file (Task 10c)"
+  },
+  {
+   "re": "\\.ssh['\\\"`]\\s*[,/+]\\s*[frbu]?['\\\"`]/?id_",
+   "note": "segment-joined key paths: path.join(home, '.ssh', 'id_x'), Path.home() / '.ssh' / 'id_x' (round 4, R30e)"
+  },
+  {
+   "re": "(?<![\\w.?])\\.env\\b",
+   "note": "`options?.env` is optional chaining, not a .env file (Task 10c)"
+  },
+  {
+   "re": "\\.claude\\.json"
+  },
+  {
+   "re": "\\.npmrc\\b"
+  },
+  {
+   "re": "\\.netrc\\b"
+  },
+  {
+   "re": "\\.pypirc\\b"
+  },
+  {
+   "re": "security\\s+find-generic-password"
+  },
+  {
+   "re": "(?<!mock-)\\bkeychain\\b",
+   "note": "\"--use-mock-keychain\" is a Chrome flag; dump-keychain / login.keychain-db still count (R42)"
+  },
+  {
+   "re": "\\.config/(?:google-chrome|chromium|BraveSoftware)"
+  },
+  {
+   "re": "Application Support/(?:Google/Chrome|Firefox)"
+  },
+  {
+   "re": "\\.mozilla/firefox"
+  },
+  {
+   "re": "\\bLogin Data\\b"
+  },
+  {
+   "re": "\\bjson\\.dumps\\(\\s*os\\.environ\\b",
+   "note": "serialised environments; whole-environment copies are found on the syntax tree (R45, envflow.py)"
+  },
+  {
+   "re": "\\bstr\\(\\s*os\\.environ\\s*\\)"
+  },
+  {
+   "re": "JSON\\.stringify\\(\\s*process\\.env\\b"
+  }
+ ],
+ "exfil_hosts": [
+  {
+   "re": "webhook\\.site"
+  },
+  {
+   "re": "requestbin"
+  },
+  {
+   "re": "pipedream\\.net"
+  },
+  {
+   "re": "(?<![\\w-])pipedream(?![\\w-]*\\.)"
+  },
+  {
+   "re": "ngrok"
+  },
+  {
+   "re": "pastebin"
+  },
+  {
+   "re": "transfer\\.sh"
+  },
+  {
+   "re": "discord(?:app)?\\.com/api/webhooks"
+  },
+  {
+   "re": "api\\.telegram\\.org/bot"
+  },
+  {
+   "re": "https?://(?!127\\.|0\\.0\\.0\\.0)\\d{1,3}(?:\\.\\d{1,3}){3}"
+  }
+ ],
+ "env_copies": [
+  {
+   "re": "dict\\(\\s*os\\.environ\\s*\\)"
+  },
+  {
+   "re": "os\\.environ\\.(?:copy|items)\\(\\)"
+  },
+  {
+   "re": "Object\\.(?:entries|keys|values)\\(\\s*process\\.env\\s*\\)"
+  }
+ ],
+ "env_spreads": [
+  {
+   "re": "\\{\\s*\\.\\.\\.\\s*process\\.env\\s*[,}]"
+  },
+  {
+   "re": "\\{\\s*\\*\\*\\s*os\\.environ\\s*[,}]"
+  },
+  {
+   "re": "Object\\.assign\\(\\s*\\{\\s*\\}\\s*,\\s*process\\.env\\s*[,)]"
+  }
+ ]
+}

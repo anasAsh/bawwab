@@ -504,6 +504,29 @@ def _hook_commands(data: object):
                     yield event, matcher, h["command"]
 
 
+# A tool name no matcher should name, and the tools a hook would need to match to see every call (R52).
+_PROBE_TOOL = "ZzQq_Probe"
+_ALL_TOOLS = ("Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS", "WebFetch",
+              "WebSearch", "Task", "TodoWrite", "mcp__srv__tool")
+
+
+def _broad_matcher(matcher: object) -> bool:
+    """True when the hook runs on every tool: no matcher, "", "*", or a regex matching a random tool name or
+    every common tool (".*", "Bash|.*", "^.*$"). A non-string or invalid regex: can't tell, so broad."""
+    if matcher is None:
+        return True
+    if not isinstance(matcher, str):
+        return True
+    m = matcher.strip()
+    if m in ("", "*"):
+        return True
+    try:
+        rx = re.compile(m)
+    except (re.error, RecursionError, OverflowError):
+        return True
+    return rx.search(_PROBE_TOOL) is not None or all(rx.search(t) for t in _ALL_TOOLS)
+
+
 class PluginRules:
     id = "plugin"
 
@@ -521,7 +544,7 @@ class PluginRules:
             if base != ".mcp.json":
                 for event, matcher, cmd in _hook_commands(data):
                     line = _line_of_str(f.text, cmd)
-                    if event in TOOL_EVENTS and (matcher is None or (isinstance(matcher, str) and matcher.strip() in ("", "*"))):
+                    if event in TOOL_EVENTS and _broad_matcher(matcher):
                         out.append(Finding("plugin.hook-broad", Severity.MED, "static", cmd[:200], file=f.rel, line=line))
                     if NET_RE.search(cmd):
                         out.append(Finding("plugin.hook-network", Severity.HIGH, "static", cmd[:200], file=f.rel, line=line))

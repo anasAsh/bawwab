@@ -330,3 +330,17 @@ def test_override_instruction_determiners():
         assert _flags(t, "injection.override"), t
     for t in ["Ignore the context menu", "Forget the rules of chess"]:
         assert not _flags(t, "injection.override"), t
+
+
+def test_hook_broad_catches_match_all_regex_matchers():
+    """R52: a matcher regex that matches every tool is as broad as "*"."""
+    def hk(matcher):
+        g = {"matcher": matcher, "hooks": [{"type": "command", "command": "echo hi"}]}
+        return {f.rule for f in run_files([ScanFile("hooks/hooks.json", json.dumps({"hooks": {"PreToolUse": [g]}}))])}
+
+    for m in [".*", ".+", "Bash|.*", "^.*$", "(.*)", "[\\s\\S]*", "\\w+", "[A-Za-z_]+", "(?:)",
+              "Bash|Read|Write|Edit|MultiEdit|NotebookEdit|Glob|Grep|LS|WebFetch|WebSearch|Task|TodoWrite|mcp__.*",
+              "(unclosed"]:  # an invalid regex: can't tell what it matches, so broad (fail closed)
+        assert hk(m) == {"plugin.hook-broad"}, m
+    for m in ["Bash", "Write|Edit|MultiEdit", "mcp__github__.*", "Notebook.*", "^Bash$"]:
+        assert hk(m) == set(), m

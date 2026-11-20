@@ -328,6 +328,9 @@ def _effects(args) -> int:
         effects.retry(cwd)
     else:
         effects.refresh(cwd, force=True)
+    own = effects.self_text()
+    if own:
+        print(own)
     entries = effects.quarantined()
     if not entries:
         print("bawwab: nothing is quarantined")

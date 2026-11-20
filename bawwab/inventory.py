@@ -13,6 +13,7 @@ from bawwab.agents import ADAPTERS, InstalledItem
 from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
 from bawwab.paths import bawwab_home
+from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self
 from bawwab.report import sanitise
 from bawwab.scan import TRANSIENT_RULES, needs_recheck, scan_target
 from bawwab.trust import cross_server_findings
@@ -99,6 +100,13 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
         t = item.target
         fp = _fingerprint(t)
         seen = store.get_inventory_seen(item.ident)
+        if item.kind == "plugin" and is_self(t.path):  # R52: the running code; reported once per version
+            key = f"{SELF_KEY_PREFIX}{fp or ''}"
+            if fp is None or seen is None or seen[1] != key:
+                _warn(store, f"bawwab: {_lbl(item.label)} is {SELF_LABEL}", warnings)
+                if fp is not None:
+                    store.put_inventory_seen(item.ident, fp, key, "self")
+            continue
         if fp is not None and seen is not None and seen[0] == fp:
             if seen[2] == Verdict.CLEAN.value:
                 store.add_baseline(item.ident, seen[1])

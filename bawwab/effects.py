@@ -29,6 +29,7 @@ from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
 from bawwab.report import sanitise
 from bawwab.scan import TRANSIENT_RULES, scan_target, synthetic_report
+from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self
 from bawwab.store import Store, open_store, report_from_dict, report_to_dict
 from bawwab.types import ScanReport, Target, Verdict
 
@@ -309,7 +310,12 @@ def _accepted_now(store: Store, ident: str, current: dict[str, str]) -> bool:
 
 
 def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) -> tuple[bool, ScanReport]:
-    """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean."""
+    """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean, or bawwab's own
+    installed plugin recognised by its running code (R52: accepted, not scanned; `bawwab effects` lists it)."""
+    if it.category == "plugins" and it.target is not None and is_self(it.target.path):
+        store.audit("effects.self", ident=it.ident, hash=it.hash)
+        return True, synthetic_report(f"{it.label}: {SELF_LABEL}", f"{SELF_KEY_PREFIX}{it.hash}",
+                                      Target("local", it.ident, name=it.label), rule="effects.self")
     if it.category == "toggles":
         r = _unscannable_report(it)
         if store.is_rejected(r.key):
@@ -636,6 +642,13 @@ def _summary(q: dict) -> str:
     force = " --force" if verdict == "MALICIOUS" else ""
     lines.append(f"    keep it:  ! bawwab approve {qid}{force}      remove it:  ! bawwab reject {qid}")
     return "\n".join(lines)
+
+
+def self_text(store: Store | None = None) -> str:
+    """Lines for bawwab's own plugin, accepted as the running code without a scan (shown, never hidden)."""
+    store = store or open_store()
+    names = sorted(i for i, r in store.all_effect_rows().items() if (r["key"] or "").startswith(SELF_KEY_PREFIX))
+    return "\n".join(f"bawwab: {sanitise(i.rsplit(':', 1)[-1], 200)} is {SELF_LABEL}" for i in names)
 
 
 def quarantine_text(entries: list[dict]) -> str:

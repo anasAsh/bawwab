@@ -106,10 +106,64 @@ def _child_target(spec: dict, root: Path) -> Target | None:
     cmd, args = spec.get("command"), spec.get("args", [])
     if not isinstance(cmd, str) or not isinstance(args, list) or not all(isinstance(a, str) for a in args):
         return None
+    if Path(cmd).name == "uv" and args[:1] == ["run"]:
+        return _uv_project_script(sub(cmd), [sub(a) for a in args], root)
     t = target_from_command(sub(cmd), [sub(a) for a in args])
     if t is not None and t.kind == "local" and not (t.path and Path(t.path).is_dir()):
         return None
     return t
+
+
+# `uv run` flags that take no value and don't change what runs; any other flag: unresolved (fail closed)
+_UV_RUN_PLAIN_FLAGS = {"--quiet", "-q", "--frozen", "--locked", "--offline", "--no-sync", "--isolated", "--no-progress"}
+
+
+def _uv_project_script(cmd: str, args: list[str], root: Path) -> Target | None:
+    """`uv run --project <dir inside the plugin> [plain flags] <script>`: the project's own console script,
+    declared in <dir>/pyproject.toml [project.scripts] as module:function with the module inside <dir>.
+    Anything else (no --project, a dir outside the plugin, unknown flags, an undeclared script): None."""
+    import os
+    import tomllib
+
+    a, project, rest = args[1:], None, []
+    i = 0
+    while i < len(a):
+        x = a[i]
+        if x == "--project" and i + 1 < len(a) and project is None:
+            project, i = a[i + 1], i + 2
+        elif x.startswith("--project=") and project is None:
+            project, i = x.split("=", 1)[1], i + 1
+        elif x in _UV_RUN_PLAIN_FLAGS:
+            i += 1
+        elif x.startswith("-"):
+            return None
+        else:
+            rest = a[i:]
+            break
+    if not project or not rest:
+        return None
+    base = os.path.realpath(root)
+    proj = os.path.realpath(project if os.path.isabs(project) else os.path.join(base, project))
+    if proj != base and not proj.startswith(base + os.sep):
+        return None
+    try:
+        with open(os.path.join(proj, "pyproject.toml"), "rb") as fh:
+            entry = tomllib.load(fh)["project"]["scripts"][rest[0]]
+        module = entry.split(":", 1)[0].strip()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    rel = module.replace(".", os.sep)
+    if not module or not any(os.path.isfile(os.path.join(proj, rel + ext)) for ext in (".py", os.sep + "__init__.py")):
+        return None
+    return Target("local", " ".join([cmd, *args]), name=rest[0], path=proj)
+
+
+def _is_plugin_root(t: Target | None, root: Path) -> bool:
+    """A bundled server whose code is the plugin's own tree: those files are already in this scan."""
+    import os
+
+    return t is not None and t.kind == "local" and bool(t.path) and \
+        os.path.realpath(t.path) == os.path.realpath(root)
 
 
 def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[Finding]:
@@ -127,6 +181,8 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[F
     prefetched = ctx.prefetched if f is ctx.prefetch_for else None
     resolved = prefetched if prefetched is not None else _resolve_children(f, servers, ctx)
     for name, (t, cf) in resolved.items():
+        if cf is None and _is_plugin_root(t, f.root):
+            continue  # scanned as part of the plugin itself
         if t is None:
             out.append(Finding(
                 "plugin.unresolved-server", Severity.MED, "gate",
@@ -151,6 +207,9 @@ def _resolve_children(f: Fetched, servers: dict[str, dict], ctx: _Ctx) -> dict[s
         if t is None:
             out[name] = (None, None)
             continue
+        if _is_plugin_root(t, f.root):
+            out[name] = (t, None)
+            continue
         try:
             out[name] = (t, fetch_target(t, ctx.fetch_opts))
         except FetchError as e:
@@ -168,7 +227,9 @@ def _prefetch_children(f: Fetched, ctx: _Ctx) -> str:
     ctx.prefetch_for, ctx.prefetched = f, _resolve_children(f, servers, ctx)
     lines = []
     for name, (t, cf) in ctx.prefetched.items():
-        if isinstance(cf, Fetched):
+        if cf is None and _is_plugin_root(t, f.root):
+            lines.append(f"{name}=plugin-root")  # covered by the plugin's own content hash
+        elif isinstance(cf, Fetched):
             lines.append(f"{name}@{cf.resolved_version}#{cf.content_hash}")
             if _remote_children(cf):  # nested drift is not in this key: never serve from cache
                 ctx.no_cache = True

@@ -68,7 +68,9 @@ def test_plugin_manifest():
 def test_marketplace_manifest():
     m = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
     assert m["name"] == "bawwab" and m["owner"]["name"]
-    assert [(p["name"], p["source"]) for p in m["plugins"]] == [("bawwab", "./")]
+    # R51: the plugin is the runtime-only tree (scripts/build_plugin.py) published to the `plugin` branch
+    assert [(p["name"], p["source"]) for p in m["plugins"]] == [
+        ("bawwab", {"source": "github", "repo": "anasAsh/bawwab", "ref": "plugin"})]
 
 
 def test_hooks_manifest():
