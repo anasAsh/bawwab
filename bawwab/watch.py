@@ -16,12 +16,14 @@ New holds and quarantines raise a desktop notification (notify-send / osascript,
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -160,6 +162,19 @@ def check_claude_code(scan=None, store: Store | None = None) -> list[str]:
     return effects.refresh(claude_scope_dir(), scan, store)
 
 
+@contextmanager
+def _watch_lock():
+    """The watcher's own lock (not effects.lock: a long scan here must never hold up Claude Code's hook)."""
+    p = bawwab_home() / "watch.lock"
+    p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(p, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 # ------------------------------------------------------------------ notifications
 
 def notify(title: str, body: str) -> bool:
@@ -271,7 +286,8 @@ class Watcher:
         if getattr(adapter, "gated", True):
             return check_claude_code(self.scan, self.store)
         warned: list[str] = []
-        ids = check_agent(adapter, self.projects, self.scan, self.store, warned)
+        with _watch_lock():  # two watchers (a service and a --once) never hold the same item twice
+            ids = check_agent(adapter, self.projects, self.scan, self.store, warned)
         if warned:
             title = f"bawwab: {adapter.title}: not clean (warned only, at your security level)"
             self.log(f"{title}: {'; '.join(warned)}")
