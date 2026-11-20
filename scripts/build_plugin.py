@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (".claude-plugin/plugin.json", "pyproject.toml", "uv.lock", "LICENSE", "NOTICE", "README.md")
-DIRS = ("hooks", "skills", "bawwab")
+DIRS = ("hooks", "skills", "bawwab", "bin")  # bin/bawwab: the plugin CLI launcher (R54)
 _SKIP = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
 
 

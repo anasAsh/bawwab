@@ -1,0 +1,39 @@
+#!/bin/sh
+# bawwab's plugin launcher (Ruling R54). Claude Code puts a plugin's bin/ on the Bash tool's PATH; the user can
+# also run it by its absolute path. It runs this plugin tree's own bawwab, pinned to its uv.lock, in the same
+# venv the hooks use (the plugin's data dir, else bawwab's home). The plugin root comes from this file's own
+# path ($0, symlinks followed), never from the environment.
+#
+#   bawwab <command> ...     e.g. bawwab approve <id>, bawwab scan <target>
+#   bawwab setup --retry     sync bawwab's own dependencies now, in the foreground, and show any error
+set -eu
+
+self=$0
+case $self in
+  */*) ;;
+  *) self=./$self ;;
+esac
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *) self=$(dirname "$self")/$link ;;
+  esac
+done
+root=$(CDPATH='' cd -P "$(dirname "$self")/.." && pwd -P)
+hook=$root/hooks/bawwab_hook.py
+
+if [ "${1-}" = setup ]; then
+  # the venv sync is what failed, so `uv run` (which needs it) can't be the way to retry it
+  shift
+  exec python3 "$hook" setup "$@"
+fi
+
+venv=$(python3 "$hook" venv-dir) || venv=
+if [ -z "$venv" ]; then
+  echo "bawwab: could not work out where its venv lives (is python3 on PATH?)" >&2
+  exit 1
+fi
+UV_PROJECT_ENVIRONMENT=$venv
+export UV_PROJECT_ENVIRONMENT
+exec uv run --project "$root" --frozen --quiet bawwab "$@"

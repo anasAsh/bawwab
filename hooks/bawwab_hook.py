@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Bawwab Claude Code hook entry point. Stdlib only.
 
-Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify | bootstrap)
+Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify | bootstrap | setup | venv-dir)
+
+`setup [--retry]` and `venv-dir` are for bin/bawwab (the user's `bawwab setup --retry`, and the launcher's venv).
 
 `gate` (PreToolUse, every tool): a cheap pre-filter and the effect-check fingerprint
 (hooks/fingerprint.py) let ordinary calls through with no output and without importing
@@ -113,16 +115,55 @@ def _deny(reason: str) -> str:
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
+def _cli(args: str) -> str:
+    """The command line to show for `bawwab <args>`: the one helper, bawwab/clicmd.py (R54), loaded by path."""
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location("_bawwab_clicmd", os.path.join(PLUGIN_ROOT, "bawwab",
+                                                                                     "clicmd.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.cmd(args)
+    except Exception:  # noqa: BLE001
+        return f"bawwab {args}"
+
+
 def _bawwab_cmd(sub: str) -> list[str]:
     """Always this plugin's own code, pinned to its uv.lock: never a `bawwab` found on PATH (version skew) and
     never a root taken from the environment."""
     return ["uv", "run", "--project", PLUGIN_ROOT, "--frozen", "--quiet", "bawwab", sub]
 
 
+def _installed_data_dir() -> str | None:
+    """The data dir Claude Code gives this installed tree, derived from the tree's own path (never from env):
+    <plugins>/cache/<marketplace>/<plugin>/<version> -> <plugins>/data/<plugin@marketplace, [^A-Za-z0-9_-] as ->.
+    Only when it exists and is bawwab-named. Lets bin/bawwab and `setup --retry`, run from the user's shell
+    (no CLAUDE_PLUGIN_DATA), use the same venv and bootstrap files as the hooks (fix round 4)."""
+    import re
+
+    ver = PLUGIN_ROOT
+    plugin = os.path.dirname(ver)
+    mkt = os.path.dirname(plugin)
+    cache = os.path.dirname(mkt)
+    if os.path.basename(cache) != "cache" or os.path.basename(os.path.dirname(cache)) != "plugins":
+        return None
+    pid = re.sub(r"[^A-Za-z0-9_-]", "-", f"{os.path.basename(plugin)}@{os.path.basename(mkt)}")
+    d = os.path.join(os.path.dirname(cache), "data", pid)
+    try:
+        ok = os.path.isdir(d) and not os.path.islink(d) and _load_fingerprint().is_bawwab_plugin_dir(d)
+    except Exception:  # noqa: BLE001
+        ok = False
+    return d if ok else None
+
+
 def _boot_dir() -> str:
-    """Where the venv and the bootstrap files live: the plugin's data dir, else bawwab's home. Never the root."""
+    """Where the venv and the bootstrap files live: the plugin's data dir (CLAUDE_PLUGIN_DATA, else the one
+    derived from this tree's install path), else bawwab's home. Never the root."""
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
-    return data if data and os.path.isabs(data) else _bawwab_home()
+    if data and os.path.isabs(data):
+        return data
+    return _installed_data_dir() or _bawwab_home()
 
 
 def _venv_dir() -> str:
@@ -156,28 +197,58 @@ def _child_env() -> dict:
 BOOT_DONE, BOOT_LOCK, BOOT_FAILED = "bootstrap-complete", "bootstrap.lock", "bootstrap-failed"
 BOOT_SPAWNED, BOOT_FAILED_TOLD = "bootstrap.spawned", "bootstrap-failed.told"
 BOOT_PENDING, BOOT_CONTEXT = "pending-sessionstart.json", "pending-context.txt"
-BOOT_STALE_S, BOOT_SYNC_S, BOOT_INVENTORY_S, BOOT_RESPAWN_S = 1800, 1800, 300, 60
-SETUP_DENY = ("bawwab is still setting up (installing its own dependencies in the background), so it can't check "
-              "this yet. Retry in a minute; if this persists, the user can run `! bawwab effects --retry` or check "
-              "their network.")
-SETUP_FAILED_DENY = ("bawwab setup failed: it could not install its own dependencies, so it can't check this. "
-                     "The user should run `! bawwab effects --retry` or check their network.")
+BOOT_STALE_S, BOOT_SYNC_S, BOOT_INVENTORY_S, BOOT_RESPAWN_S, BOOT_WAIT_S = 1800, 1800, 300, 60, 120
+SETUP_OK = "bawwab setup complete: its dependencies are installed and its checks are active."
+
+
+def _recovery() -> str:
+    """What the user can do when setup keeps failing (I6): every step works in a plugin-only install."""
+    return (f"To fix it, the user can run `! {_cli('setup --retry')}` (retries the setup now, in the foreground, and "
+            "shows the error), or check their proxy settings (HTTPS_PROXY), network, and uv configuration (uv must "
+            "be on PATH and able to reach the Python package index). Last resort: `/plugin disable bawwab`, which "
+            "turns off bawwab's protection entirely.")
+
+
+_READ_ONLY_NOTE = "read-only tools (Read, Grep, Glob, LS) still work"
+
+
+def _setup_running_deny() -> str:
+    return ("bawwab is still setting up (installing its own dependencies in the background), so it can't check "
+            f"this yet; {_READ_ONLY_NOTE}. Retry in a minute. If this persists: {_recovery()}")
+
+
+def _setup_failed_deny() -> str:
+    return ("bawwab setup failed: it could not install its own dependencies, so it can't check this (fail "
+            f"closed; {_READ_ONLY_NOTE}). Setup is retried automatically about once a minute. {_recovery()}")
+
+
 SETUP_CONTEXT = ("Bawwab (a security scanner for MCP servers, skills and plugins) is still setting up: it is "
                  "installing its own dependencies in the background, which takes about a minute. Install commands "
                  "are held until then. Its first-run question follows on a later prompt once setup finishes.")
-SETUP_FAILED_CONTEXT = ("Bawwab (a security scanner for MCP servers, skills and plugins) setup failed: it could not "
-                        "install its own dependencies (offline, or the package index is unreachable). Until it "
-                        "succeeds, install commands are held. Tell the user: check the network, or run "
-                        "`! bawwab effects --retry`. Setup is retried automatically.")
-# Fixed notices the bootstrap can leave for the next prompt, by id (M9).
-BOOT_NOTICES = {
-    "first-run": ("Bawwab (a security scanner for MCP servers, skills and plugins) has finished setting up, and it "
-                  "has not scanned this machine yet. Before anything else, ask the user whether to run a full scan "
-                  "now.\n- Yes: run `bawwab init --scan` yourself.\n- Skip: the user must run `! bawwab init "
-                  "--skip` (this trusts everything installed now without scanning; you cannot run it)."),
-    "lost": ("bawwab's state was lost, so tool calls are blocked (fail closed). Tell the user to run "
-             "`! bawwab init --scan` (a full scan: nothing is trusted without scanning)."),
-}
+
+
+def _setup_failed_context() -> str:
+    return ("Bawwab (a security scanner for MCP servers, skills and plugins) setup failed: it could not install "
+            "its own dependencies (offline, a proxy, or the package index is unreachable). Until it succeeds, "
+            "install commands are held, and once bawwab is initialised so are tool calls after Claude's "
+            f"configuration changes; {_READ_ONLY_NOTE}. Setup is retried automatically about once a minute. "
+            f"Tell the user: {_recovery()}")
+
+
+def _boot_notice(nid: str) -> str | None:
+    """Fixed notices the bootstrap can leave for the next prompt, by id (M9)."""
+    if nid == "first-run":
+        return ("Bawwab (a security scanner for MCP servers, skills and plugins) has finished setting up, and it "
+                "has not scanned this machine yet. Before anything else, ask the user whether to run a full scan "
+                f"now.\n- Yes: run `{_cli('init --scan')}` yourself.\n- Skip: the user must run "
+                f"`! {_cli('init --skip')}` (this trusts everything installed now without scanning; you cannot run "
+                "it).")
+    if nid == "lost":
+        return ("bawwab's state was lost, so tool calls are blocked (fail closed). Tell the user to run "
+                f"`! {_cli('init --scan')}` (a full scan: nothing is trusted without scanning).")
+    return None
+
+
 _SID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 
 
@@ -332,29 +403,70 @@ def _notice_id(ctx: object) -> str | None:
     return None
 
 
-def bootstrap() -> int:
-    """The detached first-run setup: sync the venv, run the SessionStart work, mark it complete."""
+def _say(text: str, err: bool = False) -> None:
+    print(text, file=sys.stderr if err else sys.stdout, flush=True)
+
+
+def _wait_for_lock(lock: str, secs: float) -> None:
+    import time
+
+    end = time.time() + secs
+    told = False
+    while time.time() < end and _lock_live(_read(lock)):
+        if not told:
+            _say("bawwab: a background setup is running; waiting for it to finish...")
+            told = True
+        time.sleep(0.5)
+
+
+def bootstrap(foreground: bool = False) -> int:
+    """The first-run setup: sync the venv, run the SessionStart work, mark it complete. Detached (a hook starts
+    it), or in the foreground (`bawwab setup --retry` via bin/bawwab, fix round 4 I6): then uv's own output
+    reaches the user's terminal, the respawn rate limit is ignored, and the exit code tells success."""
     import subprocess
 
     d = _boot_dir()
     lock = os.path.join(d, BOOT_LOCK)
     try:
         os.makedirs(d, mode=0o700, exist_ok=True)
-        if not _take_lock(lock):
+        got = _take_lock(lock)
+        if not got and foreground:
+            _wait_for_lock(lock, BOOT_WAIT_S)
+            if _bootstrapped():
+                _say(SETUP_OK)
+                return 0
+            got = _take_lock(lock)
+        if not got:
+            if foreground:
+                _say(f"bawwab setup: another setup holds {lock}; try again in a few minutes. {_recovery()}", True)
+                return 1
             return 0  # another bootstrap runs
-    except OSError:
+    except OSError as e:
+        if foreground:
+            _say(f"bawwab setup failed: cannot write {d} ({e}). {_recovery()}", True)
+            return 1
         return 0
+    rc = 1
     try:
         token = _boot_token()
         try:
-            r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen", "--quiet"], env=_child_env(),
-                               stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_SYNC_S)
-            ok = r.returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            ok = False
-        if not ok:
+            if foreground:
+                _say(f"bawwab: syncing its dependencies into {_venv_dir()} ...")
+                r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen"], env=_child_env(),
+                                   stdin=subprocess.DEVNULL, timeout=BOOT_SYNC_S)
+            else:
+                r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen", "--quiet"], env=_child_env(),
+                                   stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_SYNC_S)
+            why = None if r.returncode == 0 else f"`uv sync` exited {r.returncode}"
+        except subprocess.TimeoutExpired:
+            why = f"`uv sync` took longer than {BOOT_SYNC_S} s"
+        except OSError as e:
+            why = f"could not run uv ({type(e).__name__}: is uv on PATH?)"
+        if why:
             _write(os.path.join(d, BOOT_FAILED), "sync-failed")
-            return 0
+            if foreground:
+                _say(f"bawwab setup failed: {why}. {_recovery()}", True)
+            return 1 if foreground else 0
         pending = os.path.join(d, BOOT_PENDING)
         raw = _read(pending)
         if raw is not None:
@@ -380,15 +492,19 @@ def bootstrap() -> int:
             except OSError:
                 pass
         _write(os.path.join(d, BOOT_DONE), token)
-    except Exception:  # noqa: BLE001
-        pass
+        rc = 0
+        if foreground:
+            _say(SETUP_OK)
+    except Exception as e:  # noqa: BLE001
+        if foreground:
+            _say(f"bawwab setup failed: {type(e).__name__}: {e}. {_recovery()}", True)
     finally:
         try:
             if _read(lock) is not None and (_read(lock) or "").split()[:1] == [str(os.getpid())]:
                 os.unlink(lock)
         except OSError:
             pass
-    return 0
+    return rc if foreground else 0
 
 
 def _setup_failed() -> bool:
@@ -396,7 +512,7 @@ def _setup_failed() -> bool:
 
 
 def _setup_deny() -> str:
-    return SETUP_FAILED_DENY if _setup_failed() else SETUP_DENY
+    return _setup_failed_deny() if _setup_failed() else _setup_running_deny()
 
 
 def _initialised() -> bool:
@@ -410,7 +526,7 @@ def _initialised() -> bool:
 
 
 def _take_failure_notice() -> str | None:
-    """SETUP_FAILED_CONTEXT, once per failure."""
+    """The setup-failed notice, once per failure."""
     d = _boot_dir()
     if not _setup_failed() or os.path.exists(os.path.join(d, BOOT_FAILED_TOLD)):
         return None
@@ -418,7 +534,7 @@ def _take_failure_notice() -> str | None:
         _write(os.path.join(d, BOOT_FAILED_TOLD), "1")
     except OSError:
         pass
-    return SETUP_FAILED_CONTEXT
+    return _setup_failed_context()
 
 
 def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
@@ -445,8 +561,9 @@ def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
     return out, None
 
 
-_FAIL = ("bawwab: the effect check could not run after Claude's configuration changed ({}); tool calls are "
-         "blocked until the user runs `! bawwab effects --retry` (fail closed)")
+def _fail_text(err: str) -> str:
+    return (f"bawwab: the effect check could not run after Claude's configuration changed ({err}); tool calls are "
+            f"blocked until the user runs `! {_cli('effects --retry')}` (fail closed)")
 
 
 def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> str | None:
@@ -455,7 +572,7 @@ def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> st
         return out
     if effects:  # the watched config changed and nothing checked it: fail closed, whatever the error
         _mark_effects_error(f"effect check failed: {err}")
-        return _deny(_FAIL.format(err))
+        return _deny(_fail_text(err))
     if deny_on_error:
         return _deny(f"bawwab error: gate unavailable ({err})")
     return None
@@ -482,8 +599,10 @@ def gate() -> int:
     if not _bootstrapped():  # first run or upgrade: setup runs detached
         _start_bootstrap()
         # installs and a quarantine always wait; once initialised, so does anything the effect check would
-        # have looked at (I5): a failing or blocked setup never switches the effect check off
-        if install_like or blocked or (changed and _initialised()):
+        # have looked at (I5): a failing or blocked setup never switches the effect check off. Read-only tools
+        # pass, as during a quarantine (I6): the user is never locked out of reading while setup fails.
+        read_only = data.get("tool_name") in READ_ONLY_TOOLS
+        if install_like or blocked or (changed and not read_only and _initialised()):
             print(_deny(_setup_deny()))
         return 0
     try:
@@ -522,7 +641,7 @@ def post() -> int:
         out, err = None, type(e).__name__
     if err is not None:
         _mark_effects_error(f"effect check failed: {err}")
-        out = json.dumps({"decision": "block", "reason": _FAIL.format(err)})
+        out = json.dumps({"decision": "block", "reason": _fail_text(err)})
     if out:
         print(out)
     return 0
@@ -541,7 +660,7 @@ def _take_boot_context() -> str | None:
         os.unlink(path)
     except OSError:
         pass
-    return BOOT_NOTICES.get(nid)
+    return _boot_notice(nid)
 
 
 def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
@@ -603,6 +722,15 @@ def _is_child() -> bool:
 
 
 def main(argv: list[str]) -> int:
+    # user commands, run through bin/bawwab (R54): never hook work, so before the child short-circuit
+    if argv[1:2] == ["venv-dir"]:
+        print(_venv_dir())
+        return 0
+    if argv[1:2] == ["setup"]:
+        if argv[2:] not in ([], ["--retry"]):
+            _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)", True)
+            return 2
+        return bootstrap(foreground=True)
     if _is_child():
         return 0
     if argv[1:2] == ["gate"]:

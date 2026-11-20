@@ -9,7 +9,7 @@ First run (spec §1a) lives here too. The provisional baseline is taken ONLY at 
 install time), never by the effect check, and an install marker outside $BAWWAB_HOME
 (~/.claude/.bawwab-initialised, and $CLAUDE_PLUGIN_DATA/.bawwab-initialised) records the install time and
 init state: bawwab state that goes missing during a session fails closed (effects.error) until the user runs
-`! bawwab effects --retry` or `! bawwab init --scan`.
+`effects --retry` or `init --scan` (the commands shown come from bawwab.clicmd).
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bawwab.clicmd import cmd
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
@@ -182,7 +183,8 @@ def set_init_state(store: Store, v: str) -> None:
     write_marker(store.get_meta("installed_at") or datetime.now(UTC).isoformat(), v)
 
 
-LOST_FIX = "run `! bawwab init --scan` (a full scan: nothing is trusted without scanning)"
+def lost_fix() -> str:
+    return f"run `! {cmd('init --scan')}` (a full scan: nothing is trusted without scanning)"
 
 
 def _lost(store: Store, marker: dict | None) -> str | None:
@@ -652,7 +654,7 @@ def _summary(q: dict) -> str:
         lines.append(f"    … and {len(findings) - MAX_SHOWN_FINDINGS} more")
     qid = sanitise(q["id"], 8)
     force = " --force" if verdict == "MALICIOUS" else ""
-    lines.append(f"    keep it:  ! bawwab approve {qid}{force}      remove it:  ! bawwab reject {qid}")
+    lines.append(f"    keep it:  ! {cmd('approve')} {qid}{force}      remove it:  ! {cmd('reject')} {qid}")
     return "\n".join(lines)
 
 
@@ -685,9 +687,9 @@ def _batch_summary(group: list[dict]) -> str:
             label = q["ident"]
         lines.append(f"    - {sanitise(label, 200)}")
     if len(group) > MAX_BATCH_SHOWN:
-        lines.append(f"    … and {len(group) - MAX_BATCH_SHOWN} more (`bawwab effects` lists them all)")
+        lines.append(f"    … and {len(group) - MAX_BATCH_SHOWN} more (`{cmd('effects')}` lists them all)")
     qid = sanitise(group[0]["id"], 8)
-    lines.append(f"    keep them all:  ! bawwab approve {qid}      remove them all:  ! bawwab reject {qid}")
+    lines.append(f"    keep them all:  ! {cmd('approve')} {qid}      remove them all:  ! {cmd('reject')} {qid}")
     return "\n".join(lines)
 
 
@@ -696,8 +698,9 @@ def _deny(reason: str) -> dict:
                                    "permissionDecisionReason": reason}}
 
 
-_FAILED_TEXT = ("⛔ bawwab: the effect check failed and bawwab's state could not be updated, so tool calls are "
-                "blocked (fail closed). Tell the user to run `! bawwab effects --retry`.")
+def _failed_text() -> str:
+    return ("⛔ bawwab: the effect check failed and bawwab's state could not be updated, so tool calls are "
+            f"blocked (fail closed). Tell the user to run `! {cmd('effects --retry')}`.")
 
 
 def pre_tool_decision(tool_name: str, cwd: Path, scan=None, store: Store | None = None) -> dict | None:
@@ -705,7 +708,7 @@ def pre_tool_decision(tool_name: str, cwd: Path, scan=None, store: Store | None 
     try:
         refresh(cwd, scan, store)
     except EffectsFailed as e:
-        return None if tool_name in READ_ONLY_TOOLS else _deny(f"{_FAILED_TEXT} ({sanitise(str(e), 200)})")
+        return None if tool_name in READ_ONLY_TOOLS else _deny(f"{_failed_text()} ({sanitise(str(e), 200)})")
     if tool_name in READ_ONLY_TOOLS:
         return None
     try:
@@ -714,7 +717,7 @@ def pre_tool_decision(tool_name: str, cwd: Path, scan=None, store: Store | None 
         entries = quarantined(store or open_store())
     except Exception as e:  # noqa: BLE001 - can't list it: a known quarantine still blocks
         if fp_module().quarantine_active(str(bawwab_home())):
-            return _deny(f"{_FAILED_TEXT} ({type(e).__name__})")
+            return _deny(f"{_failed_text()} ({type(e).__name__})")
         return None
     return _deny(quarantine_text(entries)) if entries else None
 
@@ -724,7 +727,7 @@ def post_tool_decision(cwd: Path, scan=None, store: Store | None = None) -> dict
     try:
         new = refresh(cwd, scan, store)
     except EffectsFailed as e:
-        return {"decision": "block", "reason": f"{_FAILED_TEXT} ({sanitise(str(e), 200)})"}
+        return {"decision": "block", "reason": f"{_failed_text()} ({sanitise(str(e), 200)})"}
     if not new:
         return None
     entries = quarantined(store or open_store())
@@ -744,12 +747,12 @@ def session_start(cwd: Path, scan=None, store: Store | None = None) -> str | Non
     parts: list[str] = []
     if problem and _lost(store, marker):
         _fail_closed(store, problem)
-        parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed). Tell the user to {LOST_FIX}; "
-                     "`bawwab init --skip` is refused while the state is lost.")
+        parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed). Tell the user to {lost_fix()}; "
+                     f"`{cmd('init --skip')}` is refused while the state is lost.")
     elif problem:
         _fail_closed(store, problem)
         parts.append(f"bawwab: {problem}. Tool calls are blocked (fail closed) until the user runs "
-                     "`! bawwab effects --retry` (rebuilds the state by scanning) or `! bawwab init --scan`.")
+                     f"`! {cmd('effects --retry')}` (rebuilds the state by scanning) or `! {cmd('init --scan')}`.")
     else:
         try:
             refresh(cwd, scan, store)
@@ -778,8 +781,8 @@ def ask_context(cwd: Path) -> str:
         "A full scan downloads each package from its registry (nothing is installed or run), has Claude review "
         f"each item, and takes {est} (~{SECONDS_PER_ITEM} s per item). It runs in the background; results "
         "arrive as warnings, and anything not clean is quarantined until the user decides.\n"
-        "- Yes: run `bawwab init --scan` yourself.\n"
-        "- Skip: the user must run `! bawwab init --skip` (this trusts everything installed now without "
+        f"- Yes: run `{cmd('init --scan')}` yourself.\n"
+        f"- Skip: the user must run `! {cmd('init --skip')}` (this trusts everything installed now without "
         "scanning; you cannot run it).\n"
         "Until the user answers, this question is asked again every session. Changes made from now on are "
         "checked either way."
@@ -812,15 +815,15 @@ def init_skip(cwd: Path, store: Store | None = None) -> int:
     store = store or open_store()
     if _open_error(store):  # the state can't be trusted: only a scan may decide what is installed (R38)
         raise RuntimeError("the effect check failed or bawwab's state was lost (effects.error is quarantined); "
-                           "`init --skip` is refused until it is resolved: run `bawwab init --scan` (a full "
-                           "scan) or `bawwab effects --retry`")
+                           f"`init --skip` is refused until it is resolved: run `{cmd('init --scan')}` (a full "
+                           f"scan) or `{cmd('effects --retry')}`")
     if not _installed(store, cwd):
         marker = _restore_marker(store)
         problem = state_problem(store, marker)
         if problem and _lost(store, marker):
-            raise RuntimeError(f"{problem}; {LOST_FIX.replace('! ', '')}")
+            raise RuntimeError(f"{problem}; {lost_fix().replace('! ', '')}")
         if problem:
-            raise RuntimeError(f"{problem}; run `bawwab effects --retry` or `bawwab init --scan`")
+            raise RuntimeError(f"{problem}; run `{cmd('effects --retry')}` or `{cmd('init --scan')}`")
     n = store.promote_provisional("unscanned")
     set_init_state(store, "skipped")
     return n

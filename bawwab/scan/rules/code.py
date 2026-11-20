@@ -82,14 +82,7 @@ def _is_code(rel: str) -> bool:
 
 def _custom_index(raw: str) -> tuple[int, str] | None:
     """(position, url) of the first non-PyPI package source in an install command or an index variable."""
-    from urllib.parse import urlsplit
-
-    def foreign(url: str) -> bool:
-        try:
-            return urlsplit(url).hostname not in PYPI_HOSTS
-        except ValueError:
-            return True
-
+    foreign = _foreign_url
     for m in PIP_CMD_RE.finditer(raw):
         seg = raw[m.end():m.end() + 400]
         end = _SEGMENT_END_RE.search(seg)
@@ -100,6 +93,42 @@ def _custom_index(raw: str) -> tuple[int, str] | None:
     for m in INDEX_ENV_RE.finditer(raw):
         if foreign(m.group(1)):
             return m.start(), m.group(1)
+    return None
+
+
+REQ_FILE_RE = re.compile(r"(?:requirements|constraints)[\w.-]*\.txt")
+INDEX_CONF_FILES = {"pip.conf", "pip.ini", "uv.toml"}
+# pip honours these option lines inside a requirements/constraints file
+REQ_INDEX_RE = re.compile(r"^[ \t]*(?:--index-url|--extra-index-url|--find-links|-i|-f)(?:[ \t]*=[ \t]*|[ \t]+)(\S+)", re.M)
+CONF_INDEX_RE = re.compile(r"^[ \t]*(?:index-url|extra-index-url|find-links)[ \t]*[=:]", re.M)
+_CONF_VALUE_END_RE = re.compile(r"\n(?=(?:[\w.-]+[ \t]*[=:]|\[|#|;))")
+
+
+def _foreign_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    try:
+        return urlsplit(url).hostname not in PYPI_HOSTS
+    except ValueError:
+        return True
+
+
+def _config_index(rel: str, raw: str) -> tuple[int, str] | None:
+    """(position, url) of a non-PyPI package source set by a shipped requirements/constraints file or a
+    pip.conf/pip.ini/uv.toml (fix round 4, M13). Only http(s) URLs count; a local find-links dir does not."""
+    base = _base(rel)
+    if REQ_FILE_RE.fullmatch(base):
+        for m in REQ_INDEX_RE.finditer(raw):
+            u = PIP_URL_RE.match(m.group(1))
+            if u and _foreign_url(u.group(1)):
+                return m.start(), u.group(1)
+    elif base in INDEX_CONF_FILES:
+        for m in CONF_INDEX_RE.finditer(raw):
+            seg = raw[m.end():m.end() + 2000]
+            end = _CONF_VALUE_END_RE.search(seg)
+            for u in PIP_URL_RE.finditer(seg[:end.start()] if end else seg):
+                if _foreign_url(u.group(1)):
+                    return m.start(), u.group(1)
     return None
 
 
@@ -1277,6 +1306,10 @@ class CodeRules:
             if _is_code(f.rel) and not _is_test(f.rel) and not _is_config_code(f.rel)
         )
         for f in files:
+            hit = _config_index(f.rel, f.text)
+            if hit:
+                out.append(_finding("install.custom-index", Severity.MED, f, _line_of(f.text, hit[0]),
+                                    f"installs Python packages from {hit[1][:120]}"))
             if _is_doc(f.rel) or _base(f.rel) in LOCKFILES:
                 continue
             if _is_data(f.rel) and not (exec_data or f.rel in install or _named(f.rel, refs.run)):

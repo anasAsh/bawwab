@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from bawwab.clicmd import cmd
 from bawwab.paths import is_bawwab_child
 from bawwab.report import explain, format_report, sanitise
 
@@ -51,6 +52,8 @@ def _build() -> argparse.ArgumentParser:
     fx.add_argument("--cwd", help="project directory (default: the current directory)")
     fx.add_argument("--retry", action="store_true",
                     help="after a failed check or lost state: repair, rebuild by scanning, clear the error (user)")
+    st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
+    st.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
     return p
 
 
@@ -86,7 +89,7 @@ def _init(args) -> int:
             print(f"error: {sanitise(str(e), 300)}", file=sys.stderr)
             return 1
         print(f"bawwab: {n} installed items accepted as trusted without scan; only later changes are checked. "
-              "Run `bawwab scan --all` to scan them at any time.")
+              f"Run `{cmd('scan --all')}` to scan them at any time.")
         return 0
     from bawwab.effects import ask_context
     from bawwab.store import open_store
@@ -277,7 +280,7 @@ def _effects_bug(tool: str, cwd: Path, e: Exception, post: bool) -> dict | None:
     if not changed and not (known and not post):
         return None
     reason = f"bawwab: the effect check failed ({sanitise(f'{type(e).__name__}: {e}', 200)}); tool calls are " \
-             "blocked (fail closed) until the user runs `! bawwab effects --retry`"
+             f"blocked (fail closed) until the user runs `! {cmd('effects --retry')}`"
     if changed:
         try:
             from bawwab import effects
@@ -287,7 +290,9 @@ def _effects_bug(tool: str, cwd: Path, e: Exception, post: bool) -> dict | None:
             pass
     if post:
         return {"decision": "block", "reason": reason}
-    if tool in ("Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"):
+    from bawwab.effects import READ_ONLY_TOOLS
+
+    if tool in READ_ONLY_TOOLS:
         return None
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                    "permissionDecisionReason": reason}}
@@ -339,6 +344,50 @@ def _effects(args) -> int:
     return 1
 
 
+def _plugin_roots() -> list[str]:
+    """The bawwab plugin trees to set up: the one this code runs from, else every installed `bawwab@*` plugin
+    (installed_plugins.json) that holds the hook."""
+    from bawwab.selfid import running_root
+
+    root = running_root()
+    if root:
+        return [root]
+    from bawwab.paths import claude_home
+
+    try:
+        data = json.loads((claude_home() / "plugins" / "installed_plugins.json").read_text())
+        plugins = data.get("plugins") if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        plugins = None
+    out: list[str] = []
+    for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
+        if not (isinstance(key, str) and key.split("@", 1)[0] == "bawwab" and isinstance(entries, list)):
+            continue
+        for e in entries:
+            ip = e.get("installPath") if isinstance(e, dict) else None
+            if isinstance(ip, str) and os.path.isabs(ip) and os.path.isfile(os.path.join(ip, "hooks", "bawwab_hook.py")):
+                rp = os.path.realpath(ip)
+                if rp not in out:
+                    out.append(rp)
+    return out
+
+
+def _setup(args) -> int:
+    """`bawwab setup --retry`: run the plugin's foreground setup (hooks/bawwab_hook.py setup, fix round 4 I6)."""
+    import subprocess
+
+    roots = _plugin_roots()
+    if not roots:
+        print("bawwab setup: no bawwab plugin install found; nothing to set up (the CLI needs no setup)",
+              file=sys.stderr)
+        return 1
+    rc = 0
+    for root in roots:
+        r = subprocess.run([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", "--retry"])
+        rc = rc or r.returncode
+    return rc
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = _build().parse_args(argv)
@@ -353,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "post":
         return _post()
     try:
+        if args.cmd == "setup":
+            return _setup(args)
         if args.cmd == "effects":
             return _effects(args)
         if args.cmd == "init":

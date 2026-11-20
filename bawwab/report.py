@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from bawwab.clicmd import cmd
 from bawwab.scan.rules.catalog import CATALOG
 from bawwab.store import Store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
@@ -60,7 +61,7 @@ def format_report(r: ScanReport, approval_id: str | None = None) -> str:
         for l in raw[:39 if len(raw) > 40 else 40]:
             lines.append("  " + sanitise(l, MAX_LINE))
         if len(raw) > 40:
-            lines.append(f"  … ({len(raw) - 39} more lines; run ! bawwab diff <name>)")
+            lines.append(f"  … ({len(raw) - 39} more lines; run ! {cmd('diff')} <name>)")
     ordered = sorted(r.findings, key=lambda f: -f.severity.rank)
     for f in ordered:
         loc = sanitise(_loc(f), 40)
@@ -68,15 +69,15 @@ def format_report(r: ScanReport, approval_id: str | None = None) -> str:
     pid = sanitise(approval_id) if approval_id else None
     if r.verdict == Verdict.SUSPICIOUS:
         if pid:
-            lines.append(f"Blocked pending your approval. To allow:  ! bawwab approve {pid}")
+            lines.append(f"Blocked pending your approval. To allow:  ! {cmd('approve')} {pid}")
         else:
             lines.append("Blocked pending your approval.")
         if r.mode == Mode.STANDARD:
-            lines.append(f"Deep scan first:  ! bawwab scan --deep {sanitise(_deep_arg(r), 200)}")
+            lines.append(f"Deep scan first:  ! {cmd('scan --deep')} {sanitise(_deep_arg(r), 200)}")
     elif r.verdict == Verdict.MALICIOUS:
-        lines.append(f"Blocked. Override (not recommended):  ! bawwab approve --force {pid or '<id>'}")
+        lines.append(f"Blocked. Override (not recommended):  ! {cmd('approve --force')} {pid or '<id>'}")
     if ordered and ordered[0].id:
-        lines.append(f"Explain a finding:  ! bawwab explain {sanitise(ordered[0].id)}")
+        lines.append(f"Explain a finding:  ! {cmd('explain')} {sanitise(ordered[0].id)}")
     return "\n".join(lines)
 
 

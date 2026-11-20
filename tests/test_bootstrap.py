@@ -241,10 +241,10 @@ def test_offline_upgrade_denies_changed_config_calls(fresh):
     for _ in range(3):
         r = _hook("gate", _call("Bash", proj, command="ls"), env)
         d = json.loads(r.stdout)["hookSpecificOutput"]
-        assert d["permissionDecision"] == "deny" and "bawwab effects --retry" in d["permissionDecisionReason"]
+        assert d["permissionDecision"] == "deny" and "setup --retry" in d["permissionDecisionReason"]
         _no_lock()
     p = json.loads(_hook("post", _call("Edit", proj, file_path="/x"), env).stdout)
-    assert p["decision"] == "block" and "bawwab effects --retry" in p["reason"]
+    assert p["decision"] == "block" and "setup --retry" in p["reason"]
     assert len([x for x in log.read_text().splitlines() if x.startswith("sync")]) == 1  # respawn rate limit
     assert (_bh() / "bootstrap-failed").exists()
     d = json.loads(_hook("gate", _call("Bash", proj, command="ls"), env).stdout)["hookSpecificOutput"]

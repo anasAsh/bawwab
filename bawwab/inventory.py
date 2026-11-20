@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 
+from bawwab.clicmd import cmd as cli_cmd
 from bawwab.agents import ADAPTERS, InstalledItem
 from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
@@ -120,7 +121,7 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
             continue
         approved = r.verdict != Verdict.CLEAN and store.is_approved(r.key)
         if r.verdict != Verdict.CLEAN and not approved:
-            _warn(store, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! bawwab scan {_scan_spec(t)}", warnings)
+            _warn(store, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! {cli_cmd("scan")} {_scan_spec(t)}", warnings)
         if item.unpinned:
             pinned = _pinned_command(item, r.resolved_version)
             if pinned:

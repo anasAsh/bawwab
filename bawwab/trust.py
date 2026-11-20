@@ -8,6 +8,7 @@ import re
 import unicodedata
 from typing import TYPE_CHECKING
 
+from bawwab.clicmd import cmd
 from bawwab.types import Finding, Severity, Target, ToolInfo
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 MAX_DIFF_LINES = 40
 CHUNK = 150  # diff lines stay under the report's per-line cap so appended text is never cut off
 _SANDBOX = "[sandbox] "
-_MORE = "… ({n} more lines; run ! bawwab diff <name>)"
+_MORE = "… ({n} more lines; run ! {bawwab} diff <name>)"
 MAX_SUMMARY_LINES = 120
 _PLACEHOLDERS = {"(unnamed)", "(unparsed)"}
 STOPLIST = {
@@ -107,7 +108,7 @@ def _wrapped(text: str) -> list[str]:
 def _capped(lines: list[str], limit: int = MAX_DIFF_LINES) -> list[str]:
     if len(lines) <= limit:
         return lines
-    return lines[: limit - 1] + [_MORE.format(n=len(lines) - limit + 1)]
+    return lines[: limit - 1] + [_MORE.format(n=len(lines) - limit + 1, bawwab=cmd(""))]
 
 
 def _text_diff(label: str, old: str | None, new: str) -> list[str]:

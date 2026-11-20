@@ -15,6 +15,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from bawwab.clicmd import cmd
 from bawwab.config import load_config
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install
 from bawwab.gate.pin import pin_changes
@@ -127,7 +128,7 @@ def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | N
     pid = store.create_pending(r)
     return (
         f"⛔ bawwab: blocked a protected action — {shown}\n"
-        f"Blocked pending your approval. To allow:  ! bawwab approve {sanitise(pid)}"
+        f"Blocked pending your approval. To allow:  ! {cmd('approve')} {sanitise(pid)}"
     ), key
 
 

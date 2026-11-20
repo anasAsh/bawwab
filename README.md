@@ -207,6 +207,16 @@ The plugin adds:
 - **The `bawwab` skill:** tells Claude to show blocks verbatim, never run `bawwab approve` itself, and never
   route around a block.
 - **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
+- **The `bawwab` command** (`bin/bawwab`, a small launcher for the plugin's own copy, in the same virtualenv as
+  the hooks). Claude Code puts it on the `PATH` of Claude's Bash tool, so you don't need the CLI install below.
+  Your `!` shell may not have it on its `PATH`; when it doesn't, Bawwab's messages print the launcher's full
+  path instead of `bawwab`, so you can copy the command as shown.
+
+If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
+once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
+keep working. Setup retries itself about once a minute. To retry now and see the error, run
+`! bawwab setup --retry` (or the full launcher path Bawwab shows), and check your proxy (`HTTPS_PROXY`),
+network and uv configuration. Last resort: `/plugin disable bawwab`, which turns Bawwab's protection off.
 
 The installed plugin is a runtime-only tree: the code, hooks, skill and manifest, with no tests or benchmark
 samples. The marketplace installs it from the repo's `plugin` branch.
@@ -221,7 +231,7 @@ effect check recognise the copy whose code is actually running (same real path a
 `bawwab`, not a symlink) and list it as "bawwab (running code, not scanned)". Any other copy called bawwab is
 scanned like everything else.
 
-### CLI only
+### CLI only (optional)
 
 ```bash
 uv tool install "git+https://github.com/anasAsh/bawwab@feat/bawwab"
@@ -232,7 +242,9 @@ uvx --from "git+https://github.com/anasAsh/bawwab@feat/bawwab" bawwab scan <targ
 uvx bawwab scan <target>        # once it is published to PyPI
 ```
 
-The CLI scans and decides, but without the plugin nothing gates Claude's installs. Having both is fine: the
+The plugin already gives you the `bawwab` command inside Claude Code sessions; install the CLI only if you want
+it in other terminals or CI. The CLI scans and decides, but without the plugin nothing gates Claude's installs.
+Having both is fine: the
 plugin's hooks and MCP server always run the plugin's own copy, pinned to its `uv.lock` (`uv run --frozen`,
 with its virtualenv in the plugin's data folder), never a `bawwab` found on your `PATH`.
 
@@ -262,8 +274,10 @@ bawwab effects                 # list quarantined items
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
-In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. Claude can run `scan`,
-`explain`, `diff` and `init --scan`, but never `approve`, `reject` or `init --skip`.
+In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. If `bawwab` isn't on your
+shell's `PATH` (plugin only), use the command exactly as Bawwab's message prints it, which names the plugin's
+launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan` and `setup --retry`, but
+never `approve`, `reject` or `init --skip`, by any name or path.
 
 ### MCP tools
 

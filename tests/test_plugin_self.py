@@ -43,7 +43,7 @@ def _scan(p: Path, store):
 def test_build_is_runtime_only(tmp_path):
     out = _builder().build(tmp_path / "tree")
     top = {p.name for p in out.iterdir()}
-    assert top == {".claude-plugin", "hooks", "skills", "bawwab", "pyproject.toml", "uv.lock", "LICENSE", "NOTICE",
+    assert top == {".claude-plugin", "hooks", "skills", "bawwab", "bin", "pyproject.toml", "uv.lock", "LICENSE", "NOTICE",
                    "README.md"}
     assert [p.name for p in (out / ".claude-plugin").iterdir()] == ["plugin.json"]  # no marketplace.json
     files = [p for p in out.rglob("*")]
