@@ -49,7 +49,7 @@ def _target_from_trust_name(name: str) -> Target | None:
     if name.startswith("git:"):
         return Target("git", name[4:], url=name[4:])
     if name.startswith("remote:"):
-        return target_from_url(name[7:])
+        return target_from_url(name[7:], "http")  # recorded as remote: never re-read as a repo
     if name.startswith("local:"):
         return Target("local", name[6:], path=name[6:])
     return None

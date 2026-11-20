@@ -18,6 +18,13 @@ def _split_at_version(s: str) -> tuple[str, str | None]:
     return s, None
 
 
+# Server-entry transports that are always a live MCP endpoint, never a repository to clone.
+REMOTE_TRANSPORTS = frozenset({"http", "sse", "streamable-http", "streamable_http", "streamablehttp"})
+# On the git hosts a repository is /owner/name (GitLab: /group[/subgroup...]/project). Paths under these first
+# segments, or containing GitLab's "/-/" separator, are the host's web/API surface (e.g. gitlab.com/api/v4/mcp).
+_NON_REPO_FIRST = frozenset({"api", "-", "mcp"})
+
+
 def _is_git_url(url: str) -> bool:
     if url.startswith("git@") or url.startswith("ssh://") or url.startswith("git://"):
         return True
@@ -26,11 +33,22 @@ def _is_git_url(url: str) -> bool:
         return url.endswith(".git")
     host = m.group(1).lower()
     path = url.split("?", 1)[0].split("#", 1)[0]
-    return host in GIT_HOSTS or path.endswith(".git")
+    if path.rstrip("/").endswith(".git"):
+        return True
+    if host not in GIT_HOSTS:
+        return False
+    rest = path[m.end():]  # may start with :port
+    segs = [x for x in rest[rest.find("/"):].split("/") if x] if "/" in rest else []
+    if len(segs) < 2 or segs[0].lower() in _NON_REPO_FIRST or "-" in segs:
+        return False
+    return host == "gitlab.com" or len(segs) == 2  # only GitLab nests groups
 
 
-def target_from_url(url: str) -> Target:
-    return Target("git" if _is_git_url(url) else "remote", url, url=url)
+def target_from_url(url: str, transport: object = None) -> Target:
+    """A URL from a server entry or the CLI. A declared http/sse transport is always remote; otherwise a
+    repo-shaped URL on a git host (or a .git URL) is cloned and anything else is fetched as a remote MCP server."""
+    remote = isinstance(transport, str) and transport.lower() in REMOTE_TRANSPORTS
+    return Target("git" if not remote and _is_git_url(url) else "remote", url, url=url)
 
 
 def _local(raw: str, p: str) -> Target:

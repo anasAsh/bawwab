@@ -50,7 +50,7 @@ def _mcp_item(source: str, scope_ident: str, name: str, spec: object, cwd: Path)
 def _server_target(spec: dict, cwd: Path) -> Target | None:
     url, cmd, args = spec.get("url"), spec.get("command"), spec.get("args", [])
     if isinstance(url, str) and url:
-        return target_from_url(url)
+        return target_from_url(url, spec.get("type"))
     if isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
         t = target_from_command(cmd, args)
         if t is not None and t.kind == "local":

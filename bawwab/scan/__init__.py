@@ -102,7 +102,7 @@ def _child_target(spec: dict, root: Path) -> Target | None:
         return str(root / s) if s.startswith(("./", "../")) else s
 
     if isinstance(spec.get("url"), str) and spec["url"]:
-        return target_from_url(spec["url"])
+        return target_from_url(spec["url"], spec.get("type"))
     cmd, args = spec.get("command"), spec.get("args", [])
     if not isinstance(cmd, str) or not isinstance(args, list) or not all(isinstance(a, str) for a in args):
         return None

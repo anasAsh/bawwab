@@ -164,12 +164,12 @@ def _abspath(tok: str, cwd: str) -> str:
     return os.path.normpath(p)
 
 
-def _target_from_url(url: str) -> Target:
+def _target_from_url(url: str, transport: object = None) -> Target:
     """bawwab.fetch (httpx) loads on first use, so the hook can run detection before setup installed the deps
     (M19); bawwab.fetch.target itself is stdlib-only."""
     from bawwab.fetch.target import target_from_url
 
-    return target_from_url(url)
+    return target_from_url(url, transport)
 
 
 def install_dir(p: str) -> tuple[str, str] | None:
@@ -396,7 +396,7 @@ def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
     url = spec.get("url")
     if isinstance(url, str) and url:
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(url), pinnable=True)
+        acc.add(_target_from_url(url, spec.get("type")), pinnable=True)
         return
     cmd, args = spec.get("command"), spec.get("args", [])
     if isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
@@ -950,7 +950,7 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
         return
     if transport in ("http", "sse") or cmd.startswith(("http://", "https://")):
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(cmd), pinnable=True)
+        acc.add(_target_from_url(cmd, transport), pinnable=True)
         return
     before = len(acc.protected)
     _add_server(name, cmd, cargs, env, cwd, acc)
