@@ -470,6 +470,13 @@ class Store:
         row = self._conn.execute("SELECT key FROM pending WHERE id=?", (pid.strip().upper(),)).fetchone()
         return row[0] if row else None
 
+    def pending_report(self, pid: str) -> dict | None:
+        row = self._conn.execute("SELECT report FROM pending WHERE id=?", (pid.strip().upper(),)).fetchone()
+        try:
+            return json.loads(row[0]) if row else None
+        except ValueError:
+            return None
+
     def pending_expired(self, pid: str, now: datetime | None = None) -> bool:
         row = self._conn.execute("SELECT expires_at, status FROM pending WHERE id=?", (pid,)).fetchone()
         if row is None or row["status"] != "pending":

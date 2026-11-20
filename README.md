@@ -179,29 +179,47 @@ Correct means the verdict is at least the label (clean < suspicious < malicious)
 
 ## Install
 
-> **Status: pre-release.** The scanner and CLI work today. The one-command Claude Code plugin is the next milestone.
+> **Status: pre-release (v0.1).** v0.1 is used as a Claude Code plugin: that's what installs the gate, the
+> effect check and the MCP tools. The CLI also works on its own for one-off scans.
 
 ### Requirements
 
-- Python **3.12+** and [`uv`](https://docs.astral.sh/uv/)
+- Python **3.12+** and [`uv`](https://docs.astral.sh/uv/) on your `PATH` (the plugin's hooks call `python3` and `uv`)
 - [Claude Code](https://claude.com/claude-code), used for the review step through your existing login. Alternatively, set `ANTHROPIC_API_KEY`.
 
-### CLI (works now)
-
-```bash
-uv tool install "git+https://github.com/anasAsh/bawwab@feat/bawwab"
-bawwab --help
-```
-
-### Claude Code plugin *(coming in v0.1)*
+### Claude Code plugin
 
 ```text
 /plugin marketplace add anasAsh/bawwab
 /plugin install bawwab@bawwab
 ```
 
-On first start, Bawwab asks whether to scan everything you already have installed, or to trust it as-is and
-only check new installs.
+Restart Claude Code (or start a new session) after installing. On first start, Bawwab asks whether to scan
+everything you already have installed, or to trust it as-is and only check new installs. Hooks and settings
+that other plugins and tools had already configured come back as **one batch** with a single approval id, not
+one prompt each.
+
+The plugin adds:
+
+- **Hooks:** `PreToolUse` (the gate and the effect check), `PostToolUse` (the effect check after a tool
+  changed something), `SessionStart` (the inventory) and `UserPromptSubmit` (deferred warnings). Ordinary tool
+  calls pass in milliseconds without starting bawwab.
+- **The `bawwab` skill:** tells Claude to show blocks verbatim, never run `bawwab approve` itself, and never
+  route around a block.
+- **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
+
+### CLI only
+
+```bash
+uv tool install "git+https://github.com/anasAsh/bawwab@feat/bawwab"
+bawwab --help
+
+# or run it without installing
+uvx --from "git+https://github.com/anasAsh/bawwab@feat/bawwab" bawwab scan <target>
+uvx bawwab scan <target>        # once it is published to PyPI
+```
+
+The CLI scans and decides, but without the plugin nothing gates Claude's installs.
 
 ## Usage
 
@@ -229,6 +247,24 @@ bawwab effects                 # list quarantined items
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
+In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. Claude can run `scan`,
+`explain`, `diff` and `init --scan`, but never `approve`, `reject` or `init --skip`.
+
+### MCP tools
+
+The plugin's `bawwab` MCP server lets Claude answer *"is this safe?"* with a real scan. The tools only scan:
+nothing here installs, approves, rejects or clears a quarantine.
+
+| Tool | Does |
+|---|---|
+| `scan_mcp_server` | scan an MCP server: npm or PyPI package, git or HTTPS URL, or a local path |
+| `scan_skill` | scan a skill folder or spec |
+| `scan_plugin` | scan a Claude Code plugin |
+| `diff_since_trusted` | what changed since you trusted a target |
+| `explain_finding` | plain-language reason and fix for a finding id |
+
+Reports come back framed as untrusted data, with bawwab's own instructions kept outside the frame.
+
 ## Configuration
 
 `~/.bawwab/config.json`. A project can override it with `.claude/bawwab.json`, but only to make things **stricter**.
@@ -242,10 +278,32 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 }
 ```
 
+## How it resists prompt injection
+
+Everything Bawwab scans is written by someone who may be attacking the agent that reads the result. So:
+
+- **Approval is out of the agent's reach.** `bawwab approve`, `reject` and `init --skip`, edits to Bawwab's own
+  files and state, and disabling or uninstalling the plugin are protected actions: the gate denies them when
+  Claude tries, in any form it can recognise. Only you, from a `!` shell, can let something through.
+- **The review can only raise risk.** Claude's review sees the scanned text as quoted, untrusted data and is
+  asked a narrow question. Its answer can raise a verdict, never lower one, and a garbled answer counts as
+  suspicious. Text written to talk the reviewer out of a finding is part of the benchmark.
+- **Static findings always reach you.** No scanned text can suppress a static rule.
+- **Output is sanitised and framed.** Control characters, ANSI escapes and invisible format characters are
+  stripped from the untrusted text Bawwab prints. MCP tool results mark the quoted part as data, not instructions.
+- **No permission is granted.** Bawwab only ever denies. A clean scan leaves Claude Code's normal permission
+  rules in charge, so a target that fools the scanner still gets the usual prompt.
+- **What actually changed is checked too.** Even if a command slips past the gate, the effect check sees the
+  new server, skill, plugin or hook in Claude's configuration and quarantines it until you decide.
+
 ## Honest limitations
 
-- The gate only sees what **Claude** does. Things you install yourself in a normal terminal are caught by the
-  effect check and the session-start inventory, after the fact.
+- The hooks only see what **Claude** does. Things you install yourself in your own terminal aren't gated;
+  the effect check and the session-start inventory catch them after the fact.
+- Bash parsing is best-effort. The gate recognises the install commands and config edits it knows, and bash
+  has endless ways to hide one. The effect check is the backstop, and it acts after the command has run.
+- The `SessionStart` inventory only warns. What it finds in things already installed arrives as a warning
+  with your next prompt; it doesn't block anything.
 - Static rules can be dodged by determined obfuscation. That's why there's a Claude review, a "never below
   suspicious" floor for credential-plus-network code, and an effect check. Bawwab raises the bar a lot; it doesn't promise perfection.
 - v1 protects **Claude Code**. Cursor, Codex CLI, Claude Desktop and VS Code are planned for v1.1 (see roadmap).
@@ -258,8 +316,8 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 - [x] Rug-pull snapshots and cross-server analysis
 - [x] Install gate for Claude Code, with approvals and version pinning
 - [x] Session-start inventory and real-world precision tuning
-- [ ] Effect check and quarantine *(in review)*
-- [ ] MCP server tools: `scan_mcp_server`, `scan_skill`, `diff_since_trusted`, `explain_finding`
+- [x] Effect check and quarantine
+- [x] MCP server tools: `scan_mcp_server`, `scan_skill`, `scan_plugin`, `diff_since_trusted`, `explain_finding`
 - [x] Labelled benchmark with published precision and recall, run in CI
 - [ ] One-command Claude Code plugin
 - [ ] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox

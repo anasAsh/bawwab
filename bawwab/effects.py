@@ -14,6 +14,7 @@ init state: bawwab state that goes missing during a session fails closed (effect
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import importlib.util
 import json
 import os
@@ -34,10 +35,11 @@ from bawwab.types import ScanReport, Target, Verdict
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"})
 ERROR_IDENT = "effects.error"
 MAX_SHOWN_FINDINGS = 5
+MAX_BATCH_SHOWN = 20
 SECONDS_PER_ITEM = 20
-_FP_FILE = Path(__file__).resolve().parent.parent / "hooks" / "fingerprint.py"
 _fp_mod = None
 _ACCEPTED = ("provisional", "unscanned", "accepted", "approved")
+BATCHED = ("hooks", "exec_settings")  # at init, install-time items of these categories share one approval
 
 
 class EffectsFailed(Exception):
@@ -47,11 +49,23 @@ class EffectsFailed(Exception):
 
 # ------------------------------------------------------------------ files shared with the hook
 
+def fp_file() -> Path:
+    """The fingerprint code the hook runs: $CLAUDE_PLUGIN_ROOT/hooks/fingerprint.py under the plugin (an absolute
+    root that has it), else the package's own copy (bawwab/_fingerprint.py, a link to hooks/fingerprint.py in the
+    source tree and a plain file in a wheel). Never the cwd or a repo being scanned."""
+    root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+    if root and os.path.isabs(root):
+        p = Path(root) / "hooks" / "fingerprint.py"
+        if p.is_file():
+            return p
+    return Path(__file__).resolve().parent / "_fingerprint.py"
+
+
 def fp_module():
     """hooks/fingerprint.py, loaded by path (the hook loads the same file)."""
     global _fp_mod
     if _fp_mod is None:
-        spec = importlib.util.spec_from_file_location("_bawwab_fingerprint", _FP_FILE)
+        spec = importlib.util.spec_from_file_location("_bawwab_fingerprint", fp_file())
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         _fp_mod = mod
@@ -281,6 +295,14 @@ def _scan_item(it: EffectItem, scan, cfg, store: Store) -> ScanReport:
         cleanup()
 
 
+def _batch_approved(store: Store, it: EffectItem) -> bool:
+    """Approved as part of an init batch, and unchanged since."""
+    row = store.effect_rows_by_ident(it.ident)
+    return row is not None and row["status"] == "approved" and row["hash"] == it.hash \
+        and row["key"].startswith("effect-batch:") and store.is_approved(row["key"]) \
+        and not store.is_rejected(row["key"])
+
+
 def _accepted_now(store: Store, ident: str, current: dict[str, str]) -> bool:
     row = store.effect_rows_by_ident(ident)
     return row is not None and row["status"] in _ACCEPTED and current.get(ident) == row["hash"]
@@ -296,7 +318,9 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
         return off or store.is_approved(r.key) or all(_accepted_now(store, i, current) for i in it.requires), r
     if it.category in UNSCANNABLE or it.target is None:
         r = _unscannable_report(it)
-        return store.is_approved(r.key) and not store.is_rejected(r.key), r
+        if store.is_rejected(r.key):
+            return False, r
+        return store.is_approved(r.key) or _batch_approved(store, it), r
     try:
         r = _scan_item(it, scan, cfg, store)
     except Exception as e:  # noqa: BLE001 - one bad item fails closed on its own
@@ -321,6 +345,23 @@ def _quarantine(store: Store, it: EffectItem, r: ScanReport) -> str:
     qid = store.create_pending(r)
     store.add_quarantine(qid, it.ident, it.hash, r.key, it.to_dict(), report_to_dict(r))
     store.audit("effects.quarantine", id=qid, ident=it.ident, key=r.key, verdict=r.verdict.value)
+    return qid
+
+
+def _quarantine_batch(store: Store, batch: list[tuple[EffectItem, ScanReport]]) -> str:
+    """Install-time hooks and exec settings (other plugins' and tools'): one quarantine id and one approval
+    key for all of them, so `init --scan` asks once, not once per item."""
+    idents = sorted(f"{it.ident}#{it.hash}" for it, _ in batch)
+    key = "effect-batch:" + hashlib.sha256("\n".join(idents).encode()).hexdigest()[:24]
+    labels = "; ".join(it.label for it, _ in batch)
+    r = synthetic_report(sanitise(f"{len(batch)} hooks and settings that were already in Claude's configuration "
+                                  f"when bawwab was installed (nothing to scan): {labels}", 1500),
+                         key, Target("local", "init-batch", name="install-time hooks and settings"),
+                         rule="effects.batch")
+    qid = store.create_pending(r)
+    for it, ir in batch:
+        store.add_quarantine(qid, it.ident, it.hash, key, it.to_dict(), report_to_dict(ir))
+    store.audit("effects.quarantine_batch", id=qid, key=key, idents=[it.ident for it, _ in batch])
     return qid
 
 
@@ -505,6 +546,7 @@ def quarantined(store: Store | None = None) -> list[dict]:
     store = store or open_store()
     _take_error_marker(store, [])
     out: list[dict] = []
+    reissued: dict[str, str] = {}  # a batch shares one id: re-issue it once
     for q in store.active_quarantine():
         if store.is_approved(q["key"]) and not store.is_rejected(q["key"]):
             store.set_quarantine(q["qrow"], status="approved")
@@ -513,12 +555,21 @@ def quarantined(store: Store | None = None) -> list[dict]:
                 store.put_effect(q["ident"], q["hash"], item["scope"], "approved", q["key"])
             store.audit("effects.approved", id=q["id"], ident=q["ident"], key=q["key"])
             continue
-        if store.pending_expired(q["id"]):
+        if q["id"] in reissued:
+            store.set_quarantine(q["qrow"], qid=reissued[q["id"]])
+            q["id"] = reissued[q["id"]]
+        elif store.pending_expired(q["id"]):
             try:
-                new_id = store.create_pending(report_from_dict(json.loads(q["report"])))
-            except (ValueError, KeyError, TypeError):
+                rep = report_from_dict(json.loads(q["report"]))
+                if rep.key != q["key"]:  # a batch row: its id stands for the batch report
+                    rep = report_from_dict(store.pending_report(q["id"]))
+                    if rep.key != q["key"]:
+                        raise ValueError(q["key"])
+                new_id = store.create_pending(rep)
+            except (ValueError, KeyError, TypeError, AttributeError):
                 new_id = store.create_pending(synthetic_report("quarantined item", q["key"]))
             store.set_quarantine(q["qrow"], qid=new_id)
+            reissued[q["id"]] = new_id
             q["id"] = new_id
         out.append(q)
     _sync_flag(store)
@@ -540,21 +591,28 @@ def reject_quarantined(qid: str, store: Store | None = None) -> tuple[bool, str]
     q = find_quarantine(store, qid)
     if q is None or q["status"] != "active":
         return False, "not an active quarantine id"
-    item = json.loads(q["item"]) if q["item"] else {}
-    if q["ident"] == ERROR_IDENT:
-        ok, msg = True, "dismissed the failed effect check (it runs again on the next tool call)"
-    else:
-        adapter = adapter_for(q["ident"])
-        if adapter is None:
-            return False, f"no adapter for {q['ident']}"
-        ok, msg = adapter.remove(item)
+    group = [x for x in store.active_quarantine() if x["id"] == q["id"]] or [q]  # a batch: every item
+    done: list[str] = []
+    failed: list[str] = []
+    for x in group:
+        if x["ident"] == ERROR_IDENT:
+            ok, msg = True, "dismissed the failed effect check (it runs again on the next tool call)"
+        else:
+            adapter = adapter_for(x["ident"])
+            item = json.loads(x["item"]) if x["item"] else {}
+            ok, msg = adapter.remove(item) if adapter else (False, f"no adapter for {x['ident']}")
         if not ok:
-            return False, msg
-    store.reject(q["id"])
-    store.set_quarantine(q["qrow"], status="rejected")
-    store.audit("effects.reject", id=q["id"], ident=q["ident"], result=msg)
+            failed.append(msg)
+            continue
+        store.set_quarantine(x["qrow"], status="rejected")
+        store.audit("effects.reject", id=x["id"], ident=x["ident"], result=msg)
+        done.append(msg)
+    if not done:
+        return False, "; ".join(failed)
+    if not failed:  # else the rest stay quarantined under the same id, to retry or approve
+        store.reject(q["id"])
     _sync_flag(store)
-    return True, msg
+    return True, "; ".join(done + [f"not removed: {m}" for m in failed])
 
 
 def _summary(q: dict) -> str:
@@ -586,7 +644,26 @@ def quarantine_text(entries: list[dict]) -> str:
         "accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and "
         "NotebookRead is blocked until the user decides. Tell the user; only they can run these commands."
     )
-    return head + "\n" + "\n".join(_summary(q) for q in entries)
+    groups: dict[str, list[dict]] = {}
+    for q in entries:
+        groups.setdefault(q["id"], []).append(q)
+    return head + "\n" + "\n".join(_summary(g[0]) if len(g) == 1 else _batch_summary(g) for g in groups.values())
+
+
+def _batch_summary(group: list[dict]) -> str:
+    lines = [f"• {len(group)} hooks and settings that were already configured when bawwab was installed "
+             "(other plugins' and tools'; nothing to scan) — SUSPICIOUS until approved:"]
+    for q in group[:MAX_BATCH_SHOWN]:
+        try:
+            label = json.loads(q["item"]).get("label") or q["ident"]
+        except (ValueError, AttributeError):
+            label = q["ident"]
+        lines.append(f"    - {sanitise(label, 200)}")
+    if len(group) > MAX_BATCH_SHOWN:
+        lines.append(f"    … and {len(group) - MAX_BATCH_SHOWN} more (`bawwab effects` lists them all)")
+    qid = sanitise(group[0]["id"], 8)
+    lines.append(f"    keep them all:  ! bawwab approve {qid}      remove them all:  ! bawwab reject {qid}")
+    return "\n".join(lines)
 
 
 def _deny(reason: str) -> dict:
@@ -760,6 +837,7 @@ def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
                 items.setdefault(it.ident, it)
     current = {i: it.hash for i, it in items.items()}
     new_ids: list[str] = []
+    batch: list[tuple[EffectItem, ScanReport]] = []
     # no lock while scanning (minutes): the hooks' effect checks must not wait on a background scan
     for it in _toggles_last(list(items.values())):
         row = rows.get(it.ident)
@@ -771,10 +849,21 @@ def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
         if ok:
             store.put_effect(it.ident, it.hash, it.scope, "accepted", r.key)
             continue
+        if it.category in BATCHED and row is not None and row["status"] == "provisional" \
+                and row["hash"] == it.hash and not store.is_rejected(r.key):
+            batch.append((it, r))  # there at install, nothing to scan: one approval for all of them
+            continue
         with _lock():  # an effect check may have quarantined it meanwhile
             if not _is_quarantined(store, it):
                 store.drop_effect(it.ident)
                 new_ids.append(_quarantine(store, it, r))
+    if batch:
+        with _lock():
+            batch = [(it, r) for it, r in batch if not _is_quarantined(store, it)]
+            if batch:
+                for it, _ in batch:
+                    store.drop_effect(it.ident)
+                new_ids.append(_quarantine_batch(store, batch))
     for ident, r in store.all_effect_rows().items():
         if r["status"] == "provisional":
             store.drop_effect(ident)  # gone since install: nothing left to trust
