@@ -1,0 +1,48 @@
+{
+ "about": "Hand-check of every counted finding on a non-clean target. build_site.py refuses to publish while any is missing. Keyed by target id (from targets.json; it changes when the pin changes). Each entry matches one finding by 'key' (from results.json) or every finding of a 'rule', optionally limited by a 'file' glob. status: confirmed | false-positive | expected-behaviour. note: shown on the page, in plain language.",
+ "targets": {
+  "mcp-npm-notionhq-notion-mcp-server-a25bfc": {
+   "name": "@notionhq/notion-mcp-server@2.6.1",
+   "summary": "Flagged by one rule on bundled third-party code; reviewed as a known false alarm.",
+   "findings": [
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "bin/cli.mjs"
+     },
+     "status": "false-positive",
+     "note": "bin/cli.mjs is a single minified bundle that includes the Express web framework and its dependencies. The rule saw environment access and network calls in the same file, but they belong to unrelated bundled libraries (Express builds functions at run time), not to code that reads secrets and sends them out. Known false alarm, recorded as Ruling R49 during Bawwab's own benchmark (Task 12).",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20",
+     "ref": "Ruling R49"
+    }
+   ]
+  },
+  "plugin-obra-superpowers-574554": {
+   "name": "obra/superpowers (plugin)",
+   "summary": "Flagged for two manifest logo images and a test file; reviewed: nothing malicious.",
+   "findings": [
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "tests/brainstorm-server/auth.test.js"
+     },
+     "status": "false-positive",
+     "note": "A test that starts the plugin's own brainstorm server as a child process, passing a copy of the environment plus test settings (port, temp dir, a fixed test token). Its network calls go to that local test server on 127.0.0.1. The rule fired because the file also builds a function at run time (to execute the page's bootstrap script under test), which makes Bawwab stop trusting its 'environment only goes to a launched program' exemption. Nothing reads secrets and sends them elsewhere.",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "files.truncated",
+      "file": "assets/*.png"
+     },
+     "status": "expected-behaviour",
+     "note": "Two logo images (assets/app-icon.png, assets/antigravity-logo.png) named in the plugin manifests' \"logo\" fields. Bawwab does not scan images and flags any file a manifest names, so it can't rule out that something runs them. Checked by hand: they are real PNGs and nothing in the plugin runs them.",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  }
+ }
+}
