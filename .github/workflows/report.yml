@@ -54,7 +54,9 @@ jobs:
           sys.exit(0 if len(ts) == 100 and n == {"mcp": 50, "skill": 30, "plugin": 20} else 1)
           '
       - name: Scan (download only, throwaway HOME)
-        run: REPORT_PYTHON=.venv/bin/python REPORT_WORK="$RUNNER_TEMP/rw" report/run_scan.sh
+        # Outside the real home: on GitHub runners $RUNNER_TEMP is under /home/runner, and scan.py refuses an
+        # XDG or work dir inside the real home.
+        run: REPORT_PYTHON=.venv/bin/python REPORT_WORK=/var/tmp/bawwab-report-work report/run_scan.sh
       - name: Build the site
         run: uv run python report/build_site.py --allow-unreviewed
       - name: List findings awaiting review
