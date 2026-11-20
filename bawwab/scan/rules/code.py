@@ -17,6 +17,7 @@ from posixpath import dirname, join, normpath
 from tree_sitter_language_pack import get_parser
 
 from bawwab.scan.files import ExtraText, ScanFile
+from bawwab.scan.rules import envflow
 from bawwab.types import Finding, Severity
 
 PY_EXT = (".py",)
@@ -300,12 +301,8 @@ CRED_RES = [
     r"security\s+find-generic-password", r"(?<!mock-)\bkeychain\b",
     r"\.config/(?:google-chrome|chromium|BraveSoftware)", r"Application Support/(?:Google/Chrome|Firefox)",
     r"\.mozilla/firefox", r"\bLogin Data\b",
-    r"\bdict\(\s*os\.environ\s*\)", r"\bos\.environ\.(?:copy|items)\(\)", r"\bjson\.dumps\(\s*os\.environ\b",
-    r"\bstr\(\s*os\.environ\s*\)",
-    r"JSON\.stringify\(\s*process\.env\b", r"Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
-    # spread copies: a hit only when they reach a network call or a write (R44)
-    r"\{\s*\.\.\.\s*process\.env\s*[,}]", r"\{\s*\*\*\s*os\.environ\s*[,}]",
-    r"Object\.assign\(\s*\{\s*\}\s*,\s*process\.env\s*[,)]",
+    # serialised environments; whole-environment copies are found on the syntax tree (R45, envflow.py)
+    r"\bjson\.dumps\(\s*os\.environ\b", r"\bstr\(\s*os\.environ\s*\)", r"JSON\.stringify\(\s*process\.env\b",
 ]
 DOTENV_RE = re.compile(
     r"\b(?:load_dotenv|dotenv_values|find_dotenv)\b|require\(\s*['\"]dotenv['\"]\s*\)"
@@ -313,9 +310,9 @@ DOTENV_RE = re.compile(
     re.M,
 )
 CRED_RE = re.compile("|".join(CRED_RES), re.I)
-# Copies of the whole environment (Task 10c B). These are mostly an env handed to a child process;
-# they count as credential access only when the copy flows to a network call or a file write.
-# Serialising the env (json.dumps, JSON.stringify, str) stays a plain credential hit.
+# Copies of the whole environment (Task 10c B), as text: only for files that do not parse (R45 5).
+# Parsed files are read on the tree (envflow.py). Serialising the env (json.dumps, JSON.stringify,
+# str) stays a plain credential hit.
 ENV_COPY_RE = re.compile(
     r"dict\(\s*os\.environ\s*\)|os\.environ\.(?:copy|items)\(\)|Object\.(?:entries|keys|values)\(\s*process\.env\s*\)",
     re.I,
@@ -323,10 +320,6 @@ ENV_COPY_RE = re.compile(
 SPREAD_COPY_RE = re.compile(
     r"\{\s*\.\.\.\s*process\.env\s*[,}]|\{\s*\*\*\s*os\.environ\s*[,}]|Object\.assign\(\s*\{\s*\}\s*,\s*process\.env\s*[,)]",
     re.I,
-)
-ENV_WRITE_RE = re.compile(
-    r"\b(?:write\w*|appendFile\w*|write_text|write_bytes|dump)\s*\(|\bcreateWriteStream\b"
-    r"|\bopen\([^)\n]*['\"][wax]b?\+?['\"]"
 )
 # References into a .claude dir, as "/.claude/<sub>" or path.join(..., ".claude", "<sub>") (R26d, R27 I5).
 # ".claude/x", or ".claude" then a string join: path.join(..., '.claude', 'x'), '.claude' + '/x',
@@ -1786,390 +1779,50 @@ SSH_JOIN_RE = re.compile(
 )
 
 
-# The statement's assignment target: the last `name =` after a statement boundary on the line, with
-# no `;` between it and the copy (minified bundles hold many statements on one line).
-_ASSIGN_HEAD_RE = re.compile(
-    r"""(?:^|[;{}])\s*(?:export\s+)?(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$.]*)\s*(?::\s*[^=\n;]+?)?\s*=(?![=>])(?=[^;]*$)"""
-)
-# The `debug` package form (R41): env keys tested against a literal ^prefix regex, reduced into options.
-_PREFIX_FILTER_RE = re.compile(
-    r"""\s*\.\s*filter\s*\(\s*(?:function\s*\(\s*[\w$]+\s*\)\s*\{\s*return\s*|\(?\s*[\w$]+\s*\)?\s*=>\s*)"""
-    r"""/\^([A-Za-z][\w]*)/[gimsuy]*\.test\(\s*[\w$]+\s*\)\s*;?\s*\}?\s*\)\s*\.\s*reduce\s*\("""
-)
-_SECRETISH_RE = re.compile(r"key|token|secret|pass|pwd|auth|cred|aws|gh_|github|npm|openai|anthropic|session|cookie", re.I)
-_FUNC_HEAD_RE = re.compile(
-    r"""\bdef\s+([A-Za-z_]\w*)|\bfunction\s*\*?\s*([\w$]+)\s*\("""
-    r"""|([\w$]+)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)"""
-    r"""|^[ \t]*(?:async\s+)?(?:static\s+)?(?!(?:if|for|while|switch|catch|return)\b)([\w$]+)\s*\([^()]*\)\s*\{""",
-    re.M,
-)
+# ---------------------------------------------------------------- environment copies (R45)
+# Whole-environment copies, launchers and their bindings are read on the syntax tree (envflow.py):
+# comments and strings never bind, casts / parens / position do not matter, and a reassigned or
+# patched launcher binding or module is no launcher.
 
 
-def _scope_bounds(f: ScanFile, t: str, line: int) -> tuple[int, int]:
-    """Character range of the outermost function holding `line` (the whole file at module level)."""
-    for lo, hi in _function_spans(f.rel, f.text) or []:
-        if lo <= line <= hi:
-            a = 0
-            for _ in range(lo - 1):
-                a = t.find("\n", a) + 1
-            b = a
-            for _ in range(hi - lo + 1):
-                nb = t.find("\n", b)
-                b = len(t) if nb < 0 else nb + 1
-            return a, b
-    return 0, len(t)
+def _is_net_call(f: ScanFile, callee_raw: str, args: str, first_raw: str) -> bool:
+    """One call is outbound: the same test _net_calls applies to every parsed call."""
+    b = _bindings(f.rel, f.text)
+    callee = _norm_callee(callee_raw, b.al)
+    leaf = callee.rsplit(".", 1)[-1]
+    raw_root = _norm_callee(callee_raw, {}).split(".", 1)[0]
+    # an import/require binding (or require('m').x inline), not a parameter named like a module
+    bound = raw_root in b.al or bool(_INLINE_LOAD_RE.match(callee_raw.strip()))
+    is_net = (
+        _is_global_net(callee, f.rel)
+        or (bound and _is_net_callee(callee) and _imported(callee, b.mods))
+        or (leaf in SHELL_FUNCS and CURL_RE.search(args))
+    )
+    return bool(is_net and not _loopback_only(first_raw)) or _host_in(args)
 
 
-# Process launchers (R41): an env copy is bound only in the env slot of one of these.
-LAUNCH_LEAVES = {
-    "Popen", "spawn", "spawnSync", "execFile", "execFileSync", "fork", "execa", "execaSync", "execaCommand",
-    "execaCommandSync", "execaNode", "launch", "StdioClientTransport", "create_subprocess_exec",
-    "create_subprocess_shell", "crossSpawn", "posix_spawn", "posix_spawnp",
-}
-LAUNCH_MODULE_LEAVES = {"run", "call", "check_call", "check_output", "exec", "execSync", "getoutput", "getstatusoutput"}
-_CALLEE_TAIL_RE = re.compile(r"((?:new\s+)?[A-Za-z_$][\w$.]*)\s*$")
-_NOT_CALLEES = {"if", "while", "for", "return", "switch", "catch", "and", "or", "not", "in", "typeof", "await", "yield"}
-_ENV_KEY_RE = re.compile(r"""(?<![\w$.])['"]?env['"]?\s*(?:=(?![=>])|:(?!:))\s*""")
-_BIND_DEPTH = 3
+@lru_cache(maxsize=16)
+def _env_copies_cached(rel: str, text: str, t: str) -> tuple[envflow.EnvCopy, ...] | None:
+    f = ScanFile(rel, text)
+    return envflow.env_copies(rel, t, lambda c, a, fr: _is_net_call(f, c, a, fr))
 
 
-LAUNCH_MODULES = ("child_process", "subprocess", "os", "execa", "cross-spawn", "asyncio")
-BROWSER_MODULES = ("puppeteer", "puppeteer-core", "playwright", "playwright-core", "@playwright/test", "chrome-launcher")
-
-
-def _from(v: str, mods: tuple[str, ...]) -> bool:
-    return any(v == m or v.startswith(m + ".") for m in mods)
-
-
-def _code_only(f: ScanFile) -> str:
-    """The file with comments blanked and string bodies blanked where offsets survive (R44 N8)."""
-    t = _code_text(f.rel, f.text)
-    return t
-
-
-def _is_code_at(f: ScanFile, t: str, a: int, b: int) -> bool:
-    """t[a:b] is code: not in a comment (blanked in t) and not inside a string literal."""
-    tb = _blanked_for(f.rel, t)
-    return tb is None or tb[a:b] == t[a:b]
-
-
-_REQ_DECL = r"""(?:\b(?:const|let|var)\s+|,\s*)({root})\s*=\s*(?:await\s+)?([\w$]+)\(\s*['"]([\w@/.:-]+)['"]\s*\)"""
-
-
-def _require_fn(f: ScanFile, t: str, fn: str) -> bool:
-    """`fn` is `require`, a `createRequire(...)` result or esbuild's `__require` shim, declared in code."""
-    if fn == "require":
-        return True
-    e = re.escape(fn)
-    for rx in (r"\b(?:const|let|var)\s+" + e + r"\s*=\s*(?:[\w$.]+\.)?createRequire\(",
-               r"(?:\b(?:const|let|var)\s+|,\s*)" + e + r"""\s*=\s*\(\s*[\w$]+\s*=>\s*typeof\s+require\s*<\s*["']u["']\s*\?\s*require\b"""):
-        for m in re.finditer(rx, t):
-            head_end = t.index("=", m.start()) + 1  # the shim's body holds string literals ("u")
-            if _is_code_at(f, t, m.start(), head_end):
-                return True
-    return False
-
-
-def _created_require(f: ScanFile, root: str) -> str | None:
-    """The module of `const root = req('m')` in code, where req is `require`, made by `createRequire(...)`,
-    or esbuild's `__require` shim (`var T=(e=>typeof require<"u"?require:...)`). Comments and strings
-    never count (R44 N8)."""
-    t = _code_only(f)
-    for m in re.finditer(_REQ_DECL.format(root=re.escape(root)), t):
-        # the declaration up to the "(" must be code; the module literal itself is a string
-        if _is_code_at(f, t, m.start(), m.start(3) - 1) and _require_fn(f, t, m.group(2)):
-            return re.sub(r"^node:", "", m.group(3))
-    return None
-
-
-def _self_defined(f: ScanFile, root: str) -> bool:
-    """The file binds `root` itself somewhere in code, other than by a require/import (R42 N3, R44 N8):
-    function/class/def, a non-require const/let/var, or a Python plain assignment / `as root`."""
-    t = _code_only(f)
-    e = re.escape(root)
-    for m in re.finditer(r"(?:\bdef|\bfunction\s*\*?|\bclass)\s+" + e + r"\b", t):
-        if _is_code_at(f, t, m.start(), m.end()):
-            return True
-    for m in re.finditer(r"(?:\b(?:const|let|var)\s+|,\s*)" + e + r"\s*=(?![=>])", t):
-        if not _is_code_at(f, t, m.start(), m.end()):
-            continue
-        rest = t[m.end() : m.end() + 200]
-        r = re.match(r"""\s*(?:await\s+)?(?:import\(|([\w$]+)\(\s*['"][\w@/.:-]+['"]\s*\))""", rest)
-        if r is None or (r.group(1) is not None and not _require_fn(f, t, r.group(1))):
-            return True
-    if f.rel.endswith(PY_EXT):
-        for m in re.finditer(r"^[ \t]*" + e + r"\s*(?::[^=\n]+)?=(?!=)|\bas\s+" + e + r"\s*(?::|$|,)"
-                             r"|\bfor\s+(?:[\w, ]+,\s*)?" + e + r"\b[^\n]*\bin\b|\bglobal\s+" + e + r"\b", t, re.M):
-            if not _is_code_at(f, t, m.start(), m.end()):
-                continue
-            if m.group(0).lstrip().startswith("as"):
-                line = _line_text(t, _line_of(t, m.start()))
-                if re.match(r"\s*(?:import|from)\b", line):
-                    continue  # `import subprocess as sp`: an import; a fake module is checked by its value
-            return True
-    return False
-
-
-def _resolved(f: ScanFile, callee: str) -> str:
-    """The callee normalised through imports, also through createRequire / bundler require shims."""
-    root, _, rest = callee.partition(".")
-    if (mod := _created_require(f, root)) is not None:
-        return mod + ("." + rest if rest else "")
-    return _norm_callee(callee, _aliases(f.rel, f.text))
+def _env_copies(f: ScanFile, t: str) -> tuple[envflow.EnvCopy, ...]:
+    """Copies of the environment on the tree, or (unparseable file) every regex hit as unbound (R45 5)."""
+    if f.rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        got = _env_copies_cached(f.rel, f.text, t)
+        if got is not None:
+            return got
+    out = []
+    for rx, family in ((ENV_COPY_RE, "old"), (SPREAD_COPY_RE, "spread")):
+        for m in rx.finditer(t):
+            out.append(envflow.EnvCopy(m.start(), _line_of(t, m.start()), family, False, False))
+    return tuple(out)
 
 
 def _launcher(f: ScanFile, callee: str) -> bool:
-    """A real process launcher: the callee resolves to an import / require of a launcher module, a
-    browser launcher's .launch, or the MCP SDK's StdioClientTransport, never a bare name (R42 N3)."""
-    raw = re.sub(r"^new\s+", "", callee.strip())
-    al = dict(_aliases(f.rel, f.text))
-    root = raw.split(".", 1)[0]
-    if (mod := _created_require(f, root)) is not None:
-        al[root] = mod  # const puppeteer = requireFrom('puppeteer'), requireFrom = createRequire(...)
-    elif root in al and re.fullmatch(r"[\w$]+", al[root]) and not _from(al[root], LAUNCH_MODULES + BROWSER_MODULES):
-        del al[root]  # `const cp = R("child_process")` with R not a real require
-    if root not in al:
-        return False  # not an import: the package's own spawn / launch / api.launch
-    if _self_defined(f, root):
-        return False  # the file defines this name itself, always checked (R44 N8)
-    norm = _norm_callee(raw, al)
-    leaf = norm.rsplit(".", 1)[-1]
-    v = al[root]
-    if _from(v, LAUNCH_MODULES):
-        if _from(v, ("os",)):
-            return bool(re.fullmatch(r"os\.(?:exec|spawn|posix_spawn)\w*", norm))
-        if _from(v, ("asyncio",)):
-            return leaf in ("create_subprocess_exec", "create_subprocess_shell")
-        return leaf in LAUNCH_LEAVES | LAUNCH_MODULE_LEAVES or norm in ("execa", "cross-spawn")
-    if _from(v, BROWSER_MODULES):
-        return leaf in ("launch", "launchPersistentContext")
-    return v.startswith("@modelcontextprotocol/") and leaf == "StdioClientTransport"
-
-
-def _enclosing_call(t: str, q: int) -> tuple[int, str] | None:
-    """(index of "(", callee) of the innermost call around q, skipping objects, arrays and grouping parens."""
-    depth, i, lo = 0, q - 1, max(0, q - 6000)
-    while i >= lo:
-        ch = t[i]
-        if ch in ")]}":
-            depth += 1
-        elif ch in "([{":
-            if depth:
-                depth -= 1
-            elif ch == "(":
-                m = _CALLEE_TAIL_RE.search(t[max(0, i - 120) : i])
-                if m and m.group(1).rsplit(".", 1)[-1] not in _NOT_CALLEES:
-                    return i, m.group(1)
-        i -= 1
-    return None
-
-
-def _in_env_slot(t: str, o: int, q: int) -> bool:
-    """q is inside the value of an `env=` / `env:` argument of the call opened at o."""
-    keys = list(_ENV_KEY_RE.finditer(t, o + 1, q))
-    if not keys:
-        return False
-    depth = 0
-    for ch in t[keys[-1].end() : q]:
-        if ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-            if depth < 0:
-                return False
-        elif ch == "," and depth == 0:
-            return False
-    return True
-
-
-def _launch_slot(f: ScanFile, t: str, q: int, shorthand: bool = False) -> bool:
-    c = _enclosing_call(t, q)
-    return c is not None and _launcher(f, c[1]) and (shorthand or _in_env_slot(t, c[0], q))
-
-
-def _func_at(t: str, q: int) -> str | None:
-    heads = list(_FUNC_HEAD_RE.finditer(t, 0, q))
-    return next((g for g in heads[-1].groups() if g), None) if heads else None
-
-
-def _use_bound(f: ScanFile, t: str, q: int, qend: int, name: str, depth: int) -> str:
-    """"skip" (not a use: assigned, key, member, in-place edit, truthiness test), "ok" (handed to a
-    process launcher's env, directly or through a return / assignment) or "bad" (anything else)."""
-    before, after = t[max(0, q - 60) : q], t[qend : qend + 60]
-    if before.endswith(".") and not before.endswith("..."):
-        return "skip"  # a member (process.env), not this name
-    if re.match(r"\s*=(?![=>])", after) or (re.match(r"\s*:(?!:)", after) and re.search(r"[{,(]\s*$", before)):
-        return "skip"  # assigned to / an object key or keyword name
-    if re.match(r"\s*\[[^\]\n]*\]\s*=(?!=)|\.(?:update|pop|setdefault)\s*\(|\.[\w$]+\s*=(?!=)", after):
-        return "skip"  # env["X"] = ..., env.pop("X"), env.X = ...
-    if re.search(r"\bdelete\s+$", before):
-        return "skip"
-    if re.match(r"\s*\?(?![.?])", after) or re.search(r"(?:\bif\s*\(?\s*!?|!\s*|\bnot\s+)$", before):
-        return "skip"  # chromeEnv ? {...} : {}  (e || x / e && x are value uses: R42 N4)
-    if _launch_slot(f, t, q):
-        return "ok"
-    if name == "env" and re.search(r"[{,]\s*$", before) and re.match(r"\s*[,}]", after) and _launch_slot(f, t, q, shorthand=True):
-        return "ok"  # spawn(cmd, args, { env })
-    if depth >= _BIND_DEPTH:
-        return "bad"
-    if re.search(r"\breturn\s+$|\breturn\s*\{[^{}]*?(?:\.\.\.|\*\*)\s*$", before):
-        func = _func_at(t, q)
-        return "ok" if func and _calls_bound(f, t, func, depth + 1) else "bad"
-    line_start = t.rfind("\n", 0, q) + 1
-    heads = list(_ASSIGN_HEAD_RE.finditer(t[line_start:q]))
-    if heads and re.fullmatch(r"\s*", t[line_start + heads[-1].end() : q]):
-        n2 = heads[-1].group(1)
-        a, b = _scope_bounds(f, t, _line_of(t, q))
-        return "ok" if _name_bound(f, t, n2, a, b, (line_start, qend), depth + 1) else "bad"
-    return "bad"
-
-
-@lru_cache(maxsize=8)
-def _blanked_for(rel: str, t: str) -> str | None:
-    tb = _strings_blanked(rel, t)
-    return tb if len(tb) == len(t) else None
-
-
-def _in_code(f: ScanFile, t: str, pos: int, name: str) -> bool:
-    """The name at pos is code, not inside a string or docstring (prose naming a helper is no call site)."""
-    tb = _blanked_for(f.rel, t)
-    return tb is None or tb.startswith(name, pos)
-
-
-def _name_bound(f: ScanFile, t: str, name: str, a: int, b: int, skip: tuple[int, int], depth: int) -> bool:
-    """Every use of `name` in t[a:b] ends in a process launcher's env slot, and there is one."""
-    rx = re.compile(r"(?<![\w$])" + re.escape(name) + r"(?![\w$])")
-    ok = False
-    for m in rx.finditer(t, a, b):
-        if skip[0] <= m.start() < skip[1] or not _in_code(f, t, m.start(), name):
-            continue
-        kind = _use_bound(f, t, m.start(), m.end(), name, depth)
-        if kind == "bad":
-            return False
-        ok = ok or kind == "ok"
-    return ok
-
-
-def _calls_bound(f: ScanFile, t: str, func: str, depth: int) -> bool:
-    """Every call of `func` in the file ends in a process launcher's env slot, and there is one."""
-    ok = False
-    for m in re.finditer(r"(?<![\w$])" + re.escape(func) + r"(?=\s*\()", t):
-        if re.search(r"(?:\bdef|\bfunction\s*\*?)\s*$", t[max(0, m.start() - 20) : m.start()]):
-            continue
-        if m.start() > 0 and t[m.start() - 1] == "." and not t[: m.start()].endswith("..."):
-            continue
-        if not _in_code(f, t, m.start(), func):
-            continue
-        close = _close_of(t, t.index("(", m.end()))
-        kind = _use_bound(f, t, m.start(), close, func, depth)
-        if kind == "bad":
-            return False
-        ok = ok or kind == "ok"
-    return ok
-
-
-_OPTION_SINKS = {"util.inspect": 1, "util.formatWithOptions": 0}  # callee -> options argument index
-
-
-def _members_only(f: ScanFile, t: str, name: str, skip: tuple[int, int]) -> bool:
-    """Every use of `name` in the file reads a member of it (X.k, X[k]), tests a key (`k in X`) or lists
-    its keys (Object.keys(X)), and there is at least one such use."""
-    rx = re.compile(r"(?<![\w$.])" + re.escape(name) + r"(?![\w$])")
-    seen = False
-    for m in rx.finditer(t):
-        if skip[0] <= m.start() < skip[1] or not _in_code(f, t, m.start(), name):
-            continue
-        before, after = t[max(0, m.start() - 40) : m.start()], t[m.end() : m.end() + 40]
-        if re.match(r"\s*\.\s*(?:valueOf|toJSON|toString)\b", after):
-            return False  # the whole object again (review N10)
-        if re.match(r"\s*(?:\.\s*[\w$]|\[)", after) or re.search(r"\bin\s+$|\bObject\.keys\(\s*$", before):
-            seen = True
-            continue
-        c = _enclosing_call(t, m.start())
-        if c is not None and (slot := _OPTION_SINKS.get(_resolved(f, c[1]))) is not None:
-            args = _top_args(t, c[0])
-            k, pos_ = -1, c[0] + 1
-            for i, arg in enumerate(args):
-                if pos_ <= m.start() < pos_ + len(arg):
-                    k = i
-                    break
-                pos_ += len(arg) + 1
-            if k == slot and re.fullmatch(r"\s*" + re.escape(name) + r"\s*", args[k]):
-                seen = True  # util.formatWithOptions(opts, ...): the options slot only (review N10)
-                continue
-        return False
-    return seen
-
-
-def _spread_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
-    """{...process.env}, {**os.environ}, Object.assign({}, process.env): "real" only when the copy reaches
-    a network call or a write; otherwise "bound" (dropped), so a spread into a child's env or a config
-    object stays silent (R44, R26). The launcher-bound check runs first."""
-    line_start = t.rfind("\n", 0, pos) + 1
-    prefix = t[line_start:pos]
-    heads = list(_ASSIGN_HEAD_RE.finditer(prefix))
-    name = heads[-1].group(1) if heads and not re.search(r"=>|\bfunction\b|\blambda\b", prefix[heads[-1].end():]) else None
-    if name:
-        a, b = _scope_bounds(f, t, _line_of(t, pos))
-        if _name_bound(f, t, name, a, b, (line_start, end), 0):
-            return "bound"
-    elif _use_bound(f, t, pos, end, "", 0) == "ok":
-        return "bound"
-    return "real" if _env_dump_kind(f, t, pos, end) == "real" else "bound"
-
-
-def _env_dump_kind(f: ScanFile, t: str, pos: int, end: int) -> str:
-    """"real", "env" (LOW, still backstop-eligible) or "bound" (ignored) for a copy of the environment.
-
-    Real when the copy flows to a network call or a file write: in the same function as one, or by
-    its variable / function name in a network call's arguments (Task 10c B, R27). Bound only when
-    it lands in the env slot of a process launcher at every use and call site (R41), or in the
-    `debug` package's ^prefix key filter. Anything else is "env".
-    """
-    line = _line_of(t, pos)
-    net = _net_calls(f, t)
-    if net and _same_scope(f, [line], [ln for ln, _ in net]):
-        return "real"  # R27: same function as a network call
-    line_start = t.rfind("\n", 0, pos) + 1
-    prefix = t[line_start:pos]
-    names: list[str] = []
-    heads = list(_ASSIGN_HEAD_RE.finditer(prefix))
-    if heads and not re.search(r"=>|\bfunction\b|\blambda\b", prefix[heads[-1].end():]):
-        names.append(heads[-1].group(1))  # not `go = () => spawn(..., {env: copy})`: the copy is not go
-    name_res = [re.compile(r"(?<![\w$])" + re.escape(n) + r"(?![\w$])") for n in names]
-    for w in ENV_WRITE_RE.finditer(t):
-        if pos <= w.start() < end or re.search(r"(?<![\w$.])(?:process|sys)\s*\.\s*std(?:out|err)\s*\.\s*$", t[max(0, w.start() - 24) : w.start()]):
-            continue  # printing to the terminal is not a file write
-        wl = _line_of(t, w.start())
-        oi = t.find("(", w.start(), w.end() + 1)
-        span = (oi, _close_of(t, oi)) if oi >= 0 else (w.start(), w.end())
-        # written right here (the copy inside the write call), or written by name in the same function
-        if span[0] < pos < span[1] or (any(r.search(t, span[0], span[1]) for r in name_res) and _same_scope(f, [line], [wl])):
-            return "real"
-    a, b = _scope_bounds(f, t, line)
-    returned = bool(re.search(r"\breturn\b", prefix)) or any(
-        re.search(r"\breturn\s+(?:\{\s*(?:\.\.\.|\*\*)\s*)?" + re.escape(n) + r"(?![\w$])", t[a:b]) for n in names
-    )
-    func = _func_at(t, pos) if returned else None
-    for n in names + ([func] if func else []):
-        rx = re.compile(r"(?<![\w$.])" + re.escape(n) + r"(?![\w$])")
-        if any(rx.search(args) for _, args in net):
-            return "real"
-    if ((m := _PREFIX_FILTER_RE.match(t, end)) is not None and not _SECRETISH_RE.search(m.group(1))
-            and names and _members_only(f, t, names[0], (line_start, end))):
-        # debug: X = Object.keys(process.env).filter(k => /^debug_/i.test(k)).reduce(...), and X is
-        # only ever read by member / `in` / Object.keys: it never leaves as a whole (R42 N5)
-        return "bound"
-    if names:
-        return "bound" if _name_bound(f, t, names[0], a, b, (line_start, end), 0) else "env"
-    # the copy itself, unnamed: an env= argument right here, or returned
-    q = pos
-    for opener in ("Object.fromEntries(", "dict(", "{**", "{..."):
-        k = prefix.rfind(opener)
-        if k >= 0 and re.fullmatch(r"\s*", prefix[k + len(opener) :]):
-            q = line_start + k  # bind the wrapping expression, not the inner call
-            break
-    return "bound" if _use_bound(f, t, q, end, "", 0) == "ok" else "env"
+    """A real process launcher by its callee text, resolved at module level (R42 N3, R45 2)."""
+    return envflow.launcher_text(f.rel, _code_text(f.rel, f.text), callee)
 
 
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
@@ -2179,23 +1832,31 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     combos, the floor and the backstop), "env" (a copy of the environment whose use is
     unclear: LOW alone, backstop-eligible) or "regex" (a regex literal: the only
     combo-exempt context, R29). A copy of the environment handed to a child process is
-    not a hit at all (Task 10c B/C).
+    not a hit at all (Task 10c B/C); copies are found on the syntax tree (R45).
     """
     hits = []
     seen = set()
     for m in CRED_RE.finditer(t):
         if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
             seen.add(m.start())
-            kind = _context(f, t, m.start(), regexes)
-            if kind is None and SPREAD_COPY_RE.fullmatch(m.group(0)):
-                kind = _spread_kind(f, t, m.start(), m.end())
-                if kind == "bound":
-                    continue
-            elif kind is None and ENV_COPY_RE.fullmatch(m.group(0)):
-                kind = _env_dump_kind(f, t, m.start(), m.end())
-                if kind == "bound":
-                    continue
-            hits.append((m.start(), kind or "real"))
+            hits.append((m.start(), _context(f, t, m.start(), regexes) or "real"))
+    copies = _env_copies(f, t)
+    if copies:
+        net_lines = None
+        for c in copies:
+            kind = _context(f, t, c.pos, regexes)
+            if kind is None:
+                if c.bound:
+                    continue  # in a real launcher's env slot (R41, R45 3)
+                if net_lines is None:
+                    net_lines = _net_lines(f, t)
+                if c.sink or (net_lines and _same_scope(f, [c.line], net_lines)):
+                    kind = "real"  # reaches a network call or a write; or R27: same function as one
+                elif c.family == "spread" and not _network_capable(f, t):
+                    continue  # R26: a spread no network can reach stays silent (test_env_spread_not_dotenv)
+                else:
+                    kind = "env"  # LOW, counted by the R27 backstop (R45 4)
+            hits.append((c.pos, kind))
     for m in SSH_JOIN_RE.finditer(t):
         pos = m.start(1) if m.group(1) else m.start(2)
         if pos not in seen and not any(a <= pos < b for a, b in [(x.start(), x.end()) for x in CRED_RE.finditer(t, max(0, pos - 2), pos + 40)]):

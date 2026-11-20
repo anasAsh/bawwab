@@ -6,8 +6,9 @@ reach a network call or a write. Free minors: N9 (registerCommand arrays need ty
 position, valueOf/toJSON/toString), N11 (std(out|err) exemption anchored to process./sys.).
 
 Pinned as-is (accepted or deferred): W4 process.stdout.write (N11 remainder), P1 (R43 accepted cost),
-X1/X4 (spread reaching the network through an own helper: accepted by the R44 narrow fix), R2 (N9
-`parameters:` form, R42 shadow-only suppression).
+R2 (N9 `parameters:` form, R42 shadow-only suppression). X1/X4 (a spread reaching the network through an
+own helper) were pinned clean under the R44 narrow fix; Ruling R45 (4) makes them LOW credential-access
+counted by the R27 backstop, so they are now suspicious (round 4).
 """
 from __future__ import annotations
 
@@ -190,7 +191,7 @@ server.register("y", [{ name: "audit_log", type: "object", optional: true, descr
 '''))
 
 
-EXPECT = {'L1': 'non-clean', 'L1i': 'non-clean', 'L2': 'non-clean', 'L3': 'non-clean', 'L3i': 'non-clean', 'L4': 'non-clean', 'L5': 'non-clean', 'L6': 'clean', 'L7': 'non-clean', 'A1': 'non-clean', 'A2': 'non-clean', 'A3': 'non-clean', 'A4': 'non-clean', 'A5': 'non-clean', 'A6': 'non-clean', 'W1': 'non-clean', 'W2': 'non-clean', 'W3': 'non-clean', 'W4': 'clean', 'P1': 'clean', 'P2': 'non-clean', 'P3': 'non-clean', 'P4': 'non-clean', 'P5': 'non-clean', 'P6': 'clean', 'X1': 'clean', 'X2': 'malicious', 'X3': 'malicious', 'X4': 'clean', 'X5': 'clean', 'R0': 'non-clean', 'R1': 'non-clean', 'R2': 'clean', 'R3': 'non-clean'}
+EXPECT = {'L1': 'non-clean', 'L1i': 'non-clean', 'L2': 'non-clean', 'L3': 'non-clean', 'L3i': 'non-clean', 'L4': 'non-clean', 'L5': 'non-clean', 'L6': 'clean', 'L7': 'non-clean', 'A1': 'non-clean', 'A2': 'non-clean', 'A3': 'non-clean', 'A4': 'non-clean', 'A5': 'non-clean', 'A6': 'non-clean', 'W1': 'non-clean', 'W2': 'non-clean', 'W3': 'non-clean', 'W4': 'clean', 'P1': 'clean', 'P2': 'non-clean', 'P3': 'non-clean', 'P4': 'non-clean', 'P5': 'non-clean', 'P6': 'clean', 'X1': 'suspicious', 'X2': 'malicious', 'X3': 'malicious', 'X4': 'suspicious', 'X5': 'clean', 'R0': 'non-clean', 'R1': 'non-clean', 'R2': 'clean', 'R3': 'non-clean'}
 
 
 def _run(key):
