@@ -422,6 +422,8 @@ def run_entry(sb: Sandbox, e: dict) -> dict:
             rec["error"] = "setup did not produce a pending approval"
             return rec
         extra["{PENDING}"] = m.group(1)
+        if setup.get("approve"):  # the user approves it (normal work: one expected approval prompt)
+            rec["setup_approve"] = sb.apply([{"op": "approve", "id": extra["{PENDING}"], "force": False}])
     if setup.get("effect"):
         sb.apply(sb.subst(setup["effect"], extra))
         # an effect made by the user before the session: accept it as the baseline, as `init --skip` would

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from bawwab.clicmd import cmd
 from bawwab.config import load_config
+from bawwab.envkeys import entry_meta_key
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install, install_dir
 from bawwab.gate.pin import pin_changes
 from bawwab.gate.prefilter import prefilter
@@ -161,6 +162,24 @@ def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | N
     ), key
 
 
+def _link_entries(store: Store, entries: list[tuple[str, str]], reason: str, key: str) -> None:
+    """R1-I1: a protected server-env reason in this block: record that approving `key` also covers that exact server
+    entry, so the effect check accepts it once (bawwab/envkeys.py; effects._gate_approved_entry)."""
+    parts = reason.split("; ")
+    for r, h in entries:
+        if r not in parts:
+            continue
+        mk = entry_meta_key(h)
+        try:
+            linked = json.loads(store.get_meta(mk) or "[]")
+        except ValueError:
+            linked = []
+        if not isinstance(linked, list):
+            linked = []
+        if key not in linked:
+            store.set_meta(mk, json.dumps((linked + [key])[-16:]))
+
+
 def _scan_all(inp: HookInput, det: Targets, scan: Callable[..., ScanReport], store: Store,
               protected: list[str]) -> list[tuple[Target, ScanReport]]:
     cfg = load_config(Path(inp.cwd) if inp.cwd else None)
@@ -192,6 +211,7 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
     for reason in protected:
         text, key = _protected_block(inp, reason, store)
         keys.append(key)
+        _link_entries(store, det.env_entries, reason, key)
         if text:
             blocks.append(text)
     if det.plain:  # R57: a plain deny; no pending approval, and no `bawwab approve` to suggest

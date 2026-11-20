@@ -7,7 +7,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 26.4,
+        "ms": 62.2,
         "reason": "",
         "exit": 0
       }
@@ -17,14 +17,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.1,
+      "ms": 76.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.0,
+      "ms": 43.1,
       "reason": "",
       "exit": 0
     },
@@ -40,7 +40,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 61.2,
+        "ms": 29.7,
         "reason": "",
         "exit": 0
       }
@@ -50,14 +50,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 78.5,
+      "ms": 28.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 65.0,
+      "ms": 30.4,
       "reason": "",
       "exit": 0
     },
@@ -73,7 +73,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 29.4,
+        "ms": 48.2,
         "reason": "",
         "exit": 0
       }
@@ -83,14 +83,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 31.8,
+      "ms": 47.5,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 40.8,
+      "ms": 29.2,
       "reason": "",
       "exit": 0
     },
@@ -106,7 +106,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 43.4,
+        "ms": 30.8,
         "reason": "",
         "exit": 0
       }
@@ -116,14 +116,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 45.7,
+      "ms": 45.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 45.0,
+      "ms": 29.7,
       "reason": "",
       "exit": 0
     },
@@ -139,7 +139,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 413.5,
+        "ms": 423.2,
         "reason": "",
         "exit": 0
       }
@@ -149,14 +149,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 65.8,
+      "ms": 62.5,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 57.9,
+      "ms": 50.9,
       "reason": "",
       "exit": 0
     },
@@ -172,8 +172,8 @@
       {
         "decision": "deny",
         "kind": "suspicious",
-        "ms": 260.9,
-        "reason": "\u26d4 bawwab: SUSPICIOUS \u2014 <scratch>/run/proj@local  (standard scan)\n  MED   Fc90269  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\n  LOW   F8cc1ba  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve LSZY\nDeep scan first:  ! <repo>/bin/bawwab scan --deep python3 server.py\nExplain a finding:  ! <repo>/bin/bawwab explain Fc90269",
+        "ms": 297.5,
+        "reason": "\u26d4 bawwab: SUSPICIOUS \u2014 <scratch>/run/proj@local  (standard scan)\n  MED   Fa9cc2d  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\n  LOW   F7da85e  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve ZPGR\nDeep scan first:  ! <repo>/bin/bawwab scan --deep python3 server.py\nExplain a finding:  ! <repo>/bin/bawwab explain Fa9cc2d",
         "exit": 0
       }
     ],
@@ -182,14 +182,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 46.6,
+      "ms": 48.3,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 46.9,
+      "ms": 48.1,
       "reason": "",
       "exit": 0
     },
@@ -207,7 +207,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 45.7,
+        "ms": 28.5,
         "reason": "",
         "exit": 0
       }
@@ -217,14 +217,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.8,
+      "ms": 47.3,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 47.7,
+      "ms": 42.3,
       "reason": "",
       "exit": 0
     },
@@ -240,7 +240,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 44.6,
+        "ms": 30.2,
         "reason": "",
         "exit": 0
       }
@@ -250,14 +250,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 40.9,
+      "ms": 29.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 24.2,
+      "ms": 30.3,
       "reason": "",
       "exit": 0
     },
@@ -273,7 +273,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 42.9,
+        "ms": 28.5,
         "reason": "",
         "exit": 0
       }
@@ -283,14 +283,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 41.6,
+      "ms": 46.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 41.4,
+      "ms": 42.8,
       "reason": "",
       "exit": 0
     },
@@ -306,7 +306,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 23.4,
+        "ms": 30.3,
         "reason": "",
         "exit": 0
       }
@@ -316,14 +316,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 41.3,
+      "ms": 45.3,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 41.6,
+      "ms": 28.1,
       "reason": "",
       "exit": 0
     },
@@ -339,7 +339,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 25.8,
+        "ms": 29.2,
         "reason": "",
         "exit": 0
       }
@@ -349,14 +349,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.7,
+      "ms": 29.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 27.1,
+      "ms": 28.3,
       "reason": "",
       "exit": 0
     },
@@ -372,7 +372,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 27.4,
+        "ms": 45.8,
         "reason": "",
         "exit": 0
       }
@@ -382,14 +382,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 26.6,
+      "ms": 31.0,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 26.7,
+      "ms": 31.7,
       "reason": "",
       "exit": 0
     },
@@ -405,7 +405,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 51.1,
+        "ms": 51.2,
         "reason": "",
         "exit": 0
       }
@@ -415,14 +415,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 33.1,
+      "ms": 32.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 27.3,
+      "ms": 31.7,
       "reason": "",
       "exit": 0
     },
@@ -438,7 +438,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 27.8,
+        "ms": 33.6,
         "reason": "",
         "exit": 0
       }
@@ -448,14 +448,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 27.4,
+      "ms": 46.2,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 46.6,
+      "ms": 74.8,
       "reason": "",
       "exit": 0
     },
@@ -471,7 +471,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 274.4,
+        "ms": 274.7,
         "reason": "",
         "exit": 0
       }
@@ -483,14 +483,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 77.5,
+      "ms": 70.6,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 75.2,
+      "ms": 57.8,
       "reason": "",
       "exit": 0
     },
@@ -506,7 +506,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 220.7,
+        "ms": 269.7,
         "reason": "",
         "exit": 0
       }
@@ -518,14 +518,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 407.4,
+      "ms": 283.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 76.0,
+      "ms": 51.7,
       "reason": "",
       "exit": 0
     },
@@ -541,7 +541,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 286.1,
+        "ms": 276.5,
         "reason": "",
         "exit": 0
       }
@@ -553,14 +553,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 65.2,
+      "ms": 45.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 57.2,
+      "ms": 34.0,
       "reason": "",
       "exit": 0
     },
@@ -576,8 +576,8 @@
       {
         "decision": "deny",
         "kind": "protected",
-        "ms": 252.4,
-        "reason": "\u26d4 bawwab: blocked a protected action \u2014 hooks changed in settings.json\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve 4F5K",
+        "ms": 325.0,
+        "reason": "\u26d4 bawwab: blocked a protected action \u2014 hooks changed in settings.json\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve LK5O",
         "exit": 0
       }
     ],
@@ -588,14 +588,14 @@
     "post": {
       "decision": "block",
       "kind": "quarantine",
-      "ms": 276.4,
+      "ms": 323.7,
       "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\":\u2026\n    keep it:  ! <repo>/bin/baw",
       "exit": 0
     },
     "probe": {
       "decision": "deny",
       "kind": "quarantine",
-      "ms": 230.9,
+      "ms": 283.0,
       "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\":\u2026\n    keep it:  ! <repo>/bin/baw",
       "exit": 0
     },
@@ -608,6 +608,58 @@
     "by_design": "a new hook runs code: bawwab quarantines it until the user approves (spec: hooks are watched)"
   },
   {
+    "id": "mcp-add-pythonpath-approved",
+    "family": "settings",
+    "title": "add a local Python server with PYTHONPATH; the gate asks once, the user approves, then work goes on",
+    "setup_pending": {
+      "decision": "deny",
+      "kind": "protected",
+      "ms": 310.4,
+      "reason": "\u26d4 bawwab: blocked a protected action \u2014 server env loads code: PYTHONPATH (mail)\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve 2JDL",
+      "exit": 0
+    },
+    "setup_approve": [
+      "approve -> approved protected:d28a44300ddfb84d"
+    ],
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 297.6,
+        "reason": "",
+        "exit": 0
+      },
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 44.8,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [
+      "json_set"
+    ],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 258.6,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 46.5,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
     "id": "skill-script-sh",
     "family": "skills",
     "title": "run the installed changelog skill's bundled shell script",
@@ -615,7 +667,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 233.2,
+        "ms": 266.1,
         "reason": "",
         "exit": 0
       }
@@ -625,14 +677,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 43.7,
+      "ms": 46.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 23.6,
+      "ms": 50.4,
       "reason": "",
       "exit": 0
     },
@@ -648,7 +700,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 243.0,
+        "ms": 272.5,
         "reason": "",
         "exit": 0
       }
@@ -658,14 +710,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 64.8,
+      "ms": 41.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 69.0,
+      "ms": 33.3,
       "reason": "",
       "exit": 0
     },
@@ -681,7 +733,106 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 58.5,
+        "ms": 34.0,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 28.5,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 34.4,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "read-claude-json",
+    "family": "read",
+    "title": "Read ~/.claude.json",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 34.7,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 44.4,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 47.3,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "grep",
+    "family": "read",
+    "title": "Grep for a symbol",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 33.3,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 45.6,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 48.6,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "glob",
+    "family": "read",
+    "title": "Glob python files",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 30.1,
         "reason": "",
         "exit": 0
       }
@@ -698,106 +849,7 @@
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 26.6,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "read-claude-json",
-    "family": "read",
-    "title": "Read ~/.claude.json",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 47.5,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "blocked_fetch_failed": false,
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 21.9,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 42.1,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "grep",
-    "family": "read",
-    "title": "Grep for a symbol",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 27.0,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "blocked_fetch_failed": false,
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 24.9,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 41.4,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "glob",
-    "family": "read",
-    "title": "Glob python files",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 26.2,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "blocked_fetch_failed": false,
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 21.2,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 29.4,
+      "ms": 48.2,
       "reason": "",
       "exit": 0
     },
@@ -813,7 +865,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 357.8,
+        "ms": 271.2,
         "reason": "",
         "exit": 0
       }
@@ -825,14 +877,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 73.7,
+      "ms": 49.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 61.8,
+      "ms": 48.8,
       "reason": "",
       "exit": 0
     },
@@ -848,7 +900,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 222.0,
+        "ms": 268.7,
         "reason": "",
         "exit": 0
       }
@@ -860,14 +912,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 41.1,
+      "ms": 44.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 29.3,
+      "ms": 50.0,
       "reason": "",
       "exit": 0
     },
@@ -883,7 +935,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 250.0,
+        "ms": 249.3,
         "reason": "",
         "exit": 0
       }
@@ -895,14 +947,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 35.4,
+      "ms": 45.6,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 31.3,
+      "ms": 48.5,
       "reason": "",
       "exit": 0
     },
@@ -918,7 +970,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 37.6,
+        "ms": 30.8,
         "reason": "",
         "exit": 0
       }
@@ -928,14 +980,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 33.4,
+      "ms": 49.3,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 28.4,
+      "ms": 47.0,
       "reason": "",
       "exit": 0
     },
@@ -951,7 +1003,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 37.8,
+        "ms": 31.5,
         "reason": "",
         "exit": 0
       }
@@ -961,14 +1013,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 39.4,
+      "ms": 30.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 31.1,
+      "ms": 32.0,
       "reason": "",
       "exit": 0
     },
@@ -984,7 +1036,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 263.9,
+        "ms": 279.4,
         "reason": "",
         "exit": 0
       }
@@ -994,14 +1046,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 32.1,
+      "ms": 66.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 34.7,
+      "ms": 48.3,
       "reason": "",
       "exit": 0
     },
@@ -1017,7 +1069,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 28.9,
+        "ms": 34.5,
         "reason": "",
         "exit": 0
       }
@@ -1027,14 +1079,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 38.9,
+      "ms": 34.5,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 30.7,
+      "ms": 34.7,
       "reason": "",
       "exit": 0
     },
@@ -1050,7 +1102,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 230.9,
+        "ms": 307.3,
         "reason": "",
         "exit": 0
       }
@@ -1060,14 +1112,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 40.0,
+      "ms": 48.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 40.5,
+      "ms": 54.7,
       "reason": "",
       "exit": 0
     },
@@ -1083,7 +1135,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 446.7,
+        "ms": 322.1,
         "reason": "",
         "exit": 0
       }
@@ -1093,14 +1145,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 52.0,
+      "ms": 51.3,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 82.8,
+      "ms": 38.6,
       "reason": "",
       "exit": 0
     },
@@ -1116,7 +1168,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 54.4,
+        "ms": 50.2,
         "reason": "",
         "exit": 0
       }
@@ -1126,14 +1178,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 50.8,
+      "ms": 37.5,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 57.8,
+      "ms": 49.6,
       "reason": "",
       "exit": 0
     },
@@ -1149,7 +1201,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 41.8,
+        "ms": 48.6,
         "reason": "",
         "exit": 0
       }
@@ -1159,14 +1211,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 48.7,
+      "ms": 43.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 51.8,
+      "ms": 48.5,
       "reason": "",
       "exit": 0
     },
@@ -1182,7 +1234,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 417.9,
+        "ms": 253.0,
         "reason": "",
         "exit": 0
       }
@@ -1192,14 +1244,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 55.1,
+      "ms": 43.5,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 77.5,
+      "ms": 31.8,
       "reason": "",
       "exit": 0
     },
@@ -1215,7 +1267,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 85.8,
+        "ms": 49.4,
         "reason": "",
         "exit": 0
       }
@@ -1225,14 +1277,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 84.4,
+      "ms": 47.9,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 59.7,
+      "ms": 48.1,
       "reason": "",
       "exit": 0
     },
@@ -1248,7 +1300,7 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 86.1,
+        "ms": 32.8,
         "reason": "",
         "exit": 0
       }
@@ -1258,14 +1310,14 @@
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 81.7,
+      "ms": 50.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 55.7,
+      "ms": 33.0,
       "reason": "",
       "exit": 0
     },

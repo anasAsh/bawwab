@@ -1,6 +1,6 @@
 # Bawwab effectiveness evaluation (Task 15)
 
-Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix round 1). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
+Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1 and 2). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
 `replicas.json`, `latency.json`, `baseline.json`, `summary.json`). Reproduce with
 `uv run python eval/run_eval.py` (about 3 minutes, offline). `tests/test_eval.py` replays a subset in CI.
 `tests/test_eval_misses.py` pins every remaining miss as a strict xfail, and `tests/test_eval_fixes.py` covers the misses fixed in round 1.
@@ -157,6 +157,11 @@ The table counts 116 entries:
   gate as a protected action. Since fix round 1, the effect check also refuses to accept such a server by scanning:
   it needs an explicit approval, including when the env is added later to an accepted server. One list of keys,
   `bawwab/envkeys.py`, is shared by both.
+  - Since fix round 2, the user's approval at the gate is linked to a hash of that exact entry (command, args,
+    env), so the effect check accepts it without a second quarantine. Any later change to the entry, or a field the
+    gate never saw (such as `cwd`), is quarantined again. The normal-work task `mcp-add-pythonpath-approved` (§4)
+    measures this flow.
+  - `PATH` is deliberately not on the list; this is documented in README "Honest limitations".
 - **Approval routes.**
   - All 22 that README and SECURITY.md say are refused are refused. That covers: direct, absolute path, `uv run`,
     `python -m`, `python -c` importing bawwab, symlink or copy of the console script, sh/bash/`.` scripts and nested
@@ -205,11 +210,13 @@ best-effort … the effect check is the backstop" and the Task 9 parked list):
 
 ## 4. Normal-work false positives
 
-38 ordinary developer tool calls, each replayed through gate, then effect, then post, then the next call:
+39 ordinary developer tool calls, each replayed through gate, then effect, then post, then the next call:
 - git status, diff and log;
 - **git commit with a heredoc message**, and a commit message that mentions `claude mcp add` and `npm install`, with
   and without a malware sample kept as a test fixture;
 - checkout, `git pull --ff-only && make test`, stash;
+- **adding a local Python server with `-e PYTHONPATH=<dir>`**. The gate asks once, which is the expected approval
+  prompt and isn't counted. The user approves; then the install, the effect check and the next call are silent.
 - `uv run pytest`, `pytest -k`, `npm test`, `npm run build`, `make lint`;
 - **edits to `.claude/settings.json`, `settings.local.json` and `~/.claude/settings.json` permissions**;
 - **running the installed skill's bundled `.sh` and `.py` scripts**;
@@ -220,7 +227,7 @@ best-effort … the effect check is the backstop" and the Task 9 parked list):
 
 | | Count |
 |---|---:|
-| Tasks | 38 |
+| Tasks | 39 |
 | Tasks with a deny (gate deny, post block, or the next call denied) | 2 |
 | Tasks with any extra notice | 2 |
 | **False positives** | **1** (open) |
@@ -240,22 +247,23 @@ best-effort … the effect check is the backstop" and the Task 9 parked list):
 ## 5. Latency added per tool call
 
 Wall time of `python3 hooks/bawwab_hook.py <sub>` on this machine, 30 runs each (10 for the last row). For scale, a
-bare `python3 -c pass` took 7.5 ms median and 21.7 ms p95.
+bare `python3 -c pass` took 11.9 ms median and 27.3 ms p95.
 
-The machine was shared with other work (load average 4–5). One full run measured about 2–3× these figures; the
-table shows a re-run of the latency step alone.
+These figures come from the fix-round-2 full run. The machine was shared with other work (load average 3–5), so
+expect run-to-run noise of about 10–20 ms on the fast paths and more on p95. In round 1 a quieter latency-only run
+measured about 24 ms median on the prefilter path and 278 / 296 ms on the full gate.
 
 | Path | Median | p95 |
 |---|---:|---:|
-| Prefilter only: `Bash ls -la` | 24.9 ms | 62.3 ms |
-| Prefilter only: `Bash git status --short` | 24.4 ms | 69.1 ms |
-| Prefilter only: `Read` | 23.7 ms | 43.5 ms |
-| `post` with nothing changed | 23.6 ms | 43.3 ms |
-| Full gate, install-like call, scan not cached (`claude mcp add … python3 <clean server>`) | 278.3 ms | 296.2 ms |
-| Full gate, same call, cached scan | 258.0 ms | 282.7 ms |
-| `post` effect check after a real config change (new server in `.mcp.json`) | 263.4 ms | 296.0 ms |
+| Prefilter only: `Bash ls -la` | 35.1 ms | 52.0 ms |
+| Prefilter only: `Bash git status --short` | 36.1 ms | 53.7 ms |
+| Prefilter only: `Read` | 41.8 ms | 52.8 ms |
+| `post` with nothing changed | 34.8 ms | 52.0 ms |
+| Full gate, install-like call, scan not cached (`claude mcp add … python3 <clean server>`) | 302.5 ms | 358.6 ms |
+| Full gate, same call, cached scan | 294.9 ms | 330.3 ms |
+| `post` effect check after a real config change (new server in `.mcp.json`) | 275.0 ms | 308.6 ms |
 
-An ordinary call adds about 25 ms (median). The full path costs about 250 ms, almost all of it the `uv run` child's
+An ordinary call adds about 25–40 ms (median), depending on load. The full path costs about 250 ms, almost all of it the `uv run` child's
 start-up.
 
 ## 6. Baseline: mcp-scan

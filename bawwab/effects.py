@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bawwab.clicmd import cmd
+from bawwab.envkeys import entry_meta_key, spec_entry_hash
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
@@ -310,6 +311,22 @@ def _scan_item(it: EffectItem, scan, cfg, store: Store) -> ScanReport:
         cleanup()
 
 
+def _gate_approved_entry(store: Store, it: EffectItem) -> bool:
+    """R1-I1: a server held back only for its env (loader keys), whose exact entry (command, args, env) the user
+    approved at the gate. Any other field, or any change to these, has another hash and no link."""
+    if it.category != "servers":
+        return False
+    h = spec_entry_hash(it.value)
+    if h is None:
+        return False
+    try:
+        keys = json.loads(store.get_meta(entry_meta_key(h)) or "[]")
+    except ValueError:
+        return False
+    return isinstance(keys, list) and any(isinstance(k, str) and store.is_approved(k) and not store.is_rejected(k)
+                                          for k in keys)
+
+
 def _batch_approved(store: Store, it: EffectItem) -> bool:
     """Approved as part of an init batch, and unchanged since."""
     row = store.effect_rows_by_ident(it.ident)
@@ -340,7 +357,7 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
         r = _unscannable_report(it)
         if store.is_rejected(r.key):
             return False, r
-        return store.is_approved(r.key) or _batch_approved(store, it), r
+        return store.is_approved(r.key) or _batch_approved(store, it) or _gate_approved_entry(store, it), r
     try:
         r = _scan_item(it, scan, cfg, store)
     except Exception as e:  # noqa: BLE001 - one bad item fails closed on its own

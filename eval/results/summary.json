@@ -317,7 +317,7 @@
     }
   ],
   "false_positives": {
-    "tasks": 38,
+    "tasks": 39,
     "tasks_with_deny": 2,
     "tasks_with_any_notice": 2,
     "unexpected": [

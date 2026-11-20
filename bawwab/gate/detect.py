@@ -23,7 +23,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bawwab.envkeys import loader_key
+from bawwab.envkeys import loader_key, server_entry_hash
 from bawwab.gate.prefilter import bash_install_like, bawwab_exe_file, context as _prefilter_context
 from bawwab.paths import bawwab_home, claude_home, claude_json
 from bawwab.types import Target
@@ -47,6 +47,8 @@ class Targets:
     protected: list[str] = field(default_factory=list)
     # R57: user-only reasons: a plain deny, never a pending approval (see Protected.plain).
     plain: list[str] = field(default_factory=list)
+    # (protected reason, server entry hash): approving that reason also accepts the entry in the effect check
+    env_entries: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +58,7 @@ class Protected:
     # protected bawwab call inside a file the gate reads or a git alias, or written into a file.
     plain: list[str] = field(default_factory=list)
     approvable: str | None = None  # the reasons that get a pending approval; None: all of `reason`
+    env_entries: list[tuple[str, str]] = field(default_factory=list)  # as Targets.env_entries
 
 
 INSTALL_DIRS = ("skills", "commands", "agents", "plugins")
@@ -107,6 +110,7 @@ class _Acc:
         self.script_files = 0  # files read in this call
         self.script_bytes = 0  # bytes of file text read in this call
         self.file_scanned: set[tuple[str, str]] = set()  # `scanned` of file analyses (their reasons are filtered)
+        self.env_entries: list[tuple[str, str]] = []  # (protected reason, server entry hash) for server env loaders
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -129,12 +133,16 @@ class _Acc:
         if reason not in self.plain:
             self.plain.append(reason)
 
+    def _entries(self) -> list[tuple[str, str]]:
+        return [(r, h) for r, h in self.env_entries if r in self.protected]
+
     def result(self) -> Targets | Protected | None:
         if self.targets:
-            return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain)
+            return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain,
+                           self._entries())
         if self.protected or self.plain:
             return Protected("; ".join(self.protected + self.plain), list(self.plain),
-                             "; ".join(self.protected) if self.plain else None)
+                             "; ".join(self.protected) if self.plain else None, self._entries())
         return None
 
 
@@ -347,17 +355,21 @@ def _read_json(p: Path) -> object:
 
 # ------------------------------------------------------------------ MCP specs
 
-def _env_checks(env: dict[str, str], name: str, acc: _Acc) -> None:
+def _env_checks(env: dict[str, str], name: str, acc: _Acc, entry: str | None = None) -> None:
+    """entry: the server's entry hash (envkeys.server_entry_hash). Approving the protected action then also covers
+    exactly that config entry in the effect check (R1-I1)."""
     for k in env:
         kind = loader_key(k)  # bawwab/envkeys.py: the list the effect check uses too
-        if kind == "code":
-            acc.protect(f"server env loads code: {k} ({name})")
-        elif kind == "index":
-            acc.protect(f"custom package index: {k} ({name})")
+        if kind is None:
+            continue
+        reason = f"server env loads code: {k} ({name})" if kind == "code" else f"custom package index: {k} ({name})"
+        acc.protect(reason)
+        if entry is not None and (reason, entry) not in acc.env_entries:
+            acc.env_entries.append((reason, entry))
 
 
 def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: str, acc: _Acc) -> None:
-    _env_checks(env, name, acc)
+    _env_checks(env, name, acc, server_entry_hash(cmd, args, env))
     from bawwab.fetch.target import target_from_command
 
     t = target_from_command(cmd, args)
@@ -1709,6 +1721,9 @@ def _raw_merge(src: _Acc, acc: _Acc, narrow: bool) -> None:
     for reason in src.protected:
         if not narrow or reason.startswith(_RAW_NARROW):
             acc.protect(reason)
+    for pair in src.env_entries:
+        if pair[0] in acc.protected and pair not in acc.env_entries:
+            acc.env_entries.append(pair)
 
 
 _XARGS_CLAUDE = "claude via xargs with piped arguments"

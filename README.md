@@ -364,6 +364,10 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   writes and then runs. An agent instructed to
   bypass bawwab (by prompt injection, for example) could approve through those routes. Approval that needs you
   to be present is planned for v1.1.
+- A server's env is checked for keys that load code or switch the package index (`NODE_OPTIONS`, `PYTHONPATH`,
+  `LD_PRELOAD`, `PIP_INDEX_URL`, …): such a server needs your approval. `PATH` is not on that list, because so many
+  legitimate configs set it (nvm, Homebrew), so a server env `PATH=/somewhere:…` that makes its `command` resolve
+  to another program isn't caught.
 - v1 protects **Claude Code**. Cursor, Codex CLI, Claude Desktop and VS Code are planned for v1.1 (see roadmap).
 
 ## Roadmap
