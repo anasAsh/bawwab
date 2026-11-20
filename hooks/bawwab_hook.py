@@ -259,8 +259,16 @@ def _boot_notice(nid: str) -> str | None:
     """Fixed notices the bootstrap can leave for the next prompt, by id (M9)."""
     if nid == "first-run":
         return ("Bawwab (a security scanner for MCP servers, skills and plugins) has finished setting up, and it "
-                "has not scanned this machine yet. Before anything else, ask the user whether to run a full scan "
-                f"now.\n- Yes: run `{_cli('init --scan')}` yourself.\n- Skip: the user must run "
+                "has not scanned this machine yet. Before anything else, tell the user Bawwab is ready (it checks "
+                "MCP servers, skills and plugins before Claude installs them), then ask them, in one AskUserQuestion "
+                f"call:\n1. Bawwab's security level, unless `{_cli('level')}` says one is already chosen (put high "
+                "first, as recommended): low warns about threats and never blocks them; medium blocks malicious "
+                "items and warns about suspicious ones; high (the default) blocks anything not clean until the user "
+                f"approves it. If they pick high, run `{_cli('level high')}` yourself. Medium or low lowers "
+                f"protection, so only the user can set it: give them `! {_cli('level medium')}` or "
+                f"`! {_cli('level low')}` to run (you cannot). Bawwab's self-protection blocks at every level.\n"
+                "2. Whether to run a full scan now.\n"
+                f"- Yes: run `{_cli('init --scan')}` yourself.\n- Skip: the user must run "
                 f"`! {_cli('init --skip')}` (this trusts everything installed now without scanning; you cannot run "
                 "it).")
     if nid == "lost":
