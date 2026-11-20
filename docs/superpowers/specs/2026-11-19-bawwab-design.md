@@ -447,6 +447,62 @@ canary credentials. Install, start, list tools, call each once. Flags
 canary reads, canary leaks, network attempts, shell spawns, and writes
 outside the workdir.
 
+**As built (2026-11-21; unit-tested, not yet run on a live Docker daemon).**
+Code in `bawwab/sandbox/`, image in `bawwab/sandbox/image/`.
+
+- **Runner interface:** `SandboxRunner.run(fetched, timeout_s) -> (findings,
+  tools)`. `DockerRunner` drives the `docker` CLI through subprocess (one
+  injectable exec function, so tests pin every argv). `FakeRunner` replays a
+  recorded `Observation`. Both feed the same `observe.analyze`.
+- **Fail closed:** Docker is checked first on every deep run. No binary, an
+  unreachable daemon, a missing or mismatched image, or docker refusing a
+  command raises `SandboxUnavailable` → `sandbox.unavailable` (MED, not
+  cached). `scan_target` uses `DockerRunner` whenever mode is deep and no
+  runner is passed.
+- **One run:** an `--internal` network; a trap container (`proxy.py`) that
+  logs and refuses HTTP, `CONNECT` and DNS; the sandbox container
+  (`harness.py` as PID 1) with the target mounted read-only at `/target`.
+  Both: `--read-only`, non-root, `--cap-drop ALL`, `no-new-privileges`, pid,
+  memory and CPU limits. Sandbox tmpfs: `/work` (exec), `/home/sandbox` and
+  `/tmp` (noexec). All three objects are removed in a `finally`.
+- **Image:** built by `bawwab sandbox build` from the package's own
+  Dockerfile (base pinned by digest); its id is recorded in
+  `~/.bawwab/sandbox-image.json` and is what the runner runs. An env override
+  of the image or docker binary was left out on purpose: whoever picks the
+  image picks the verdict.
+- **Decoy home:** canaries random per run, in real credential shapes, never
+  working credentials: `~/.ssh/id_ed25519`, `~/.aws/credentials`,
+  `~/.config/gh/hosts.yml`, `~/.git-credentials`, `~/.npmrc`,
+  `~/.claude.json`, `~/.config/openai/key`, `~/.env`, plus `GITHUB_TOKEN`,
+  `AWS_*`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `NPM_TOKEN`. A canary sent
+  to its own service (a GitHub token to api.github.com) is ordinary use, not
+  a leak. Matching covers plain, reversed, hex and base64 forms.
+- **Harness:** spec on stdin (nonce, plan, decoys, env, budgets), then
+  `PR_SET_DUMPABLE 0`. Installs offline (`npm install --offline`, `pip
+  install --no-index --no-build-isolation`), so the package manager makes no
+  network calls of its own and any attempt is the package's. Starts the
+  server (plan from `package.json` bin/main, `[project.scripts]`, a wheel's
+  console script, or a plugin's `node|python <file>` command), runs
+  `initialize`, `tools/list` (and prompts/resources when advertised), and
+  calls each tool once (≤ 64) with placeholder arguments built from the
+  schema. Everything runs under `strace -f -y`; a tracer that dies while its
+  processes live on is "monitor lost". The writable trees are diffed at the
+  end and changed files are searched for canaries.
+- **Findings** (source `sandbox`): `canary-leak` (network: CRITICAL; tool
+  result or copied file: HIGH; output: MED), `canary-read` (HIGH),
+  `network-attempt` (install/start: MED, tool call: LOW, exfil host: HIGH),
+  `shell-spawn` (install/start: MED, tool call: LOW), `write-outside`
+  (profiles, `~/.ssh`, agent config, system paths: HIGH; other home: MED;
+  `/tmp`, caches: LOW), `incomplete` (MED, also for a server it can't work
+  out how to start; LOW when only the tool-call cap was hit), `no-entrypoint`
+  (LOW: skills, plugins without their own server, remote servers, Docker
+  images). Runtime tool text goes through the text
+  rules and the judge, labelled `[sandbox]` in the snapshot.
+- **Known limits:** offline means unbundled dependencies fail to install
+  (`incomplete`, suspicious): most npm MCP servers today. HTTPS is refused
+  at `CONNECT`, so only the host is seen. Sandbox-aware code passes. See
+  threat model §5.9.
+
 ### 6. Trust store, rug-pull, cross-server
 
 SQLite at `~/.bawwab/bawwab.db`. It holds scan results, findings (with
