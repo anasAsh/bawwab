@@ -216,6 +216,7 @@ def test_downloads_are_protected(home, cmd):
 
 @pytest.mark.parametrize("cmd", [
     "bawwab approve ab12", "uv run bawwab reject AB12", "BAWWAB_X=1 bawwab approve --force ab12",
+    "bawwab approve ab12 cd34 EF56", "bawwab reject AB12 CD34",
     "rm -f ~/.bawwab/bawwab.db", "sqlite3 ~/.bawwab/bawwab.db 'insert into approvals values(1,2)'",
 ])
 def test_bawwab_self_protection(home, cmd):

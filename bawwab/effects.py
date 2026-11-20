@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bawwab.clicmd import cmd
+from bawwab.config import blocks
 from bawwab.envkeys import entry_meta_key
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
 from bawwab.agents.claude_code import UnreadableConfig
@@ -35,13 +36,15 @@ from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self
 from bawwab.store import Store, open_store, report_from_dict, report_to_dict
 from bawwab.types import ScanReport, Target, Verdict
 
-READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"})
+# Allowed while something is quarantined: they change nothing. AskUserQuestion lets Claude ask the user
+# what to do with each item (the user still runs approve/reject).
+READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead", "AskUserQuestion"})
 ERROR_IDENT = "effects.error"
 MAX_SHOWN_FINDINGS = 5
 MAX_BATCH_SHOWN = 20
 SECONDS_PER_ITEM = 20
 _fp_mod = None
-_ACCEPTED = ("provisional", "unscanned", "accepted", "approved")
+_ACCEPTED = ("provisional", "unscanned", "accepted", "approved", "warned")  # warned: below the level
 BATCHED = ("hooks", "exec_settings")  # at init, install-time items of these categories share one approval
 
 
@@ -432,6 +435,9 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
         else:
             if row is not None:
                 store.drop_effect(it.ident)  # the old content is no longer what is installed
+            if not store.is_rejected(r.key) and not blocks(cfg.level, r.verdict):
+                _warn_only(store, it, r, cfg.level)
+                continue
             new_ids.append(_quarantine(store, it, r))
     for ident in set(accepted) - set(current):
         store.drop_effect(ident)
@@ -441,6 +447,16 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
     store.audit("effects.check", cwd=str(cwd), items=len(items), quarantined=len(new_ids))
     _sync_flag(store)
     return new_ids
+
+
+def _warn_only(store: Store, it: EffectItem, r: ScanReport, level: str) -> None:
+    """Below the security level's threshold: accept the item as "warned" and tell the user once."""
+    store.put_effect(it.ident, it.hash, it.scope, "warned", r.key)
+    store.audit("effects.warned", ident=it.ident, key=r.key, verdict=r.verdict.value, level=level)
+    q = {"ident": it.ident, "item": json.dumps(it.to_dict())}
+    store.add_warning(sanitise(f"⚠ bawwab ({level} level, not blocked): {item_name(q)} is {r.verdict.value} — "
+                               f"{_why(q, r.findings)}. To see why: `{cmd('scan')} <target>`; to block such "
+                               f"items, raise the level: `{cmd('level high')}`.", 400))
 
 
 def _in_view(q: dict, cwd: Path) -> bool:
@@ -652,29 +668,6 @@ def reject_quarantined(qid: str, store: Store | None = None) -> tuple[bool, str]
     return True, "; ".join(done + [f"not removed: {m}" for m in failed])
 
 
-def _summary(q: dict) -> str:
-    try:
-        rep = report_from_dict(json.loads(q["report"]))
-        verdict, findings = rep.verdict.value.upper(), rep.findings
-    except (ValueError, KeyError, TypeError):
-        verdict, findings = "SUSPICIOUS", []
-    try:
-        label = json.loads(q["item"]).get("label") or q["ident"]
-    except (ValueError, AttributeError):
-        label = q["ident"]
-    if q["ident"] == ERROR_IDENT:
-        label = "the effect check itself failed (fail closed)"
-    lines = [f"• {sanitise(label, 200)} — {verdict}"]
-    for f in findings[:MAX_SHOWN_FINDINGS]:
-        lines.append(f"    [{f.severity.value}] {sanitise(f.rule, 60)}: {sanitise(f.evidence, 200)}")
-    if len(findings) > MAX_SHOWN_FINDINGS:
-        lines.append(f"    … and {len(findings) - MAX_SHOWN_FINDINGS} more")
-    qid = sanitise(q["id"], 8)
-    force = " --force" if verdict == "MALICIOUS" else ""
-    lines.append(f"    keep it:  ! {cmd('approve')} {qid}{force}      remove it:  ! {cmd('reject')} {qid}")
-    return "\n".join(lines)
-
-
 def self_text(store: Store | None = None) -> str:
     """Lines for bawwab's own plugin, accepted as the running code without a scan (shown, never hidden)."""
     store = store or open_store()
@@ -682,32 +675,126 @@ def self_text(store: Store | None = None) -> str:
     return "\n".join(f"bawwab: {sanitise(i.rsplit(':', 1)[-1], 200)} is {SELF_LABEL}" for i in names)
 
 
-def quarantine_text(entries: list[dict]) -> str:
-    head = (
-        "⛔ bawwab: quarantine — these items were added or changed in Claude's configuration and were not "
-        "accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and "
-        "NotebookRead is blocked until the user decides. Tell the user; only they can run these commands."
-    )
+def _report_of(q: dict) -> tuple[str, list]:
+    try:
+        rep = report_from_dict(json.loads(q["report"]))
+        return rep.verdict.value.upper(), rep.findings
+    except (ValueError, KeyError, TypeError):
+        return "SUSPICIOUS", []
+
+
+def _label_of(q: dict) -> str:
+    if q["ident"] == ERROR_IDENT:
+        return "the effect check itself failed (fail closed)"
+    try:
+        return json.loads(q["item"]).get("label") or q["ident"]
+    except (ValueError, AttributeError):
+        return q["ident"]
+
+
+def item_name(q: dict) -> str:
+    """The table's ITEM: "plugin superpowers@mkt" -> "plugin superpowers", "setting env (path)" -> "setting env"."""
+    if q["ident"] == ERROR_IDENT:
+        return "effect check"
+    kind, _, rest = _label_of(q).partition(" ")
+    rest = rest.split(" (", 1)[0]
+    if kind == "plugin":
+        rest = rest.split("@", 1)[0]
+    return sanitise(f"{kind} {rest}".strip(), 40)
+
+
+def _why(q: dict, findings: list) -> str:
+    """The table's WHY: the distinct rule titles, most severe first, in a few words."""
+    if q["ident"] == ERROR_IDENT:
+        return "the effect check itself failed, so nothing is trusted (fail closed)"
+    from bawwab.scan.rules.catalog import CATALOG
+
+    titles: list[str] = []
+    for f in sorted(findings, key=lambda f: -f.severity.rank):
+        info = CATALOG.get(f.rule)
+        t = info.title if info else f.rule
+        t = t[:1].lower() + t[1:]
+        if t not in titles:
+            titles.append(t)
+    if not titles:
+        return "not accepted (no scan result)"
+    text = "; ".join(titles[:2])
+    if len(titles) > 2:
+        text += f" (+{len(titles) - 2} more)"
+    return sanitise(text, 90)
+
+
+def _groups(entries: list[dict]) -> dict[str, list[dict]]:
     groups: dict[str, list[dict]] = {}
     for q in entries:
         groups.setdefault(q["id"], []).append(q)
-    return head + "\n" + "\n".join(_summary(g[0]) if len(g) == 1 else _batch_summary(g) for g in groups.values())
+    return groups
 
 
-def _batch_summary(group: list[dict]) -> str:
-    lines = [f"• {len(group)} hooks and settings that were already configured when bawwab was installed "
-             "(other plugins' and tools'; nothing to scan) — SUSPICIOUS until approved:"]
-    for q in group[:MAX_BATCH_SHOWN]:
-        try:
-            label = json.loads(q["item"]).get("label") or q["ident"]
-        except (ValueError, AttributeError):
-            label = q["ident"]
-        lines.append(f"    - {sanitise(label, 200)}")
-    if len(group) > MAX_BATCH_SHOWN:
-        lines.append(f"    … and {len(group) - MAX_BATCH_SHOWN} more (`{cmd('effects')}` lists them all)")
-    qid = sanitise(group[0]["id"], 8)
-    lines.append(f"    keep them all:  ! {cmd('approve')} {qid}      remove them all:  ! {cmd('reject')} {qid}")
+def quarantine_text(entries: list[dict]) -> str:
+    """The block message: one row per quarantined item (or install-time batch), the commands once."""
+    rows: list[tuple[str, str, str, str]] = []
+    keep: list[str] = []
+    force: list[str] = []
+    for qid, g in _groups(entries).items():
+        qid = sanitise(qid, 8)
+        if len(g) > 1:
+            rows.append((qid, f"{len(g)} existing hooks/settings", "SUSPICIOUS",
+                         "set up before bawwab was installed; nothing to scan"))
+            keep.append(qid)
+            continue
+        verdict, findings = _report_of(g[0])
+        rows.append((qid, item_name(g[0]), verdict, _why(g[0], findings)))
+        (force if verdict == "MALICIOUS" else keep).append(qid)
+    n = len(rows)
+    head = (f"⛔ bawwab: {n} change{'s' if n != 1 else ''} to Claude's setup {'are' if n != 1 else 'is'} on hold. "
+            "Until the user decides, Claude can only read files and ask questions.")
+    w_id = max(len("ID"), *(len(r[0]) for r in rows))
+    w_item = max(len("ITEM"), *(len(r[1]) for r in rows))
+    w_v = max(len("VERDICT"), *(len(r[2]) for r in rows))
+    lines = [head, "", f"  {'ID':<{w_id}}  {'ITEM':<{w_item}}  {'VERDICT':<{w_v}}  WHY"]
+    lines += [f"  {i:<{w_id}}  {it:<{w_item}}  {v.lower():<{w_v}}  {why}" for i, it, v, why in rows]
+    lines.append("")
+    if keep:
+        lines.append(f"  keep:     ! {cmd('approve')} {' '.join(keep)}")
+    if force:
+        lines.append(f"  keep (malicious, overrides the block):  ! {cmd('approve --force')} {' '.join(force)}")
+    lines.append(f"  remove:   ! {cmd('reject')} <ID>")
+    lines.append(f"  details:  ! {cmd('effects')}")
+    lines += ["", (
+        "For Claude: show the user this message as is, in a code block. Then ask about each item with the "
+        "AskUserQuestion tool (at most 4 per call; options Keep, Remove, Not now; name the item and its verdict in "
+        "each question). Reply with the exact command lines for their answers, one line per item with its name "
+        "as a trailing `# comment`, for the user to run. Never run approve or reject yourself: only the user can.")]
     return "\n".join(lines)
+
+
+def quarantine_details(entries: list[dict]) -> str:
+    """`bawwab effects`: every quarantined item with its findings and evidence, and its own commands."""
+    groups = _groups(entries)
+    out = [f"bawwab: {len(groups)} item{'s' if len(groups) != 1 else ''} on hold"]
+    for qid, g in groups.items():
+        qid = sanitise(qid, 8)
+        out.append("")
+        if len(g) > 1:
+            out.append(f"{qid}  {len(g)} hooks and settings that were already configured when bawwab was installed "
+                       "(other plugins' and tools'; nothing to scan) — SUSPICIOUS until approved:")
+            out += [f"    - {sanitise(_label_of(q), 200)}" for q in g[:MAX_BATCH_SHOWN]]
+            if len(g) > MAX_BATCH_SHOWN:
+                out.append(f"    … and {len(g) - MAX_BATCH_SHOWN} more")
+            name, force = "existing hooks/settings", ""
+        else:
+            verdict, findings = _report_of(g[0])
+            name = item_name(g[0])
+            out.append(f"{qid}  {sanitise(_label_of(g[0]), 200)} — {verdict}")
+            for f in findings[:MAX_SHOWN_FINDINGS]:
+                out.append(f"    [{f.severity.value}] {sanitise(f.rule, 60)}: {sanitise(f.evidence, 200)}")
+            if len(findings) > MAX_SHOWN_FINDINGS:
+                out.append(f"    … and {len(findings) - MAX_SHOWN_FINDINGS} more")
+            force = " --force" if verdict == "MALICIOUS" else ""
+        out.append(f"    keep:    ! {cmd('approve')}{force} {qid}  # {name}")
+        out.append(f"    remove:  ! {cmd('reject')} {qid}  # {name}")
+    return "\n".join(out)
 
 
 def _deny(reason: str) -> dict:
@@ -777,13 +864,37 @@ def session_start(cwd: Path, scan=None, store: Store | None = None) -> str | Non
             pass
         if store.init_state() == "none":
             parts.append(ask_context(cwd))
+        else:
+            from bawwab.config import level_is_set
+
+            if not level_is_set():
+                parts.append("Bawwab has no security level chosen yet (it is high until then). " + level_question())
     entries = quarantined(store)
     if entries:
         parts.append(quarantine_text(entries))
     return "\n\n".join(parts) or None
 
 
+WELCOME = ("Welcome to Bawwab (بوّاب, gatekeeper). It checks MCP servers, skills and plugins before Claude installs "
+           "them, and holds unscanned changes to Claude's setup until you decide. Claude will now ask you to pick a "
+           "security level and whether to scan what is already installed.")
+
+
+def level_question() -> str:
+    """For Claude: how to ask the user for a security level (until one is chosen, the level is high)."""
+    return (
+        "Ask the user to choose Bawwab's security level (AskUserQuestion; put high first, as recommended):\n"
+        "- low: warns about threats, never blocks them\n"
+        "- medium: blocks malicious items, warns about suspicious ones\n"
+        "- high (recommended, the default): blocks anything not clean until the user approves it\n"
+        f"If they pick high, run `{cmd('level high')}` yourself. Medium or low lowers protection, so only the user "
+        f"can set it: give them `! {cmd('level medium')}` or `! {cmd('level low')}` to run (you cannot). "
+        "Bawwab's self-protection blocks at every level."
+    )
+
+
 def ask_context(cwd: Path) -> str:
+    from bawwab.config import level_is_set
     from bawwab.inventory import list_installed
 
     items = list_installed(cwd)
@@ -791,18 +902,20 @@ def ask_context(cwd: Path) -> str:
     total = len(items)
     secs = total * SECONDS_PER_ITEM
     est = f"about {max(1, round(secs / 60))} min" if secs >= 60 else f"about {secs} s"
+    level = "" if level_is_set() else level_question() + "\n\n"
     return (
-        "Bawwab (a security scanner for MCP servers, skills and plugins) is installed but has not scanned this "
-        "machine yet. Before anything else, ask the user whether to run a full scan now.\n"
+        "Bawwab (a security scanner for MCP servers, skills and plugins) is installed but not set up yet. The user "
+        "has seen a welcome message. Before anything else, ask them"
+        f"{' (in one AskUserQuestion call)' if level else ''}:\n\n{level}"
+        "Ask whether to run a full scan now.\n"
         f"Installed: {n['mcp']} MCP servers, {n['skill']} skills, {n['plugin']} plugins ({total} items). "
         "A full scan downloads each package from its registry (nothing is installed or run), has Claude review "
         f"each item, and takes {est} (~{SECONDS_PER_ITEM} s per item). It runs in the background; results "
-        "arrive as warnings, and anything not clean is quarantined until the user decides.\n"
+        "arrive as warnings, and what happens to anything not clean depends on the security level.\n"
         f"- Yes: run `{cmd('init --scan')}` yourself.\n"
         f"- Skip: the user must run `! {cmd('init --skip')}` (this trusts everything installed now without "
         "scanning; you cannot run it).\n"
-        "Until the user answers, this question is asked again every session. Changes made from now on are "
-        "checked either way."
+        "Until the user answers, this is asked again every session. Changes made from now on are checked either way."
     )
 
 

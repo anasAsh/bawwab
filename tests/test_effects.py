@@ -113,7 +113,7 @@ def test_suspicious_server_quarantined_then_approved(env):
     deny = fx.pre_tool_decision("Bash", proj, scan=scan)
     reason = deny["hookSpecificOutput"]["permissionDecisionReason"]
     assert deny["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert f"! {B} approve {ids[0]}" in reason and f"! {B} reject {ids[0]}" in reason
+    assert f"! {B} approve {ids[0]}" in reason and f"! {B} reject <ID>" in reason
     assert "MCP server evil" in reason and "x.rule" in reason
     assert fx.pre_tool_decision("Read", proj, scan=scan) is None
     assert fx.pre_tool_decision("Grep", proj, scan=scan) is None
@@ -381,4 +381,4 @@ def test_malicious_shows_force(env):
     fx.refresh(proj, scan=FakeScan(Verdict.MALICIOUS))
     reason = fx.pre_tool_decision("Bash", proj)["hookSpecificOutput"]["permissionDecisionReason"]
     qid = fx.quarantined()[0]["id"]
-    assert f"! {B} approve {qid} --force" in reason
+    assert f"! {B} approve --force {qid}" in reason

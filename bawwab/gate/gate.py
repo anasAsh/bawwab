@@ -16,7 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from bawwab.clicmd import cmd
-from bawwab.config import load_config
+from bawwab.config import DEFAULT_LEVEL, load_config
+from bawwab.config import blocks as blocks_at
 from bawwab.envkeys import entry_meta_key
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install, install_dir
 from bawwab.gate.pin import pin_changes
@@ -224,14 +225,26 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
             blocks.append(text)
     if det.plain:  # R57: a plain deny; no pending approval, and no `bawwab approve` to suggest
         blocks.append(_user_only_block(det.plain))
+    level = load_config(Path(inp.cwd) if inp.cwd else None).level if results else DEFAULT_LEVEL
+    warnings: list[str] = []
     for _, r in results:
         keys.append(r.key)
         if store.is_rejected(r.key):
             blocks.append(f"⛔ bawwab: previously rejected — {_label(r)}\n{format_report(r)}")
         elif r.verdict != Verdict.CLEAN and not store.is_approved(r.key):
-            blocks.append(format_report(r, store.create_pending(r)))
+            if blocks_at(level, r.verdict):
+                blocks.append(format_report(r, store.create_pending(r)))
+            else:  # below this level's threshold: warn, don't block
+                warnings.append(f"⚠ bawwab ({level} level, not blocked): {_label(r)} is {r.verdict.value}\n"
+                                f"{format_report(r)}")
     if blocks:
-        return decision("deny", "\n\n".join(blocks)), keys
+        return decision("deny", "\n\n".join(blocks + warnings)), keys
+    if warnings:
+        text = "\n\n".join(warnings)
+        try:
+            store.add_warning(sanitise(text, 400))
+        except Exception:  # noqa: BLE001 - the warning below still reaches the user
+            pass
     # R2-I1: link only from a call that ends allowed (every protected reason approved, every target clean/approved)
     for reason, key in links:
         _link_entries(store, det.env_entries, reason, key)
@@ -242,8 +255,20 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
             updated, changes = None, []
         if updated is not None and changes:
             pinned = ", ".join(f"{name} to {version}" for name, version in changes)
-            return decision("ask", sanitise(f"bawwab: scanned clean; pinned {pinned}", 500), updated), keys
-    return None, keys
+            note = "scanned clean" if not warnings else "not blocked at this level"
+            out = decision("ask", sanitise(f"bawwab: {note}; pinned {pinned}", 500), updated)
+            return (_with_warning(out, warnings) if warnings else out), keys
+    return (_with_warning(None, warnings) if warnings else None), keys
+
+
+def _with_warning(out: dict | None, warnings: list[str]) -> dict:
+    """A warning for the user (systemMessage) and for Claude (additionalContext), with no allow/deny of its own:
+    Claude Code's normal permission rules still decide the call."""
+    text = sanitise("\n\n".join(warnings), 4000)
+    out = dict(out or {"hookSpecificOutput": {"hookEventName": "PreToolUse"}})
+    out["systemMessage"] = text
+    out["hookSpecificOutput"] = {**out["hookSpecificOutput"], "additionalContext": text}
+    return out
 
 
 def run_gate(inp: HookInput, scan: Callable[..., ScanReport] | None = None, store: Store | None = None) -> dict | None:
@@ -266,6 +291,6 @@ def run_gate(inp: HookInput, scan: Callable[..., ScanReport] | None = None, stor
         out, keys = _decide(inp, det, scan or scan_target, store)
     except Exception as e:  # noqa: BLE001 - fail closed for install-like calls
         out = decision("deny", f"bawwab error: {sanitise(f'{type(e).__name__}: {e}', 300)}")
-    kind = out["hookSpecificOutput"]["permissionDecision"] if out else "none"
+    kind = out["hookSpecificOutput"].get("permissionDecision", "warn") if out else "none"
     _audit(store, "gate.decision", decision=kind, keys=keys, tool_name=inp.tool_name)
     return out

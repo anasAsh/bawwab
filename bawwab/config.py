@@ -7,7 +7,23 @@ from pathlib import Path
 from typing import Literal
 
 from bawwab.paths import bawwab_home
-from bawwab.types import Mode, Severity
+from bawwab.types import Mode, Severity, Verdict
+
+# Security levels: what a verdict that isn't clean does (spec "Security levels"). Bawwab's self-protection
+# (protected actions, a failed effect check) blocks at every level.
+LEVELS = ("low", "medium", "high")
+DEFAULT_LEVEL = "high"
+
+
+def blocks(level: str, verdict: Verdict) -> bool:
+    """high blocks anything not clean; medium blocks malicious only; low never blocks (it warns)."""
+    if verdict == Verdict.CLEAN:
+        return False
+    if level == "low":
+        return False
+    if level == "medium":
+        return verdict == Verdict.MALICIOUS
+    return True  # high, or an unknown level: fail closed
 
 
 @dataclass
@@ -18,6 +34,7 @@ class Config:
     malicious: Severity = Severity.CRITICAL
     suspicious: Severity = Severity.MED
     trusted: list[str] = field(default_factory=lambda: ["@modelcontextprotocol/*"])
+    level: str = DEFAULT_LEVEL
 
 
 DEFAULT_CONFIG = Config()
@@ -53,6 +70,8 @@ def _apply(base: Config, d: dict) -> Config:
     """Apply a (global) config dict over base; unknown keys ignored, bad values fall back."""
     cfg = replace(base, trusted=list(base.trusted))
     cfg.mode = _enum(Mode, d.get("mode", cfg.mode), base.mode)
+    if d.get("level") in LEVELS:
+        cfg.level = d["level"]
     llm = d.get("llm") if isinstance(d.get("llm"), dict) else {}
     if llm.get("backend") in ("claude-cli", "api"):
         cfg.llm_backend = llm["backend"]
@@ -72,6 +91,8 @@ def _tighten(cfg: Config, d: dict) -> Config:
     out = replace(cfg, trusted=list(cfg.trusted))
     if _enum(Mode, d.get("mode"), None) == Mode.DEEP:
         out.mode = Mode.DEEP
+    if d.get("level") in LEVELS and LEVELS.index(d["level"]) > LEVELS.index(out.level):
+        out.level = d["level"]
     th = d.get("thresholds") if isinstance(d.get("thresholds"), dict) else {}
     m = _enum(Severity, th.get("malicious"), None)
     if m is not None and m < out.malicious:
@@ -91,6 +112,28 @@ def _tighten(cfg: Config, d: dict) -> Config:
                 kept.append(e)
         out.trusted = kept
     return out
+
+
+def level_is_set() -> bool:
+    """The user has chosen a level (it is in ~/.bawwab/config.json); until then the level is high."""
+    data, _ = _read(bawwab_home() / "config.json")
+    return bool(data) and data.get("level") in LEVELS
+
+
+def set_level(level: str) -> None:
+    """Write the level into ~/.bawwab/config.json, keeping its other keys (an unreadable file is replaced)."""
+    import os
+
+    if level not in LEVELS:
+        raise ValueError(f"level must be one of {', '.join(LEVELS)}")
+    path = bawwab_home() / "config.json"
+    data, _ = _read(path)
+    data = dict(data or {})
+    data["level"] = level
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".config.json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
 
 
 def load_config(project_dir: Path | None = None) -> Config:

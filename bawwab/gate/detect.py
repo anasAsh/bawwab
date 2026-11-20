@@ -1260,7 +1260,7 @@ def _copies_bawwab(exe: str, src: str, dest: str, cwd: str) -> bool:
 _RUNS_BAWWAB = re.compile(
     r"(?:^|[\s;&|('\"`=])(?:[^\s;&|('\"`]*/)?bawwab(?:\.cli)?['\"]?(?=[\s;&|)'\",\]]|$)"
     r"|bawwab\.cli\b|(?:from|import)\s+bawwab\b|-m\s+bawwab\b|bawwab_hook", re.M)
-_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects)\b")
+_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects|level)\b")
 
 
 _SHEBANG = re.compile(r"\s*#!")
@@ -1409,7 +1409,7 @@ def _known_system(w: str, cwd: str, bare: bool) -> bool:
 
 
 def _protected_tail(args: list[str]) -> bool:
-    """args read as bawwab's: `approve <id>`, `reject <id>`, `init --skip`, `effects --retry`."""
+    """args read as bawwab's: `approve <id>`, `reject <id>`, `init --skip`, `effects --retry`, `level <lower>`."""
     j = next((k for k, a in enumerate(args) if not a.startswith("-")), None)
     if j is None:
         return False
@@ -1420,13 +1420,20 @@ def _protected_tail(args: list[str]) -> bool:
         return any(a.startswith("--sk") for a in rest)
     if sub == "effects":
         return any(a.startswith("--re") for a in rest)
+    if sub == "level":
+        return _lowers_level(rest)
     return False
+
+
+def _lowers_level(rest: list[str]) -> bool:
+    """`level` with any value but `high` (show and raise are Claude's; lowering is the user's)."""
+    return any(a != "high" for a in rest if not a.startswith("-") or a == "-")
 
 
 def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd: str = "",
                      tail: bool = True) -> bool:
     """A user-only bawwab command: approve, reject, init without --scan (init --skip trusts everything),
-    effects --retry; also a bawwab call whose subcommand can't be read ($var, $(...), `...` split off by
+    effects --retry, level lowered below high; also a bawwab call whose subcommand can't be read ($var, $(...), `...` split off by
     the parser into a bare `bawwab`).
     R55: bawwab is recognised by name and also by what the word resolves to (a renamed symlink or copy of
     the launcher or a console script); and with `tail`, any command word that isn't a known system program
@@ -1459,6 +1466,8 @@ def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd:
             return "--scan" not in rest or any(a.startswith("--sk") for a in rest)
         if w == "effects":
             return any(a.startswith("--re") for a in rest)
+        if w == "level":
+            return _lowers_level(rest)
         return False
     if not tail:
         return False
@@ -1483,7 +1492,7 @@ def _search_tool(w: str, cwd: str) -> bool:
 
 
 _MAX_RESOLVE = 8  # words examined for a bawwab executable before the subcommand
-_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects"})
+_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level"})
 
 
 _INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")

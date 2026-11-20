@@ -618,6 +618,50 @@
         "CWE-1427"
       ],
       "note": "The AI review flags model-facing text that steers the agent or hides something from the user."
+    },
+    "effects.hook": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A hook (code run on Claude's events) added or changed outside a scanned install."
+    },
+    "effects.setting": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A code-running or config-steering setting changed outside a scanned install."
+    },
+    "effects.toggle": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A plugin or server enabled outside a scanned install."
+    },
+    "effects.unscannable": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "An item changed outside a scanned install and could not be scanned."
     }
   }
 }

@@ -112,7 +112,7 @@ def test_quarantine_flag_blocks_all_but_read_only(tmp_path):
     _prime(proj)
     (_bh() / "quarantine.flag").touch()
     env, log = _fake_bawwab(tmp_path, "sys.exit(1)")  # even a broken bawwab keeps the quarantine
-    for tool in ("Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"):
+    for tool in ("Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead", "AskUserQuestion"):
         assert run(call(tool, proj, file_path="/etc/hosts"), "gate", env=env).stdout == ""
     assert _calls(log) == []
     for tool in ("Bash", "mcp__srv__read_file", "Write"):

@@ -64,7 +64,9 @@ def _setup_detects(data: dict) -> bool:
         return True
 
 
-READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"})
+# Allowed while something is quarantined: they change nothing. AskUserQuestion lets Claude ask the user
+# what to do with each item (the user still runs approve/reject).
+READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead", "AskUserQuestion"})
 POST_TOOLS = frozenset({"Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"})
 
 

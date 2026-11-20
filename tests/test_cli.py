@@ -38,7 +38,7 @@ def test_scan_json_and_approve_flow(env, capsys):
     assert main(["approve", d["approval_id"]]) == 0
     assert capsys.readouterr().out.startswith("approved ")
     assert main(["approve", "ZZZZ"]) == 1
-    assert "error: unknown id" in capsys.readouterr().out
+    assert "error: ZZZZ: unknown id" in capsys.readouterr().out
 
 
 def test_malicious_needs_force_and_explain(env, capsys):

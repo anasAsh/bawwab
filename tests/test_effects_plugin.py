@@ -91,9 +91,10 @@ def test_init_scan_batches_install_time_hooks(env, capsys):
     q = _active()
     assert len(q) == 3 and len({x["id"] for x in q}) == 1  # two hooks and a setting, one approval id
     text = fx.quarantine_text(fx.quarantined())
-    assert text.count("bawwab approve") == 1
+    assert text.count("bawwab approve") == 1 and "3 existing hooks/settings" in text
+    details = fx.quarantine_details(fx.quarantined())
     for c in ("other-plugin-stop", "other-guard", "statusLine"):
-        assert c in text
+        assert c in details
     assert main(["approve", q[0]["id"]]) == 0
     assert _active() == [] and not fx.flag_path().exists()
     statuses = {i: r["status"] for i, r in open_store().all_effect_rows().items()}

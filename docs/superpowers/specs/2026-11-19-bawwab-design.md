@@ -342,6 +342,55 @@ The check watches what actually changed, not what the command looked like.
   executes right away (for example a postinstall run through `npx`) may
   already have run. The parser-based gate stays the first line of
   defence for that.
+- **Churn is not content** (2026-11-20). Claude Code writes
+  `<plugin root>/.in_use/<pid>` for each running process and removes it
+  on exit. The fingerprint, the content hash and the scanned file list skip
+  a file only when it is exactly that shape: `{"pid":N,"procStart":"M"}`
+  with `N` equal to its name, directly under the item root. Anything else
+  under `.in_use/` counts. Without this, every new session re-quarantined
+  installed plugins as "files changed since trusted".
+
+### 1c. Security levels (user request 2026-11-20)
+
+The user picks how Bawwab treats a verdict that isn't clean. The level is
+`"level"` in `~/.bawwab/config.json`; until one is chosen it is **high**.
+
+| | low | medium | high (default) |
+|-|-----|--------|----------------|
+| install, malicious | warn | block | block |
+| install, suspicious (incl. failed/timed-out scans) | warn | warn | block |
+| unscanned config change | warn | quarantine if malicious | quarantine if not clean |
+
+- **Warn** means: no allow or deny of Bawwab's own (Claude Code's normal
+  permissions decide), a `systemMessage` to the user, the same text to
+  Claude, and a queued warning. A warned config change is accepted with
+  status `warned`, so it is reported once.
+- **Self-protection blocks at every level** (user decision): protected
+  actions (Claude running `approve`/`reject`/`init --skip`, writes to
+  Bawwab's state or config, hook changes) and a failed effect check. A
+  level the agent could switch off would mean nothing.
+- **Only the user lowers the level** (user decision). `bawwab level` shows
+  it and `bawwab level high` is open to Claude; `level medium`/`level low`
+  are protected actions. A project's `.claude/bawwab.json` may only raise it.
+- **First run:** SessionStart shows the user a welcome (`systemMessage`)
+  and tells Claude to ask, in one question prompt, for the level and
+  whether to scan now. Later sessions ask for the level until one is set.
+
+### 1d. Block message (user request 2026-11-20)
+
+- The quarantine block is a **table**, one row per item (ID, item name,
+  verdict, why in plain words from the rule catalog), with the commands
+  once: `approve <ids…>`, `approve --force <ids…>` for malicious ones,
+  `reject <ID>`, and `effects` for the evidence. `bawwab effects` prints
+  the full findings, each command with the item's name as a `# comment`.
+- `approve`/`reject` take several ids and print each item's name.
+- Claude is told to show the table, ask about each item with
+  AskUserQuestion (allowed during a quarantine: it changes nothing), and
+  give back the exact command lines. The user still runs them: having a
+  hook apply the answer was rejected because nothing proves an answer came
+  from the user and not from another hook or the model.
+- `/bawwab-run` (plugin command) shows what is on hold, helps decide, then
+  offers a full scan. The `bawwab` skill is no longer in the slash menu.
 
 ### 2. Fetch (download only)
 

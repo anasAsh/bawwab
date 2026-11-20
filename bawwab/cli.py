@@ -28,10 +28,10 @@ def _build() -> argparse.ArgumentParser:
     s.add_argument("--no-cache", action="store_true", help="ignore cached results and rescan")
     s.add_argument("--json", action="store_true", help="print the report as JSON")
     a = sub.add_parser("approve", help="approve a blocked install")
-    a.add_argument("id")
+    a.add_argument("id", nargs="+", help="one or more ids")
     a.add_argument("--force", action="store_true", help="override a malicious verdict")
     r = sub.add_parser("reject", help="reject a pending install")
-    r.add_argument("id")
+    r.add_argument("id", nargs="+", help="one or more ids")
     e = sub.add_parser("explain", help="explain a finding")
     e.add_argument("id")
     d = sub.add_parser("diff", help="show what changed since the trusted snapshot")
@@ -46,6 +46,9 @@ def _build() -> argparse.ArgumentParser:
     g.add_argument("--scan", action="store_true", help="scan everything installed, in the background")
     g.add_argument("--skip", action="store_true", help="trust everything installed now without scanning (user only)")
     n.add_argument("--cwd", help="project directory (default: the current directory)")
+    lv = sub.add_parser("level", help="show or set the security level: low (warn only), medium (block malicious), "
+                                      "high (block anything not clean; the default)")
+    lv.add_argument("value", nargs="?", choices=("low", "medium", "high"))
     sub.add_parser("notify", help="UserPromptSubmit hook: print queued warnings")
     sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
     fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
@@ -126,26 +129,58 @@ def _scan(args) -> int:
     return _EXIT[report.verdict.value]
 
 
+LEVEL_HELP = {
+    "low": "warns about threats but never blocks them",
+    "medium": "blocks malicious items, warns about suspicious ones",
+    "high": "blocks anything that is not clean until you approve it",
+}
+
+
+def _level(args) -> int:
+    from bawwab.config import level_is_set, load_config, set_level
+
+    if args.value is None:
+        level = load_config(Path.cwd()).level
+        chosen = "" if level_is_set() else " (the default: no level chosen yet)"
+        print(f"bawwab: security level {level}{chosen}: {LEVEL_HELP[level]}.")
+        return 0
+    set_level(args.value)
+    print(f"bawwab: security level set to {args.value}: {LEVEL_HELP[args.value]}. "
+          "Bawwab's self-protection blocks at every level.")
+    return 0
+
+
 def _decide(args) -> int:
+    """approve/reject each id in turn; prints what each one was, by name."""
     from bawwab.store import open_store
 
     from bawwab import effects
 
     store = open_store()
-    q = effects.find_quarantine(store, args.id)
-    if args.cmd == "approve":
-        ok, msg = store.approve(args.id, force=args.force)
-        verb = "approved"
-        if ok and q is not None:
-            effects.quarantined(store)  # settle it now: the gate stops blocking at once
-    elif q is not None and q["status"] == "active":
-        ok, msg = effects.reject_quarantined(args.id, store)
-        verb = "rejected and removed:"
-    else:
-        ok, msg = store.reject(args.id)
-        verb = "rejected"
-    print(f"{verb} {sanitise(msg, 300)}" if ok else f"error: {sanitise(msg, 300)}")
-    return 0 if ok else 1
+    failed = 0
+    for qid in dict.fromkeys(args.id):
+        q = effects.find_quarantine(store, qid)
+        name = effects.item_name(q) if q is not None else None
+        if args.cmd == "approve":
+            ok, msg = store.approve(qid, force=args.force)
+            verb = "approved"
+            if ok and q is not None:
+                effects.quarantined(store)  # settle it now: the gate stops blocking at once
+        elif q is not None and q["status"] == "active":
+            ok, msg = effects.reject_quarantined(qid, store)
+            verb = "rejected and removed"
+        else:
+            ok, msg = store.reject(qid)
+            verb = "rejected"
+        what = f"{name} ({sanitise(qid, 8)})" if name else sanitise(msg, 300)
+        if not ok:
+            failed += 1
+            print(f"error: {sanitise(qid, 8)}: {sanitise(msg, 300)}")
+        elif verb == "rejected and removed":
+            print(f"{verb}: {what} — {sanitise(msg, 300)}")
+        else:
+            print(f"{verb} {what}")
+    return 1 if failed else 0
 
 
 def _gate() -> int:
@@ -229,9 +264,12 @@ def _inventory(args) -> int:
 
         store = open_store()
         ctx = session_start(cwd, store=store)
-        if store.init_state() == "none":  # first run: ask the user before scanning anything
+        if store.init_state() == "none":  # first run: welcome the user, ask before scanning anything
             if ctx:
-                print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
+                from bawwab.effects import WELCOME
+
+                print(json.dumps({"systemMessage": WELCOME,
+                                  "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
             return 0
         inv.spawn_background(cwd)
         warnings = store.take_warnings()
@@ -340,7 +378,7 @@ def _effects(args) -> int:
     if not entries:
         print("bawwab: nothing is quarantined")
         return 0
-    print(effects.quarantine_text(entries))
+    print(effects.quarantine_details(entries))
     return 1
 
 
@@ -418,6 +456,8 @@ def main(argv: list[str] | None = None) -> int:
             return _scan(args)
         if args.cmd in ("approve", "reject"):
             return _decide(args)
+        if args.cmd == "level":
+            return _level(args)
         from bawwab.store import open_store
 
         if args.cmd == "diff":

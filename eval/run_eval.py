@@ -359,6 +359,8 @@ def reason_kind(text: str) -> str | None:
         return "refused"
     if "quarantine" in t.lower() and ("blocked until" in t or "quarantined" in t):
         return "quarantine"
+    if re.search(r"⛔ bawwab: \d+ changes? to Claude's setup (?:are|is) on hold", t):
+        return "quarantine"
     if "protected action" in t:
         return "protected"
     if "fetch.failed" in t or "could not fetch" in t.lower() or "ConnectError" in t or "ProxyError" in t:
