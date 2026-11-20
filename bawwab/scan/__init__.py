@@ -365,7 +365,7 @@ def scan_target(
         if not no_cache and not ctx.no_cache:
             cached = store.get_cached(key)
             if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
-                if cached.verdict == Verdict.CLEAN:
+                if judge and cached.verdict == Verdict.CLEAN:  # an unjudged scan never baselines trust
                     _baseline_cached(f, t, key, store)
                 return cached
         try:

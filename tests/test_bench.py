@@ -216,3 +216,24 @@ def test_full_run_uses_the_judge(run_mod, tmp_path, monkeypatch):
     assert rc == 0 and res["mode"].startswith("full")
     assert {s["id"]: s["verdict"] for s in res["samples"]}["safe/notes-skill"] == "clean"
     assert not any("judge.unavailable" in s["rules"] for s in res["samples"])
+
+
+def test_cached_static_scan_never_baselines_trust(no_backend, tmp_path):
+    """I1: a clean judge=False scan served from cache must not file its ~static snapshot as the trust baseline."""
+    store = Store(tmp_path / "s.db")
+    t = parse_target(str(Path(__file__).parent / "fixtures" / "text" / "clean_skill"))
+    tname = f"local:{t.path}"
+    first = scan_target(t, cfg=Config(), store=store, judge=False)
+    assert first.key.endswith("~static") and store.latest_snapshot(tname) is None
+    second = scan_target(t, cfg=Config(), store=store, judge=False)  # cache on: served from the store
+    assert second.key == first.key
+    got = store.latest_snapshot(tname)
+    assert got is None or not got[0].endswith("~static")
+
+
+def test_readme_with_duplicate_markers_is_refused(run_mod, no_backend, tmp_path):
+    readme = tmp_path / "README.md"
+    text = "a\n<!-- bench:start -->\nx\n<!-- bench:start -->\ny\n<!-- bench:end -->\n"
+    readme.write_text(text)
+    rc = run_mod.main(["--static-only", "--markdown", "--corpus", str(MINI), "--no-packages", "--readme", str(readme)])
+    assert rc == 3 and readme.read_text() == text

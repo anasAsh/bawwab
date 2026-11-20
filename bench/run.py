@@ -305,8 +305,10 @@ def table(m: dict, results: list[Result], mode: str, datadog: dict | None = None
 
 def rewrite_readme(readme: Path, block: str) -> bool:
     text = readme.read_text()
+    if text.count(START) != 1 or text.count(END) != 1:  # missing or duplicated markers: refuse
+        return False
     i, j = text.find(START), text.find(END)
-    if i < 0 or j < i:
+    if j < i:
         return False
     new = text[: i + len(START)] + "\n" + block.rstrip("\n") + "\n" + text[j:]
     if new != text:
