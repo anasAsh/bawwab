@@ -15,10 +15,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from posixpath import dirname, join, normpath
 
-from tree_sitter_language_pack import get_parser
-
 from bawwab.scan.files import ExtraText, ScanFile
-from bawwab.scan.rules import envflow
+from bawwab.scan.rules import envflow, parsing
 from bawwab.types import Finding, Severity
 
 PY_EXT = (".py",)
@@ -213,63 +211,93 @@ _IDENT_RE = re.compile(r"[A-Za-z_$][\w$]*")
 # Memory budget for the text kept on parsed calls (argument source plus resolved variable values).
 # Nested calls repeat their arguments' source, and resolution appends a variable's whole value to every
 # call that names it: a bundle binds each module body to a name (`var require_x = __commonJS(...)`), so a
-# 15 MB bundle grew to gigabytes (@sveltejs/mcp 0.1.31 needed > 5 GB). The budget is charged before any
-# text is built. Over it, the remaining values are not resolved (or the remaining calls are not kept) and
-# the file gets files.truncated (MED): fail closed, never a clean result.
+# 15 MB bundle grew to gigabytes (@sveltejs/mcp 0.1.31 needed > 5 GB). Costs are charged before any text
+# is built. Three tiers, and no call is ever dropped while the scan pool lasts (fix round 1, C1):
+# - full: source text and resolved values, while the file's budget allows;
+# - degraded: past it, a call keeps its argument text capped (DEGRADED_CAP, then DEGRADED_CAP_MIN) and is
+#   not resolved. Every call is still analysed: LOW files.analysis-degraded (I3);
+# - spent: the scan pool cannot hold even degraded calls. The file takes the regex fallback (as an
+#   unparseable file does) and gets MED files.truncated: content really went unanalysed.
 CALL_OVERHEAD = 256  # bytes charged per call for the object itself
-CALL_TEXT_FACTOR = 8  # per file: CALL_TEXT_FACTOR x the file size + CALL_TEXT_FLOOR
-CALL_TEXT_FLOOR = 1_000_000
-SCAN_CALL_TEXT_BUDGET = 400_000_000  # per scan (run_static_rules), across files
+CALL_TEXT_FACTOR = 16  # full text per file: CALL_TEXT_FACTOR x the file size + CALL_TEXT_FLOOR
+CALL_TEXT_FLOOR = 64_000_000
+SCAN_CALL_TEXT_BUDGET = 512_000_000  # per scan (run_static_rules), full and degraded text, across files
+DEGRADED_CAP = 4096  # argument text kept per degraded call (head and tail)
+DEGRADED_CAP_MIN = 256  # once a file's degraded text passes DEGRADED_FILE_POOL
+DEGRADED_FILE_POOL = 32_000_000
 
 
-class _TextBudget:
-    def __init__(self, n: int):
-        self.left = n
+class _Spent(Exception):
+    """The scan's pool cannot hold this file's calls, even degraded."""
+
+
+class _FileBudget:
+    def __init__(self, full: int, hard: int):
+        self.full, self.hard = full, hard  # full-text allowance; everything kept (full + degraded)
+        self.used = 0
+        self.degraded_used = 0
         self.over = False
 
     def take(self, n: int) -> bool:
-        if n > self.left:
+        """Full text (source or resolved values) of n bytes, if the file's budget allows."""
+        if self.used + n > min(self.full, self.hard):
             self.over = True
             return False
-        self.left -= n
+        self.used += n
         return True
+
+    def take_degraded(self, n: int) -> None:
+        self.over = True
+        if self.used + n > self.hard:
+            raise _Spent
+        self.used += n
+        self.degraded_used += n
+
+    @property
+    def cap(self) -> int:
+        return DEGRADED_CAP if self.degraded_used < DEGRADED_FILE_POOL else DEGRADED_CAP_MIN
+
 
 
 class _ScanState(threading.local):
-    budget: _TextBudget | None = None
+    budget: _FileBudget | None = None
 
     def __init__(self):
         self.charged: dict[tuple, int] = {}  # (rel, text hash, size) -> bytes charged to the scan
+        self.spent: set[tuple] = set()  # files whose calls the pool could not hold
 
 
 _SCAN = _ScanState()
+_NO_LIMIT = 1 << 62
 
 
-def _file_budget(size: int, key: tuple) -> _TextBudget:
-    n = CALL_TEXT_FACTOR * size + CALL_TEXT_FLOOR
+def _file_budget(size: int, key: tuple) -> _FileBudget:
+    full = CALL_TEXT_FACTOR * size + CALL_TEXT_FLOOR
     scan = _SCAN.budget
     if scan is None:
-        return _TextBudget(n)
-    return _TextBudget(min(n, max(scan.left + _SCAN.charged.get(key, 0), 0)))
+        return _FileBudget(full, _NO_LIMIT)
+    return _FileBudget(full, max(scan.hard - scan.used + _SCAN.charged.get(key, 0), 0))
 
 
 def _charge_scan(key: tuple, used: int) -> None:
     """Charge a file's call text to the scan once (a cache eviction recomputes it, never double charges)."""
     if _SCAN.budget is not None and key not in _SCAN.charged:
         _SCAN.charged[key] = used
-        _SCAN.budget.left -= used
+        _SCAN.budget.used += used
 
 
 def begin_scan() -> None:
-    """Start a scan's call-text budget; caches from an earlier scan are dropped (they hold its texts)."""
+    """Start a scan's call-text pool; caches from an earlier scan are dropped (they hold its texts)."""
     clear_caches()
-    _SCAN.budget = _TextBudget(SCAN_CALL_TEXT_BUDGET)
+    _SCAN.budget = _FileBudget(SCAN_CALL_TEXT_BUDGET, SCAN_CALL_TEXT_BUDGET)
     _SCAN.charged = {}
+    _SCAN.spent = set()
 
 
 def end_scan() -> None:
     _SCAN.budget = None
     _SCAN.charged = {}
+    _SCAN.spent = set()
     clear_caches()
 
 
@@ -278,10 +306,11 @@ def clear_caches() -> None:
     for v in list(globals().values()):
         if callable(getattr(v, "cache_clear", None)) and getattr(v, "__module__", None) == __name__:
             v.cache_clear()
+    parsing.clear()
 
 
 class _Calls(tuple):
-    """Parsed calls; `over` is True when the call-text budget ran out (some calls unresolved or dropped)."""
+    """Parsed calls; `over` is True when the full-text budget ran out (some calls degraded)."""
 
     over = False
 
@@ -290,71 +319,111 @@ def _over(c) -> bool:
     return bool(getattr(c, "over", False))
 
 
+def _spent(rel: str, text: str) -> bool:
+    return (rel, hash(text), len(text)) in _SCAN.spent
+
+
+def _capped(s: str, n: int) -> str:
+    return s if len(s) <= n else s[: n // 2] + " ... " + s[-(n // 2) :]
+
+
 class _Resolver:
     """Variable resolution under a budget: `size` is known before a value's text is built."""
 
-    def __init__(self, get, size, budget: _TextBudget):
-        self.get, self.size, self.budget = get, size, budget
+    def __init__(self, get, size, budget: _FileBudget, has_names: bool = True):
+        self.get, self.size, self.budget, self.has_names = get, size, budget, has_names
 
     def __call__(self, args: str) -> str:
-        keys = [w for w in set(_IDENT_RE.findall(args)) if self.size(w) is not None]
+        if not self.has_names:
+            return args
+        # findall is faster; its list is one str per identifier, so very long text is scanned lazily (M4)
+        words = set(_IDENT_RE.findall(args)) if len(args) < 1_000_000 else {m.group() for m in _IDENT_RE.finditer(args)}
+        keys = [w for w in words if self.size(w) is not None]
         if not keys:
             return args
         if not self.budget.take(sum(self.size(w) + 1 for w in keys)):
-            return args  # over budget: kept unresolved; the file is flagged
+            return args  # over budget: kept unresolved (degraded)
         return " ".join([args, *[self.get(w) for w in keys]])
 
 
-def _build_calls(raw: list[tuple[int, str, str, str, str]], resolve: _Resolver) -> _Calls:
+def _build_calls(raw: list[tuple[int, str, str, str, str, bool]], resolve: _Resolver) -> _Calls:
     out = _Calls(
         Call(line, callee, resolve(args), resolve(resolve(first)) if first else "", first, args_raw)
-        for line, callee, args, first, args_raw in raw
+        if full else Call(line, callee, args, first, first, args_raw)
+        for line, callee, args, first, args_raw, full in raw
     )
     out.over = resolve.budget.over
     return out
 
 
-def _py_calls(text: str, budget: _TextBudget) -> _Calls | None:
+_PY_NL_RE = re.compile(rb"\r\n|\r|\n")  # the line split `ast` uses (not str.splitlines: R27 C3, review I1)
+
+
+def _py_calls(text: str, budget: _FileBudget) -> _Calls | None:
     try:
-        tree = ast.parse(text)
-        lines = [0]
-        for ln in text.splitlines(keepends=True):
-            lines.append(lines[-1] + len(ln))
+        tree = parsing.py_parse(text)
+    except (SyntaxError, ValueError, RecursionError):
+        return None  # hostile, unparseable or too large: caller falls back to regex
+    src = text.encode()
+    starts = [0] + [m.end() for m in _PY_NL_RE.finditer(src)]  # line starts in UTF-8 bytes, as col_offset
 
-        def size_of(n) -> int:  # source extent: charged before ast.unparse builds the text
-            try:
-                return max(lines[n.end_lineno - 1] + n.end_col_offset - lines[n.lineno - 1] - n.col_offset, 0) + 16
-            except (AttributeError, IndexError, TypeError):
-                return 1 << 40
+    def span(n) -> tuple[int, int]:
+        try:
+            a = starts[n.lineno - 1] + n.col_offset
+            return a, max(starts[n.end_lineno - 1] + n.end_col_offset, a)
+        except (AttributeError, IndexError, TypeError):
+            return 0, len(src)
 
-        names: dict[str, str] = {}
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
-                if budget.take(size_of(n.value)):
-                    names[n.targets[0].id] = ast.unparse(n.value)
-            elif isinstance(n, ast.ImportFrom) and n.module:
-                for a in n.names:
-                    names[a.asname or a.name] = f"{n.module}.{a.name}"
-            elif isinstance(n, ast.Import):
-                for a in n.names:
-                    if a.asname:
-                        names[a.asname] = a.name
-        raw = []
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Call):
-                cost = CALL_OVERHEAD + size_of(n.func) + 2 * sum(size_of(a) for a in [*n.args, *n.keywords])
-                if n.args:
-                    cost += size_of(n.args[0])
-                if not budget.take(cost):
-                    break  # over budget: the remaining calls are not kept; the file is flagged
-                parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
-                first = ast.unparse(n.args[0]) if n.args else ""
-                joined = ", ".join(parts)
-                raw.append((n.lineno, ast.unparse(n.func), joined, first, joined))
-        resolve = _Resolver(names.__getitem__, lambda w: len(names[w]) if w in names else None, budget)
-        return _build_calls(raw, resolve)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
-        return None  # hostile or unparseable: caller falls back to regex
+    def size_of(n) -> int:
+        a, b = span(n)
+        return b - a + 16
+
+    def seg(a: int, b: int, cap: int) -> str:
+        if b - a <= cap:
+            return src[a:b].decode("utf-8", "replace")
+        h = cap // 2
+        return src[a : a + h].decode("utf-8", "replace") + " ... " + src[b - h : b].decode("utf-8", "replace")
+
+    def unparse(n, estimate: int) -> str:
+        s = ast.unparse(n)
+        if len(s) > estimate:  # the estimate is source extent; unparse can be longer: charge the rest
+            budget.take(len(s) - estimate)
+        return s
+
+    names: dict[str, str] = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            est = size_of(n.value)
+            if budget.take(est):
+                names[n.targets[0].id] = unparse(n.value, est)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            for a in n.names:
+                names[a.asname or a.name] = f"{n.module}.{a.name}"
+        elif isinstance(n, ast.Import):
+            for a in n.names:
+                if a.asname:
+                    names[a.asname] = a.name
+    raw = []
+    for n in ast.walk(tree):  # breadth-first: outer calls first
+        if not isinstance(n, ast.Call):
+            continue
+        argn = [*n.args, *n.keywords]
+        est = CALL_OVERHEAD + size_of(n.func) + 2 * sum(size_of(a) for a in argn) + (size_of(n.args[0]) if n.args else 0)
+        if budget.take(est):
+            parts = [unparse(a, size_of(a)) for a in n.args] + \
+                [f"{k.arg}={unparse(k.value, size_of(k.value))}" for k in n.keywords]
+            first = unparse(n.args[0], size_of(n.args[0])) if n.args else ""
+            joined = ", ".join(parts)
+            raw.append((n.lineno, unparse(n.func, size_of(n.func)), joined, first, joined, True))
+            continue
+        cap = budget.cap  # degraded: capped source text, unresolved
+        callee = seg(*span(n.func), cap)
+        joined = seg(span(argn[0])[0], max(span(a)[1] for a in argn), cap) if argn else ""
+        first = seg(*span(n.args[0]), cap) if n.args else ""
+        budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(joined) + len(first))
+        raw.append((n.lineno, callee, joined, first, joined, False))
+    resolve = _Resolver(names.__getitem__, lambda w: len(names[w]) if w in names else None, budget, bool(names))
+    return _build_calls(raw, resolve)
 
 
 def _js_lang(rel: str) -> str:
@@ -363,17 +432,22 @@ def _js_lang(rel: str) -> str:
     return "typescript" if rel.endswith(TS_EXT) else "javascript"
 
 
-def _js_calls(text: str, lang: str, budget: _TextBudget) -> _Calls:
-    parser = get_parser(lang)
+def _js_calls(text: str, lang: str, budget: _FileBudget) -> _Calls:
     src = text.encode()
 
     def txt(a: int, b: int) -> str:
         return src[a:b].decode("utf-8", "replace")
 
+    def capped(sp: tuple[int, int], cap: int) -> str:
+        a, b = sp
+        if b - a <= cap:
+            return txt(a, b)
+        return txt(a, a + cap // 2) + " ... " + txt(b - cap // 2, b)
+
     # Byte spans only while walking: no text is built until the budget allows it.
     names: dict[str, tuple[int, int]] = {}
     found = []
-    stack = [parser.parse(src).root_node]
+    stack = [parsing.js_root(src, lang)]  # no root reference kept (see _code_info)
     while stack:
         n = stack.pop()
         stack.extend(n.children)
@@ -391,29 +465,44 @@ def _js_calls(text: str, lang: str, budget: _TextBudget) -> _Calls:
     del stack
     raw = []
     for line, fn, args, first in sorted(found):
-        if not budget.take(CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]):
-            break  # over budget: the remaining calls are not kept; the file is flagged
-        a = txt(*args)
-        raw.append((line, txt(*fn), a, txt(*first), a[1:-1] if a.startswith("(") and a.endswith(")") else a))
+        if budget.take(CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]):
+            a, full = txt(*args), True
+            callee, first_s = txt(*fn), txt(*first)
+        else:  # degraded: capped text, unresolved; the call is still analysed
+            cap = budget.cap
+            a, full = capped(args, cap), False
+            callee, first_s = capped(fn, cap), capped(first, cap)
+            budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(a) + len(first_s))
+        raw.append((line, callee, a, first_s, a[1:-1] if a.startswith("(") and a.endswith(")") else a, full))
     del found
-    resolve = _Resolver(lambda w: txt(*names[w]), lambda w: names[w][1] - names[w][0] if w in names else None, budget)
+    resolve = _Resolver(lambda w: txt(*names[w]), lambda w: names[w][1] - names[w][0] if w in names else None, budget,
+                        bool(names))
     return _build_calls(raw, resolve)
 
 
 @lru_cache(maxsize=512)
 def _calls(rel: str, text: str) -> _Calls | None:
-    """Parsed calls, or None when the file is not (parseably) Python/JS/TS. `.over`: budget ran out."""
+    """Parsed calls, or None when the file is not (parseably) Python/JS/TS, is too large to parse, or the
+    scan's pool is spent (_spent). `.over`: some calls degraded."""
     if not rel.endswith(PY_EXT + JS_EXT + TS_EXT):
         return None
     key = (rel, hash(text), len(text))
-    budget = _file_budget(len(text.encode()) if not text.isascii() else len(text), key)
-    start = budget.left
+    budget = _file_budget(len(text) if text.isascii() else len(text.encode()), key)
     try:
-        return _py_calls(text, budget) if rel.endswith(PY_EXT) else _js_calls(text, _js_lang(rel), budget)
+        out = _py_calls(text, budget) if rel.endswith(PY_EXT) else _js_calls(text, _js_lang(rel), budget)
+    except _Spent:
+        _SCAN.spent.add(key)
+        if _SCAN.budget is not None:  # the pool is closed for the rest of the scan: later files fall back too
+            _SCAN.budget.used = _SCAN.budget.hard
+        return None
+    except MemoryError:
+        raise  # the code rule reports it per file (rules.error, MED)
+    except MemoryError:
+        raise
     except Exception:  # noqa: BLE001 - never let a hostile file crash the scan
         return None
-    finally:
-        _charge_scan(key, start - budget.left)
+    _charge_scan(key, budget.used)
+    return out
 
 
 # ---------------------------------------------------------------- patterns
@@ -643,7 +732,7 @@ def _setup_py_hook(f: ScanFile) -> tuple[int, str] | None:
     module-level os.system/subprocess calls, not the whole file.
     """
     try:
-        tree = ast.parse(f.text)
+        tree = parsing.py_parse(f.text)
         line = None
         for n in ast.walk(tree):
             if isinstance(n, ast.Call) and any(k.arg == "cmdclass" for k in n.keywords):
@@ -665,7 +754,7 @@ def _setup_py_hook(f: ScanFile) -> tuple[int, str] | None:
                     segs.append(ast.get_source_segment(f.text, n) or "")
             stack.extend(c for c in ast.iter_child_nodes(n) if not isinstance(c, _FUNC_NODES))
         return (line, "\n".join(segs)) if line else None
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except (SyntaxError, ValueError, RecursionError):
         m = re.search(r"cmdclass\s*=|^\s*(?:os\.system|subprocess\.\w+)\(", f.text, re.M)
         return (_line_of(f.text, m.start()), f.text) if m else None
 
@@ -872,7 +961,7 @@ def _code_info(rel: str, text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
             src = text.encode()
             # No reference to the root: a visited node (and the child list py-tree-sitter caches on it) is
             # freed once popped, instead of mirroring the whole tree in Python objects (~2.4x the tree).
-            comments, regexes, stack = [], [], [get_parser(_js_lang(rel)).parse(src).root_node]
+            comments, regexes, stack = [], [], [parsing.js_root(src, _js_lang(rel))]
             while stack:
                 n = stack.pop()
                 if n.type in ("comment", "html_comment"):
@@ -904,6 +993,8 @@ def _code_info(rel: str, text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
             out = _blank(text, spans)
             assert len(out) == len(text)
             return out, ()
+    except MemoryError:
+        raise
     except Exception:  # noqa: BLE001 - unparseable: conservative full-line fallback below
         pass
     return _blank(text, [m.span() for m in _LINE_COMMENT_RE.finditer(text)]), ()
@@ -1472,11 +1563,39 @@ def _evals_file_content(f: ScanFile) -> bool:
 STRONG_RULES = ("exfil.combo", "obfuscation.eval-decoded", "remote-code.eval-fetch")
 
 
+def _budget_findings(f: ScanFile) -> list[Finding]:
+    """What a memory budget did to this file: MED where content went unanalysed, LOW when every call was
+    still analysed in degraded form (fix round 1, I3)."""
+    if not f.rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        return []
+    if _spent(f.rel, f.text):
+        return [_finding("files.truncated", Severity.MED, f, None,
+                         "call-analysis memory budget for this scan exhausted; regex rules only")]
+    if parsing.refused(f.text):
+        return [_finding("files.truncated", Severity.MED, f, None,
+                         "too large to parse within the memory budget; regex rules only")]
+    if _over(_calls(f.rel, f.text)):
+        return [_finding("files.analysis-degraded", Severity.LOW, f, None,
+                         "call-analysis memory budget exceeded: some calls analysed unresolved, with capped "
+                         "argument text")]
+    return []
+
+
 class CodeRules:
     id = "code"
 
     def run(self, files: list[ScanFile], extra: list[ExtraText]) -> list[Finding]:
         out: list[Finding] = []
+        # A MemoryError (the process limit, bawwab.limits) fails closed for that file only (rules.error,
+        # MED); the other files are still analysed.
+        failed: list[str] = []
+        for f in files:
+            try:
+                _calls(f.rel, f.text)
+            except MemoryError:
+                failed.append(f.rel)
+        if failed:
+            files = [f for f in files if f.rel not in set(failed)]
         install = _install_files(files)
         refs = _runtime_refs(files)
         exec_data = any(
@@ -1484,28 +1603,37 @@ class CodeRules:
             if _is_code(f.rel) and not _is_test(f.rel) and not _is_config_code(f.rel)
         )
         for f in files:
-            hit = _config_index(f.rel, f.text)
-            if hit:
-                out.append(_finding("install.custom-index", Severity.MED, f, _line_of(f.text, hit[0]),
-                                    f"installs Python packages from {hit[1][:120]}"))
-            if _is_doc(f.rel) or _base(f.rel) in LOCKFILES:
-                continue
-            if _is_data(f.rel) and not (exec_data or f.rel in install or _named(f.rel, refs.run)):
-                continue
-            exempt = (
-                (_is_test(f.rel) or _is_config_code(f.rel))
-                and f.rel not in install and not refs.dynamic and not _named(f.rel, refs.names)
-            )
-            found = self._analyse(f, f.rel in install)
-            if exempt:
-                # Test code / config: listed, never decisive on its own (R26b, R27 C2).
-                found = [
-                    Finding(x.rule, Severity.LOW, x.source, x.evidence, file=x.file, line=x.line)
-                    for x in found if x.rule != "exfil.combo"
-                ]
-            out.extend(_floor(f, found, self._strong(f)))
-            if _over(_calls(f.rel, f.text)):  # not every call was kept or resolved: fail closed, whatever the file
-                out.append(_finding("files.truncated", Severity.MED, f, None, "call-analysis memory budget exceeded"))
+            try:
+                out.extend(self._file(f, install, refs, exec_data))
+            except MemoryError:
+                failed.append(f.rel)
+        out.extend(Finding("rules.error", Severity.MED, "gate", f"rule code failed on {rel}: MemoryError", file=rel)
+                   for rel in failed)
+        return out
+
+    def _file(self, f: ScanFile, install: set[str], refs, exec_data: bool) -> list[Finding]:
+        out: list[Finding] = []
+        hit = _config_index(f.rel, f.text)
+        if hit:
+            out.append(_finding("install.custom-index", Severity.MED, f, _line_of(f.text, hit[0]),
+                                f"installs Python packages from {hit[1][:120]}"))
+        if _is_doc(f.rel) or _base(f.rel) in LOCKFILES:
+            return out
+        if _is_data(f.rel) and not (exec_data or f.rel in install or _named(f.rel, refs.run)):
+            return out
+        exempt = (
+            (_is_test(f.rel) or _is_config_code(f.rel))
+            and f.rel not in install and not refs.dynamic and not _named(f.rel, refs.names)
+        )
+        found = self._analyse(f, f.rel in install)
+        if exempt:
+            # Test code / config: listed, never decisive on its own (R26b, R27 C2).
+            found = [
+                Finding(x.rule, Severity.LOW, x.source, x.evidence, file=x.file, line=x.line)
+                for x in found if x.rule != "exfil.combo"
+            ]
+        out.extend(_floor(f, found, self._strong(f)))
+        out.extend(_budget_findings(f))  # never downgraded by the exemption: fail closed, whatever the file
         return out
 
     def _analyse(self, f: ScanFile, is_install: bool) -> list[Finding]:
@@ -1669,6 +1797,8 @@ def _dotted(node) -> str | None:
     if isinstance(node, (ast.Name, ast.Attribute)):
         try:
             return ast.unparse(node)
+        except MemoryError:
+            raise
         except Exception:  # noqa: BLE001
             return None
     return None
@@ -1690,7 +1820,7 @@ def _py_bindings(text: str) -> _Bindings:
     modbind: dict[str, str] = {}
     members: list[tuple[str, str]] = []
     try:
-        tree = ast.parse(text)
+        tree = parsing.py_parse(text)
         for n in ast.walk(tree):
             if isinstance(n, ast.Import):
                 for a in n.names:
@@ -1718,7 +1848,7 @@ def _py_bindings(text: str) -> _Bindings:
                     v = _dotted(item.context_expr)
                     if v and isinstance(item.optional_vars, ast.Name):
                         al.setdefault(item.optional_vars.id, v)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except (SyntaxError, ValueError, RecursionError):
         for group in _PY_IMPORT_LIST_RE.findall(text):
             for part in group.split(","):
                 bits = part.split()
@@ -1927,12 +2057,14 @@ def _strings_blanked(rel: str, t: str) -> str:
             out = _blank(t, spans)
             if len(out) == len(t):
                 return out
+        except MemoryError:
+            raise
         except Exception:  # noqa: BLE001
             pass
     elif rel.endswith(JS_EXT + TS_EXT):
         try:  # string bodies and template text, keeping ${...} substitutions
             src = t.encode()
-            spans, stack = [], [get_parser(_js_lang(rel)).parse(src).root_node]
+            spans, stack = [], [parsing.js_root(src, _js_lang(rel))]
             while stack:
                 n = stack.pop()
                 if n.type in ("string_fragment", "escape_sequence", "regex_pattern"):
@@ -1941,6 +2073,8 @@ def _strings_blanked(rel: str, t: str) -> str:
                     stack.extend(n.children)
             # Lines are kept; character offsets may shift on multi-byte text, so callers use only this text.
             return _blank_bytes(src, spans).decode("utf-8", "replace")
+        except MemoryError:
+            raise
         except Exception:  # noqa: BLE001
             pass
 
@@ -2126,7 +2260,7 @@ def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
     """Line spans of outermost functions, or None when the file cannot be parsed."""
     try:
         if rel.endswith(PY_EXT):
-            tree = ast.parse(text)
+            tree = parsing.py_parse(text)
             spans = [
                 (n.lineno, n.end_lineno or n.lineno)
                 for n in ast.walk(tree)
@@ -2137,7 +2271,7 @@ def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
                 "function_declaration", "function_expression", "function", "arrow_function",
                 "method_definition", "generator_function", "generator_function_declaration",
             }
-            spans, stack = [], [get_parser(_js_lang(rel)).parse(text.encode()).root_node]  # no root ref (see _code_info)
+            spans, stack = [], [parsing.js_root(text.encode(), _js_lang(rel))]  # no root ref (see _code_info)
             while stack:
                 n = stack.pop()
                 if n.type in kinds:
@@ -2146,6 +2280,8 @@ def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
                     stack.extend(n.children)
         else:
             return None
+    except MemoryError:
+        raise
     except Exception:  # noqa: BLE001
         return None
     spans.sort(key=lambda sp: (sp[0], -sp[1]))

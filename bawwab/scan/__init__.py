@@ -233,6 +233,13 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[F
         if isinstance(cf, FetchError):
             out.append(Finding("fetch.failed", Severity.MED, "gate", f"[server {name}] {cf}"))
             continue
+        if _root_id(cf.root) in ctx.active:
+            # The server runs from a directory already being scanned (`node ${CLAUDE_PLUGIN_ROOT}/start.mjs`):
+            # its code is in that scan. Scanning it again only repeated every finding under [server X] and
+            # ended in a "nesting depth limit" MED.
+            if prefetched is None:
+                cf.cleanup()
+            continue
         try:
             out.extend(_prefix(_analyze(cf, ctx, depth + 1, f"{label}[server {name}] "), name))
         finally:
@@ -285,6 +292,7 @@ class _Ctx:
         self.prefetch_for: Fetched | None = None
         self.prefetched: dict | None = None
         self.no_cache = False
+        self.active: set[str] = set()  # real paths of the roots being analysed (no self-recursive servers)
         # (label prefix, files, extra, remote tools) for the target, each plugin child and sandbox results
         self.parts: list[tuple[str, list[ScanFile], list[ExtraText], list[ToolInfo]]] = []
 
@@ -349,10 +357,24 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "")
     return out
 
 
+def _root_id(root: Path | None) -> str | None:
+    import os
+
+    return os.path.realpath(root) if root is not None else None
+
+
 def _analyze(f: Fetched, ctx: _Ctx, depth: int = 0, label: str = "") -> list[Finding]:
     files, extra, findings = _static_step(f, ctx.fetch_opts)
     ctx.parts.append((label, files, extra, f.remote_tools))
-    findings += _scan_children(f, ctx, depth, label)
+    rid = _root_id(f.root)
+    added = rid is not None and rid not in ctx.active
+    if added:
+        ctx.active.add(rid)
+    try:
+        findings += _scan_children(f, ctx, depth, label)
+    finally:
+        if added:
+            ctx.active.discard(rid)
     findings += _judge_step(files, extra, findings, ctx)
     if ctx.mode == Mode.DEEP:
         findings += _sandbox_step(f, files, ctx, label)

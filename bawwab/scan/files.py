@@ -186,6 +186,78 @@ def _binary_unscanned(n: int) -> list[Finding]:
 
 MAX_TOTAL_TEXT_BYTES = 128_000_000  # per scan: text held in memory and parsed (extraction allows 500 MB)
 
+# Loading priority when a cap can bind (fix round 1, I4): padding that sorts first must not push out what
+# decides a verdict. 0 manifests, 1 hook configs and install scripts, 2 declared entry points, 3 the rest.
+MANIFEST_BASES = {
+    "package.json", "pyproject.toml", "setup.py", "setup.cfg", "plugin.json", ".mcp.json", "mcp.json",
+    "marketplace.json", "manifest.json", "gemini-extension.json", "qwen-extension.json",
+}
+_INSTALL_NAME_RE = re.compile(r"(?:^|/)(?:(?:pre|post)?install|setup|bootstrap)(?:[._-][\w.-]*)?$", re.I)
+_PATHLIKE_RE = re.compile(r"""[\w${}.@/-]*[\w$}]/[\w.@/-]+|[\w.@-]+\.(?:[cm]?[jt]sx?|py|sh|bash)\b""")
+
+
+def _strings(o) -> list[str]:
+    if isinstance(o, str):
+        return [o]
+    if isinstance(o, dict):
+        return [x for v in o.values() for x in _strings(v)]
+    if isinstance(o, list):
+        return [x for v in o for x in _strings(v)]
+    return []
+
+
+def _entry_points(manifests: list[ScanFile]) -> set[str]:
+    """Paths that manifests declare as something to run: package.json main/bin/module/exports/scripts,
+    MCP server commands and args, pyproject scripts. Relative to each manifest's directory."""
+    import json
+    import posixpath
+    import tomllib
+
+    out: set[str] = set()
+    for f in manifests:
+        base = f.rel.rsplit("/", 1)[-1]
+        d = posixpath.dirname(f.rel)
+        cands: list[str] = []
+        try:
+            if base == "pyproject.toml":
+                doc = tomllib.loads(f.text)
+                scripts = {**(doc.get("project", {}).get("scripts") or {}),
+                           **(doc.get("project", {}).get("gui-scripts") or {}),
+                           **(doc.get("tool", {}).get("poetry", {}).get("scripts") or {})}
+                for v in _strings(scripts):
+                    mod = v.split(":", 1)[0].strip().replace(".", "/")
+                    cands += [f"{mod}.py", f"src/{mod}.py", f"{mod}/__init__.py", f"src/{mod}/__init__.py"]
+            elif base.endswith(".json"):
+                doc = json.loads(f.text)
+                if not isinstance(doc, dict):
+                    continue
+                vals = [doc.get(k) for k in ("main", "module", "bin", "exports", "browser", "hooks")]
+                vals += [doc.get("mcpServers"), doc.get("scripts")]
+                for s in _strings(vals):
+                    cands += [s] + _PATHLIKE_RE.findall(s)
+        except (ValueError, TypeError, AttributeError, RecursionError):
+            continue
+        for c in cands:
+            c = c.strip().replace("${CLAUDE_PLUGIN_ROOT}/", "").replace("$CLAUDE_PLUGIN_ROOT/", "")
+            if not c or c.startswith(("/", "http:", "https:")) or len(c) > 300:
+                continue
+            p = posixpath.normpath(posixpath.join(d, c))
+            if p.startswith(".."):
+                continue
+            out.update((p, f"{p}.js", f"{p}.mjs", f"{p}.cjs", f"{p}/index.js", f"{p}/index.mjs"))
+    return out
+
+
+def _tier(rel: str, entries: set[str]) -> int:
+    base = rel.rsplit("/", 1)[-1]
+    if base in MANIFEST_BASES:
+        return 0
+    if _is_launcher(rel) or _INSTALL_NAME_RE.search(rel):
+        return 1
+    if rel in entries:
+        return 2
+    return 3
+
 
 def load_files(
     root: Path, max_file_bytes: int = 1_000_000, max_files: int = 5000, max_text_bytes: int = 16_000_000,
@@ -199,8 +271,10 @@ def load_files(
     `files.truncated` (med), as do source files with NUL bytes and the file cap. Files with a
     binary magic (executables, archives, images) are aggregated into one low finding, unless a
     manifest, hook config or install script names them as something to run (then `files.truncated`).
-    The scan holds at most max_total_bytes of text: past it, `files.truncated` (med) and the remaining
-    files are not scanned (a memory budget, fail closed).
+    The scan holds at most max_total_bytes of text: past it, `files.truncated` (med) and the files that
+    do not fit are not scanned (a memory budget, fail closed). When either cap can bind, files load in
+    priority order (manifests, hooks and install scripts, declared entry points, the rest); the result
+    keeps walk order.
     """
     root = Path(root)
     files: list[ScanFile] = []
@@ -212,17 +286,22 @@ def load_files(
     # implausible header), "media" (counted as binary when left alone) or "quiet" (small media).
     pending: list[tuple[str, str, str]] = []
     total = 0
+    skipped: list[str] = []  # did not fit the text budget
 
-    def over_total(rel: str, n: int) -> bool:
+    def fits(rel: str, n: int) -> bool:
         nonlocal total
         if total + n > max_total_bytes:
-            findings.append(_truncated(
-                f"text budget of {max_total_bytes} bytes reached at {rel}; remaining files not scanned", rel))
-            return True
+            skipped.append(rel)
+            return False
         total += n
-        return False
+        return True
 
     def finish() -> tuple[list[ScanFile], list[Finding]]:
+        if skipped:
+            findings.append(_truncated(
+                f"text budget of {max_total_bytes} bytes reached at {skipped[0]}; {len(skipped)} "
+                f"file(s) not scanned", skipped[0]))
+        files.sort(key=lambda f: order[f.rel])
         launchers = [f for f in files if _is_launcher(f.rel)]
         binaries = 0
         for rel, evidence, kind in pending:
@@ -238,70 +317,91 @@ def load_files(
     def exec_kind(head: bytes) -> str:
         return "exec" if _plausible_executable(head) else "forged"
 
+    def load(rel: str, path: Path, size: int) -> None:
+        try:
+            if size > max_file_bytes:
+                with path.open("rb") as fh:
+                    head = fh.read(8192)
+                # A code/script name (or #!) is never taken as media: bash runs line 2 of a "%PDF" script.
+                if _is_binary(head) and not _is_code_name(rel, head):
+                    kind = exec_kind(head) if _is_executable(head) else "media"
+                    pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", kind))
+                elif (b"\x00" in head or _is_binary(head) or _is_executable(head)
+                      or rel.endswith(SHELL_EXT) or _shell_shebang(head)):
+                    # NUL bytes, a script under a forged binary/media header (R27 round 3), or a
+                    # shell script / #! file: not bundled text, so the unscanned tail stays MED.
+                    findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
+                elif size <= max_text_bytes:
+                    # Big bundled text: scanned in full (R40).
+                    if not fits(rel, size):
+                        return
+                    data = path.read_bytes()
+                    if b"\x00" in data:  # review M6: NUL anywhere, not only in the head
+                        findings.append(_truncated(f"{rel} is source with NUL bytes; not scanned", rel))
+                    else:
+                        files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
+                else:
+                    # Above the ceiling, padding that big is itself suspicious: head + tail, MED (R40).
+                    with path.open("rb") as fh:
+                        part = fh.read(max_file_bytes)
+                        fh.seek(max(size - max_file_bytes, max_file_bytes))
+                        tail = fh.read(max_file_bytes)
+                    if b"\x00" in part or b"\x00" in tail:
+                        findings.append(_truncated(f"{rel} is {size} bytes with NUL bytes; not scanned", rel))
+                    elif fits(rel, len(part) + len(tail)):
+                        text = part.decode("utf-8", errors="replace") + "\n" + tail.decode("utf-8", errors="replace")
+                        files.append(ScanFile(rel, text))
+                        findings.append(_truncated(
+                            f"{rel} is {size} bytes (limit {max_text_bytes}); only the first and last "
+                            f"{max_file_bytes} bytes scanned", rel,
+                        ))
+                return
+            data = path.read_bytes()
+        except OSError:
+            return
+        if b"\x00" in data[:8192]:
+            head = data[:8192]
+            if _is_code_name(rel, head):
+                findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
+            elif _is_executable(head):  # prebuilt executables are counted
+                pending.append((rel, f"{rel} contains NUL bytes; not scanned", exec_kind(head)))
+            else:  # small images/archives stay silent unless a launcher runs them
+                pending.append((rel, f"{rel} contains NUL bytes; not scanned", "quiet"))
+            return
+        if fits(rel, len(data)):
+            files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
+
+    entries: list[tuple[str, Path, int]] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for name in sorted(filenames):
             path = Path(dirpath) / name
-            if path.is_symlink() or not path.is_file():
-                continue
-            rel = path.relative_to(root).as_posix()
-            if len(files) >= max_files:
-                findings.append(_truncated(f"file limit of {max_files} reached; remaining files not scanned"))
-                return finish()
             try:
-                size = path.stat().st_size
-                if size > max_file_bytes:
-                    with path.open("rb") as fh:
-                        head = fh.read(8192)
-                    # A code/script name (or #!) is never taken as media: bash runs line 2 of a "%PDF" script.
-                    if _is_binary(head) and not _is_code_name(rel, head):
-                        kind = exec_kind(head) if _is_executable(head) else "media"
-                        pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", kind))
-                    elif (b"\x00" in head or _is_binary(head) or _is_executable(head)
-                          or rel.endswith(SHELL_EXT) or _shell_shebang(head)):
-                        # NUL bytes, a script under a forged binary/media header (R27 round 3), or a
-                        # shell script / #! file: not bundled text, so the unscanned tail stays MED.
-                        findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
-                    elif size <= max_text_bytes:
-                        # Big bundled text: scanned in full (R40).
-                        if over_total(rel, size):
-                            return finish()
-                        data = path.read_bytes()
-                        if b"\x00" in data:  # review M6: NUL anywhere, not only in the head
-                            findings.append(_truncated(f"{rel} is source with NUL bytes; not scanned", rel))
-                        else:
-                            files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
-                    else:
-                        # Above the ceiling, padding that big is itself suspicious: head + tail, MED (R40).
-                        with path.open("rb") as fh:
-                            part = fh.read(max_file_bytes)
-                            fh.seek(max(size - max_file_bytes, max_file_bytes))
-                            tail = fh.read(max_file_bytes)
-                        if b"\x00" in part or b"\x00" in tail:
-                            findings.append(_truncated(f"{rel} is {size} bytes with NUL bytes; not scanned", rel))
-                        elif over_total(rel, len(part) + len(tail)):
-                            return finish()
-                        else:
-                            text = part.decode("utf-8", errors="replace") + "\n" + tail.decode("utf-8", errors="replace")
-                            files.append(ScanFile(rel, text))
-                            findings.append(_truncated(
-                                f"{rel} is {size} bytes (limit {max_text_bytes}); only the first and last "
-                                f"{max_file_bytes} bytes scanned", rel,
-                            ))
+                if path.is_symlink() or not path.is_file():
                     continue
-                data = path.read_bytes()
+                size = path.stat().st_size
             except OSError:
                 continue
-            if b"\x00" in data[:8192]:
-                head = data[:8192]
-                if _is_code_name(rel, head):
-                    findings.append(_truncated(f"{rel} is source code with NUL bytes; not scanned", rel))
-                elif _is_executable(head):  # prebuilt executables are counted
-                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", exec_kind(head)))
-                else:  # small images/archives stay silent unless a launcher runs them
-                    pending.append((rel, f"{rel} contains NUL bytes; not scanned", "quiet"))
-                continue
-            if over_total(rel, len(data)):
-                return finish()
-            files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
+            entries.append((path.relative_to(root).as_posix(), path, size))
+    order = {rel: i for i, (rel, _, _) in enumerate(entries)}
+    text_estimate = sum(min(size, 2 * max_file_bytes) if size > max_text_bytes else size for _, _, size in entries)
+    if len(entries) > max_files or text_estimate > max_total_bytes:
+        first = [e for e in entries if _tier(e[0], set()) == 0]
+        for rel, path, size in first:  # manifests first: they name the entry points
+            if len(files) >= max_files:
+                break
+            load(rel, path, size)
+        eps = _entry_points([f for f in files if f.rel.rsplit("/", 1)[-1] in MANIFEST_BASES])
+        rest = sorted((e for e in entries if _tier(e[0], set()) != 0), key=lambda e: (_tier(e[0], eps), order[e[0]]))
+        entries = first + rest
+        done = {rel for rel, _, _ in first}
+    else:
+        done = set()
+    for rel, path, size in entries:
+        if rel in done:
+            continue
+        if len(files) >= max_files:
+            findings.append(_truncated(f"file limit of {max_files} reached; remaining files not scanned"))
+            return finish()
+        load(rel, path, size)
     return finish()

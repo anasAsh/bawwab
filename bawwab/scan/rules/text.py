@@ -9,10 +9,9 @@ from collections import Counter
 from dataclasses import dataclass
 
 from bawwab.scan.files import ExtraText, ScanFile
+from bawwab.scan.rules import parsing
 from bawwab.scan.rules.code import JS_EXT, PY_EXT, TS_EXT, _js_lang
 from bawwab.types import Finding, Severity
-
-from tree_sitter_language_pack import get_parser
 
 MAX_DESC = 20_000
 VENDORED = ("node_modules/", "site-packages/", ".venv/", "vendor/")
@@ -70,7 +69,7 @@ def _const_str(node: ast.AST | None) -> str | None:
 
 
 def _py_descriptions(text: str) -> list[_Text]:
-    tree = ast.parse(text)
+    tree = parsing.py_parse(text)
     out: list[_Text] = []
     for n in ast.walk(tree):
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -92,7 +91,7 @@ def _py_descriptions(text: str) -> list[_Text]:
 
 def _js_descriptions(text: str, lang: str) -> list[_Text]:
     src = text.encode()
-    root = get_parser(lang).parse(src).root_node
+    root = parsing.js_root(src, lang)
 
     def txt(n) -> str:
         return src[n.start_byte : n.end_byte].decode("utf-8", "replace")
@@ -206,15 +205,19 @@ def _source_descriptions(f: ScanFile) -> list[_Text]:
                 return []
             try:
                 return _py_descriptions(f.text)
-            except (SyntaxError, ValueError, RecursionError, MemoryError):
+            except (SyntaxError, ValueError, RecursionError):
                 return _fallback_descriptions(f.text)
         if f.rel.endswith(JS_EXT + TS_EXT):
             if "description" not in f.text:
                 return []
             try:
                 return _js_descriptions(f.text, _js_lang(f.rel))
+            except MemoryError:
+                raise
             except Exception:  # noqa: BLE001 - hostile source must not crash the scan
                 return _fallback_descriptions(f.text)
+    except MemoryError:
+        raise
     except Exception:  # noqa: BLE001
         return []
     return []
@@ -539,7 +542,7 @@ class PluginRules:
                 continue
             try:
                 data = json.loads(f.text)
-            except (ValueError, RecursionError, MemoryError):
+            except (ValueError, RecursionError):
                 continue
             if base != ".mcp.json":
                 for event, matcher, cmd in _hook_commands(data):

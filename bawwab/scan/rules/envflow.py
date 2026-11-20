@@ -35,7 +35,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from tree_sitter_language_pack import get_parser
+from bawwab.scan.rules import parsing
 
 PY_EXT = (".py",)
 TS_EXT = (".ts", ".mts", ".cts", ".tsx")
@@ -175,7 +175,7 @@ class _Js:
         self.text = text
         self.src = text.encode()
         lang = "tsx" if rel.endswith(".tsx") else ("typescript" if rel.endswith(TS_EXT) else "javascript")
-        self.root = get_parser(lang).parse(self.src).root_node
+        self.root = parsing.js_root(self.src, lang)
         self.is_net = is_net
         self._decls: dict[str, dict[tuple, list]] = {}
         self._decl_keys: dict[str, dict[tuple, object]] = {}
@@ -1391,7 +1391,7 @@ class _Scope:
 class _Py:
     def __init__(self, text: str, is_net: IsNet):
         self.text = text
-        self.tree = ast.parse(text)
+        self.tree = parsing.py_parse(text)
         self.is_net = is_net
         self.parent: dict[int, ast.AST] = {}
         self.scope_of: dict[int, _Scope] = {}
@@ -2119,7 +2119,7 @@ def env_copies(rel: str, text: str, is_net: IsNet, budget: _Budget | None = None
         return ()
     try:
         return tuple(_analyse(_flow(rel, text, is_net), budget))
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except (SyntaxError, ValueError, RecursionError):
         return None
 
 
@@ -2129,7 +2129,7 @@ def untrusted_reason(rel: str, text: str) -> str:
         f = _flow(rel, text, lambda *_: False)
         f.budget = _Budget(10**12, 10**9)
         return f.untrusted()
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except (SyntaxError, ValueError, RecursionError):
         return "unparseable"
 
 
@@ -2139,5 +2139,5 @@ def launcher_text(rel: str, text: str, callee: str) -> bool:
         f = _flow(rel, text, lambda *_: False)
         f.budget = _Budget()
         return not f.untrusted() and f.launcher_text(callee)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except (SyntaxError, ValueError, RecursionError):
         return False

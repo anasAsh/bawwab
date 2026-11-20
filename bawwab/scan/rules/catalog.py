@@ -18,6 +18,7 @@ def _r(id: str, title: str, why: str, fix: str) -> tuple[str, RuleInfo]:
 CATALOG: dict[str, RuleInfo] = dict(
     [
         _r("files.truncated", "Scan limit reached", "Some files, or the tail of a very large file, were not scanned, so malicious code could hide in them.", "Review the unscanned files manually or raise the limits."),
+        _r("files.analysis-degraded", "Analysis degraded by a memory budget", "A very large file was analysed with every call kept, but with variable values unresolved and long arguments shortened.", "No action needed on its own; review the file manually if other findings point at it."),
         _r("files.binary-unscanned", "Binary files not analysed", "Prebuilt executables cannot be read by static rules, so what they do is unknown until they run.", "Use --deep to run the package in the sandbox, or prefer packages built from source."),
         _r("rules.error", "A scan rule failed", "A rule crashed, so its findings are missing; the result is incomplete.", "Review the target manually; report the failing rule."),
         _r("install-script", "Runs code at install time", "Install hooks run automatically with your privileges before you can review anything.", "Read the script; prefer packages with no install hooks."),

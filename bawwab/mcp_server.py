@@ -135,6 +135,9 @@ async def explain_finding(id: str) -> CallToolResult:
 
 
 def main() -> None:
+    from bawwab.limits import apply_memory_limit
+
+    apply_memory_limit()  # scans run in this process: fail closed (MemoryError), not OOM
     mcp.run("stdio")
 
 

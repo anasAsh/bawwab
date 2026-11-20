@@ -93,6 +93,13 @@
       "cwe": [],
       "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
     },
+    "files.analysis-degraded": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was analysed with less precision. It names no attack technique, so it is left unmapped on purpose."
+    },
     "files.binary-unscanned": {
       "owasp_llm": [],
       "owasp_agentic": [],

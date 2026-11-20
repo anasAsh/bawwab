@@ -389,6 +389,9 @@ def _setup(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from bawwab.limits import apply_memory_limit
+
+    apply_memory_limit()  # backstop for every entry that scans (gate, scan, effects...): fail closed, not OOM
     try:
         args = _build().parse_args(argv)
     except SystemExit as e:
