@@ -47,13 +47,18 @@ def decision(kind: str, reason: str, updated: dict | None = None) -> dict:
     return {"hookSpecificOutput": out}
 
 
-def protected_key(inp: HookInput, reason: str = "") -> str:
-    """Bound to the effective action (not description/timeout) and to the protected reason."""
+def protected_key(inp: HookInput, reason: str = "", bind: tuple | list = ()) -> str:
+    """Bound to the effective action (not description/timeout) and to the protected reason. bind: server entry hashes
+    (envkeys.server_entry_hash, which include the project dir) of the env-loader reasons in it, so such an approval is
+    per project (R3-I1). Empty for every other protected action: their keys are unchanged."""
     ti = inp.tool_input if isinstance(inp.tool_input, dict) else {}
     fields = _KEY_FIELDS.get(inp.tool_name)
     material = {k: ti.get(k) for k in fields} if fields else ti
+    body = {"tool_name": inp.tool_name, "tool_input": material, "reason": reason}
+    if bind:
+        body["entries"] = sorted(set(bind))
     canon = json.dumps(
-        {"tool_name": inp.tool_name, "tool_input": material, "reason": reason},
+        body,
         sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str,
     )
     return "protected:" + hashlib.sha256(canon.encode()).hexdigest()[:16]
@@ -146,9 +151,9 @@ def _user_only_block(reasons: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | None, str]:
+def _protected_block(inp: HookInput, reason: str, store: Store, bind: tuple | list = ()) -> tuple[str | None, str]:
     """(deny text or None when approved, key)."""
-    key = protected_key(inp, reason)
+    key = protected_key(inp, reason, bind)
     shown = sanitise(reason, 300)
     if store.is_rejected(key):
         return f"⛔ bawwab: previously rejected — protected action ({shown})", key
@@ -210,7 +215,9 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
     keys: list[str] = []
     links: list[tuple[str, str]] = []
     for reason in protected:
-        text, key = _protected_block(inp, reason, store)
+        parts = reason.split("; ")
+        bind = [h for r, h in det.env_entries if r in parts]
+        text, key = _protected_block(inp, reason, store, bind)
         keys.append(key)
         links.append((reason, key))
         if text:

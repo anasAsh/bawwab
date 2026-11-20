@@ -1,6 +1,6 @@
 # Bawwab effectiveness evaluation (Task 15)
 
-Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1–3). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
+Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1–4). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
 `replicas.json`, `latency.json`, `baseline.json`, `summary.json`). Reproduce with
 `uv run python eval/run_eval.py` (about 3 minutes, offline). `tests/test_eval.py` replays a subset in CI.
 `tests/test_eval_misses.py` pins every remaining miss as a strict xfail, and `tests/test_eval_fixes.py` covers the misses fixed in round 1.
@@ -168,6 +168,13 @@ The table counts 116 entries:
       target clean or approved;
     - entries with a non-string arg or env value, or any field the gate never saw (such as `cwd`), never link.
   - Any later change to the entry is quarantined again.
+  - Since fix round 4, the gate's approval key for an env-loader reason includes that entry hash, so it is per
+    project too. The same command in another project creates its own pending approval and never gets a link from the
+    first project's approval (R3-I1). Other protected actions keep their keys unchanged.
+  - **Known minor (R3-M1, left as is).** A `cd X && claude mcp add …` install run from session project A is parsed
+    both ways (fail-safe), so after one approval it links both A and X. The only effect is that the env hold for an
+    identical entry in the session's own project A is waived by the approval given for X. The code is still scanned
+    at A's own base.
   - `PATH` is deliberately not on the list; this is documented in README "Honest limitations".
 - **Approval routes.**
   - All 22 that README and SECURITY.md say are refused are refused. That covers: direct, absolute path, `uv run`,
