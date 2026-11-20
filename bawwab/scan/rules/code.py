@@ -934,7 +934,9 @@ def _context(f: ScanFile, t: str, pos: int, regexes) -> str | None:
                     # RegExp([...literals].join('|')): a regex literal in all but syntax (10a minor)
                     if not _stringified(t, r, _close_of(t, r), regexes):
                         return "regex"
-                line_start = t.rfind("\n", 0, i) + 1
+                # the declaration / callee right before the bracket: a bounded tail, so a long one-line file is
+                # not rescanned from its start for every hit (r4 m3)
+                line_start = max(t.rfind("\n", 0, i) + 1, i - 512)
                 prefix = t[line_start:i] + ("(" if ch == "(" else "")
                 m = _DECL_TAIL_RE.search(prefix)
                 name, callee = (m.group(1) or "", m.group(2) or "") if m else ("", "")
@@ -1352,6 +1354,9 @@ class CodeRules:
         comboable = [p for p, k in hits if k != "regex"]
         net = _net_calls(f, t)
         net_lines = [ln for ln, _ in net]
+        over = next((c for c in _env_copies(f, t) if c.budget), None)
+        if over is not None:  # R47 e: the environment flow was not followed to the end, so nothing was bound
+            out.append(_finding("files.truncated", Severity.MED, f, over.line, "environment-flow analysis budget exceeded"))
         if real:
             out.append(_finding("credential-access", Severity.HIGH, f, _line_of(t, real[0])))
         elif denied:  # deny-list / regex mention: listed, not decisive on its own (R27 I4, R29)
@@ -1804,6 +1809,7 @@ def _is_net_call(f: ScanFile, callee_raw: str, args: str, first_raw: str) -> boo
 @lru_cache(maxsize=16)
 def _env_copies_cached(rel: str, text: str, t: str) -> tuple[envflow.EnvCopy, ...] | None:
     f = ScanFile(rel, text)
+    _bindings(rel, text)  # parsed before the envflow budget's clock starts (R47 e): the callback only looks up
     return envflow.env_copies(rel, t, lambda c, a, fr: _is_net_call(f, c, a, fr))
 
 
@@ -1843,6 +1849,7 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     copies = _env_copies(f, t)
     if copies:
         net_lines = None
+        netcap = None
         for c in copies:
             kind = _context(f, t, c.pos, regexes)
             if kind is None:
@@ -1852,7 +1859,7 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
                     net_lines = _net_lines(f, t)
                 if c.sink or (net_lines and _same_scope(f, [c.line], net_lines)):
                     kind = "real"  # reaches a network call or a write; or R27: same function as one
-                elif c.family == "spread" and not _network_capable(f, t):
+                elif c.family == "spread" and not c.untrusted and not (netcap := _network_capable(f, t) if netcap is None else netcap):
                     continue  # R26: a spread no network can reach stays silent (test_env_spread_not_dotenv)
                 else:
                     kind = "env"  # LOW, counted by the R27 backstop (R45 4)

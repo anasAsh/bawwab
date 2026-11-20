@@ -237,9 +237,11 @@ export const srv = createServer(() => {});
 
 
 def test_rescan_desktop_commander_lazy_package_puppeteer_is_a_launcher():
-    # dist/tools/pdf/markdown.js (desktop-commander, round-4 rescan): puppeteer comes back from a LazyPackage loader
+    # dist/tools/pdf/markdown.js (desktop-commander, round-4 rescan): puppeteer comes back from a LazyPackage loader.
+    # Ruling R47 (c) drops the returned_member rule (one decoy spoofed it, review r4 I4): the copy is no longer
+    # bound, so it is LOW credential-access, counted by the backstop wherever the file can reach the network.
     found = _found([("dist/tools/pdf/markdown.js", LAZY_LOADER)])
-    assert "credential-access" not in {f.rule for f in found}, found
+    assert ("credential-access", Severity.LOW) in {(f.rule, f.severity) for f in found}, found
 
 
 def test_lazy_package_member_patched_is_no_launcher():

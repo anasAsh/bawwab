@@ -16,11 +16,22 @@ binds or copies anything, and casts, parentheses and argument position do not ma
 - Sink: the copy, or a value made from it, reaches a network call or a file write, through variables and
   function returns (R45 4: "HIGH only when it reaches a network/write call directly").
 - A file that does not parse gives None; the caller then treats every copy as unbound (R45 5).
+
+Ruling R47 (round 5): the binding exemption is the only path that lowers severity, so it opts out on doubt.
+- A copy is bound only when every use of it is a launcher env slot (or a variable / return whose every use
+  is). Writing single keys, deleting them and truthiness tests are not uses; reading, iterating or merging
+  the copy is (R47 a).
+- "Untrusted resolution": a file that patches the loader or module system, defines a loader / interop name
+  itself, evaluates non-literal code, or parses differently at runtime (`with`, unicode escapes in identifiers, an
+  Annex B block function, HTML-like comments, TS `import type` of a launcher module) binds nothing (R47 b).
+- A work budget (steps and about 2 s per file): when it runs out, nothing is bound and the caller adds a
+  scan-limit finding (R47 e).
 """
 from __future__ import annotations
 
 import ast
 import re
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -60,6 +71,27 @@ class EnvCopy:
     family: str  # "old": checked since round 0 (dict(os.environ), Object.entries(process.env)...); "spread": R44/R45 forms
     bound: bool
     sink: bool
+    untrusted: str = ""  # why nothing in this file is bound (R47 b, e); "" when resolution is trusted
+    budget: bool = False  # the work budget ran out (R47 e)
+
+
+BUDGET_STEPS = 500_000  # resolution / use / sink steps per file (R47 e); real bundles stay under about 300k
+BUDGET_SECONDS = 2.0
+
+
+class BudgetExceeded(Exception):
+    pass
+
+
+class _Budget:
+    def __init__(self, steps: int = BUDGET_STEPS, seconds: float = BUDGET_SECONDS):
+        self.left = steps
+        self.deadline = time.monotonic() + seconds
+
+    def tick(self, n: int = 1) -> None:
+        self.left -= n
+        if self.left < 0 or (self.left & 0x3FF) < n and time.monotonic() > self.deadline:
+            raise BudgetExceeded
 
 
 def launcher_path(mod: str, members: tuple[str, ...]) -> bool:
@@ -112,6 +144,26 @@ _PATCH_CALLS = {"Object.assign", "Object.defineProperty", "Object.defineProperti
                 "Object.setPrototypeOf", "Reflect.setPrototypeOf", "Reflect.deleteProperty"}
 _INTEROP_RE = re.compile(r"^(?:[\w$]+\.)?_*(?:toESM|importDefault|importStar|interopRequire\w*|toCommonJS)$")
 _SHIM_RE = re.compile(r"""^\(\s*[\w$]+\s*=>\s*typeof\s+require\s*<\s*["']u["']\s*\?\s*require\b""")
+HELPER_MODULES = ("tslib", "@swc/helpers")
+_TSC_IMPORT_DEFAULT = '__importDefault=(this&&this.__importDefault)||function(mod){return(mod&&mod.__esModule)?mod:{"default":mod};}'
+# Loader and interop names a file must not define itself (R47 b); createRequire / require only from the real
+# module "module", the interop helpers only from a helper package or (tsc) verbatim.
+LOADER_NAMES = ("require", "__importDefault", "__importStar", "__toESM", "__require", "createRequire")
+PY_LOADER_NAMES = ("importlib", "__import__", "import_module")
+LAUNCH_MODULES = ("child_process", "execa", "cross-spawn", "@modelcontextprotocol/sdk") + BROWSER_MODULES
+_PROTO_KEYS = ("__proto__", "constructor", "prototype", "__defineGetter__", "__defineSetter__")
+_MODULE_INTERNALS = ("_load", "_resolveFilename", "_extensions", "_findPath", "_nodeModulePaths", "_initPaths", "_pathCache")
+
+_WITH_RE = re.compile(rb"(?<![\w$.])with\s*\(")
+_UESC_RE = re.compile(rb"\\u")
+_HTML_OPEN_RE = re.compile(rb"<!--")
+_HTML_CLOSE_RE = re.compile(rb"-->")
+_LOADER_WRITE_RE = re.compile(rb"(?<![\w$])(require|arguments|module|Module|" + "|".join(_MODULE_INTERNALS).encode() + rb")(?![\w$])")
+_EVAL_NAME_RE = re.compile(rb"(?<![\w$.#])(?:eval|Function)(?![\w$])")
+_CTOR_CALL_RE = re.compile(rb"""(?:\.\s*(constructor)|\[\s*['"`](constructor)['"`]\s*\])\s*\(""")
+_VM_RE = re.compile(rb"(?<![\w$])(?:runInThisContext|runInNewContext|runInContext|compileFunction|Script|SourceTextModule)(?![\w$])")
+_FUNCTION_RE = re.compile(rb"(?<![\w$.])function(?![\w$])")
+_TYPE_IMPORT_RE = re.compile(rb"(?<![\w$.])import(?![\w$])")
 
 
 def _k(n) -> tuple:
@@ -133,6 +185,11 @@ class _Js:
         self._mod_patched_memo: dict[str, bool] = {}
         self._global_names: set[str] | None = None
         self._ascii = len(self.src) == len(text)
+        self._refs: dict[str, dict[tuple, list]] = {}
+        self._untrusted: str | None = None
+        self.rel = rel
+        self.ts = rel.endswith(TS_EXT)
+        self.budget = _Budget()
 
     # -------- basics
 
@@ -180,7 +237,9 @@ class _Js:
         if name not in self._occ:
             rx = re.compile(rb"(?<![\w$])" + re.escape(name.encode()) + rb"(?![\w$])")
             out = []
+            self.budget.tick(1 + (len(self.src) >> 9))  # one scan of the file per name
             for m in rx.finditer(self.src):
+                self.budget.tick()
                 n = self.root.named_descendant_for_byte_range(m.start(), m.end())
                 if n is not None and n.start_byte == m.start() and n.end_byte == m.end() and n.type in _JS_IDENTS:
                     out.append(n)
@@ -238,6 +297,8 @@ class _Js:
             return None
         if t in ("namespace_import", "import_clause"):
             return self.root
+        if t == "import_require_clause" and child == p.named_children[0]:
+            return self.root
         return None
 
     def decls(self, name: str) -> dict:
@@ -266,6 +327,7 @@ class _Js:
             return own
         p = ref.parent
         while p is not None:
+            self.budget.tick()
             lst = d.get(_k(p))
             if lst:
                 return lst[0]
@@ -273,7 +335,17 @@ class _Js:
         return None
 
     def refs(self, decl) -> list:
-        return [r for r in self.occurrences(self.t(decl)) if r != decl and self.resolve(r) == decl]
+        """Every other occurrence that resolves to decl: indexed once per name (m3, no re-resolving per copy)."""
+        name = self.t(decl)
+        idx = self._refs.get(name)
+        if idx is None:
+            idx = {}
+            for r in self.occurrences(name):
+                d = self.resolve(r)
+                if d is not None and r != d:
+                    idx.setdefault(_k(d), []).append(r)
+            self._refs[name] = idx
+        return idx.get(_k(decl), [])
 
     # -------- modules and launchers
 
@@ -292,8 +364,7 @@ class _Js:
         if p is None or p.type != "variable_declarator" or decl != self.f(p, "name"):
             return False
         v = self.f(p, "value")
-        while v is not None and v.type in _JS_WRAP:
-            v = v.named_children[0] if v.named_children else None
+        v = self.unwrap(v) if v is not None else None
         if v is None:
             return False
         if v.type == "identifier" and self.t(v) == "require" and self.resolve(v) is None:
@@ -310,7 +381,7 @@ class _Js:
             kids = [c for c in n.named_children if c.type != "comment"]
             if not kids:
                 return None
-            n = kids[-1] if n.type == "sequence_expression" else kids[0]
+            n = kids[-1] if n.type in ("sequence_expression", "type_assertion") else kids[0]
         if n.type == "identifier":
             decl = self.resolve(n)
             return self.decl_module(decl, depth + 1) if decl is not None else None
@@ -333,9 +404,37 @@ class _Js:
                 if len(args) == 1 and args[0].type == "string":
                     return self.t(args[0])[1:-1].removeprefix("node:"), ()
                 return None
-            if fn is not None and _INTEROP_RE.match(re.sub(r"\s+", "", self.t(fn))) and args:
+            if fn is not None and args and self.interop_trusted(self.callee_node(n)):
                 return self.module_of(args[0], depth + 1)
         return None
+
+    def interop_trusted(self, fn) -> bool:
+        """An interop helper call (__importDefault(require('m'))) passes the module through only when the helper
+        is not ours to spoof (I1): an unresolved name nothing in the file writes globally, an import from tslib,
+        or TypeScript's emitted __importDefault, verbatim."""
+        if fn is None or not _INTEROP_RE.match(re.sub(r"\s+", "", self.t(fn))):
+            return False
+        if fn.type == "member_expression":
+            base = self.module_of(self.f(fn, "object"))
+            return base is not None and base[0] in HELPER_MODULES and not base[1]
+        if fn.type != "identifier":
+            return False
+        decl = self.resolve(fn)
+        if decl is None:
+            return self.t(fn) not in self.global_names()
+        mod = self.decl_module(decl)
+        if mod is not None:
+            return mod[0] in HELPER_MODULES
+        return self.canonical_helper(decl)
+
+    def canonical_helper(self, decl) -> bool:
+        """decl declares TypeScript's own __importDefault helper, token for token, and nothing else declares it."""
+        p = decl.parent
+        if p is None or p.type != "variable_declarator" or decl != self.f(p, "name") or self.t(decl) != "__importDefault":
+            return False
+        if sum(len(v) for v in self.decls("__importDefault").values()) != 1 or self.binding_patched(decl):
+            return False
+        return re.sub(r"\s+", "", self.t(p)) == _TSC_IMPORT_DEFAULT
 
     def decl_module(self, decl, depth: int = 0) -> tuple | None:
         key = _k(decl)
@@ -360,8 +459,10 @@ class _Js:
             base = self.module_of(value, depth + 1)
             if base is not None:
                 out = (base[0], base[1] + tuple(path))
-            elif path and value is not None and self.unwrap(value).type == "call_expression":
-                out = self.returned_member(path, depth)
+        elif p is not None and p.type == "import_require_clause" and child == p.named_children[0]:
+            src = self.f(p, "source")  # TS: import cp = require("child_process")
+            if src is not None and src.type == "string":
+                out = (self.t(src)[1:-1].removeprefix("node:"), ())
         elif p is not None and p.type in ("import_specifier", "namespace_import", "import_clause"):
             st = self.nearest(p, {"import_statement"})
             src = self.f(st, "source") if st is not None else None
@@ -375,35 +476,11 @@ class _Js:
         return out
 
     def unwrap(self, n):
+        """The expression inside parentheses / casts; <T>x keeps its type first (m2 T7)."""
         while n.type in _JS_WRAP and n.named_children:
-            n = n.named_children[0]
+            kids = [c for c in n.named_children if c.type != "comment"]
+            n = kids[-1] if n.type == "type_assertion" else kids[0]
         return n
-
-    def returned_member(self, path: list[str], depth: int) -> tuple | None:
-        """const { puppeteer } = pkg.load(): the module, when every object property named path[0] in the
-        file (return { puppeteer }, { puppeteer: x }) is that same module binding (desktop-commander's
-        LazyPackage loader). Any other property of that name makes it unknown."""
-        name = path[0]
-        found: set[tuple] = set()
-        rx = re.compile(rb"(?<![\w$.])" + re.escape(name.encode()) + rb"(?![\w$])")
-        for m in rx.finditer(self.src):
-            n = self.root.named_descendant_for_byte_range(m.start(), m.end())
-            if n is None or n.start_byte != m.start() or n.end_byte != m.end():
-                continue
-            if n.type == "shorthand_property_identifier":
-                decl = self.resolve(n)
-                mod = self.decl_module(decl, depth + 1) if decl is not None else None
-            elif n.type == "property_identifier" and n.parent is not None and n.parent.type == "pair" and n == self.f(n.parent, "key"):
-                mod = self.module_of(self.f(n.parent, "value"), depth + 1)
-            else:
-                continue
-            if mod is None:
-                return None
-            found.add(mod)
-        if len(found) != 1:
-            return None
-        mod, members = found.pop()
-        return mod, members + tuple(path[1:])
 
     def global_names(self) -> set[str]:
         """Names written through globalThis / global / window / self anywhere in code."""
@@ -451,10 +528,14 @@ class _Js:
         if q is not None and q.type == "assignment_expression" and child == self.f(q, "left") and child != r:
             return True
         # cp.spawn = x, cp.a.b = x, delete cp.spawn, cp.spawn++
-        top, q = r, p
+        base, q = self.up(r)  # (<any>cp).spawn: casts and parentheses around the reference (m2 T7)
+        if base != r and q is not None and (q.type == "update_expression" or (
+                q.type in ("assignment_expression", "augmented_assignment_expression") and base == self.f(q, "left"))):
+            return True  # (cp) = x, (cp as any) = x
+        top = base
         while q is not None and q.type in ("member_expression", "subscript_expression") and top == self.f(q, "object"):
             top, q = q, q.parent
-        if top != r and q is not None:
+        if top != base and q is not None:
             if q.type in ("assignment_expression", "augmented_assignment_expression") and top == self.f(q, "left"):
                 return True
             if q.type == "update_expression" or (q.type == "unary_expression" and self.t(q).startswith("delete")):
@@ -466,7 +547,7 @@ class _Js:
             call = q.parent
             if self.callee(call) in _PATCH_CALLS and self.arg_index(call, n) == 0:
                 return True
-        if namespace and top == r:
+        if namespace and top == base:
             n, q = self.up(r)
             if q is None:
                 return False
@@ -478,17 +559,8 @@ class _Js:
                 return False  # const { spawn } = cp: members copied out
             if q.type in ("export_specifier", "export_clause", "expression_statement"):
                 return False
-            if r.type == "shorthand_property_identifier" and not self.member_patched(self.t(r)):
-                return False  # return { puppeteer }: read back by returned_member, patched only as x.puppeteer.k = ...
-            return True  # the module object itself escapes: const m = cp; m.spawn = ... (B9)
+            return True  # the module object itself escapes: const m = cp; m.spawn = ...; return { puppeteer } (B9, R47 c)
         return False
-
-    def member_patched(self, name: str) -> bool:
-        """Some code writes through a property of that name: x.name.k = ..., Object.assign(x.name, ...)."""
-        e = re.escape(name.encode())
-        rx = re.compile(rb"\.\s*" + e + rb"\s*(?:(?:\.\s*[\w$]+|\[[^\]\n]*\])\s*)+(?:[-+*/|&]?=(?![=>])|\+\+|--)"
-                        rb"|\b(?:assign|defineProperty|defineProperties|set)\s*\([^,)]*\.\s*" + e + rb"\s*[,)]")
-        return any(self.in_code(m.start()) for m in rx.finditer(self.src))
 
     def binding_patched(self, decl) -> bool:
         key = _k(decl)
@@ -567,7 +639,7 @@ class _Js:
         while root.type in ("member_expression", "subscript_expression"):
             root = self.f(root, "object")
             while root is not None and root.type in _JS_WRAP:
-                root = root.named_children[0]
+                root = self.unwrap(root)
         if root is not None and root.type == "identifier":
             decl = self.resolve(root)
             if decl is None or self.binding_patched(decl):
@@ -587,6 +659,259 @@ class _Js:
         path = (base[0], base[1] + tuple(parts[1:]))
         return launcher_path(*path) and not self.module_patched(path[0])
 
+    # -------- untrusted resolution (R47 b)
+
+    def untrusted(self) -> str:
+        """Why no copy in this file may be bound, or "": the file can change what a name resolves to at
+        runtime in a way the tree does not follow."""
+        if self._untrusted is None:
+            self._untrusted = self._why_untrusted()
+        return self._untrusted
+
+    def in_code_strict(self, b: int) -> bool:
+        """b is code (an HTML-like comment counts as code: Node may read it as a comment, the tree does not)."""
+        n = self.root.named_descendant_for_byte_range(b, b + 1)
+        while n is not None:
+            if n.type in ("comment", "string", "template_string", "regex"):
+                return False
+            n = n.parent
+        return True
+
+    def _hits(self, rx):
+        for m in rx.finditer(self.src):
+            self.budget.tick()
+            if self.in_code_strict(m.start()):
+                yield m
+
+    def _why_untrusted(self) -> str:
+        for m in self._hits(_WITH_RE):
+            n = self.root.descendant_for_byte_range(m.start(), m.start() + 4)
+            if n is not None and n.parent is not None and n.parent.type == "with_statement":
+                return "with statement"
+        for _ in self._hits(_UESC_RE):
+            return "unicode escape in an identifier"
+        for m in self._hits(_HTML_OPEN_RE):
+            return "HTML-like comment"
+        for m in self._hits(_HTML_CLOSE_RE):
+            line = self.src[self.src.rfind(b"\n", 0, m.start()) + 1 : m.start()].strip()
+            if not line or line.endswith(b"*/"):
+                return "HTML-like comment"
+        why = self._loader_writes() or self._loader_defs() or self._dynamic_code() or self._annex_b() or self._type_imports()
+        return why
+
+    def write_target(self, n):
+        """The node n is written through: (top, how) when n, or a member chain on it, is assigned, updated,
+        deleted, a destructuring / for-in target, or the first argument of Object.assign / defineProperty / ..."""
+        top, q = n, n.parent
+        while q is not None and (q.type in _JS_WRAP or (q.type in ("member_expression", "subscript_expression") and top == self.f(q, "object"))):
+            top, q = q, q.parent
+        if q is None:
+            return None
+        if q.type in ("assignment_expression", "augmented_assignment_expression") and top == self.f(q, "left"):
+            return top
+        if q.type == "update_expression" or (q.type == "unary_expression" and self.t(q).startswith("delete")):
+            return top
+        if q.type == "for_in_statement" and top == self.f(q, "left"):
+            return top
+        c, p = top, q
+        while p is not None and p.type in _JS_PATTERNS:
+            c, p = p, p.parent
+        if c != top and p is not None and p.type == "assignment_expression" and c == self.f(p, "left"):
+            return top
+        if q.type == "arguments" and self.callee(q.parent) in _PATCH_CALLS and self.arg_index(q.parent, self.up(top)[0]) == 0:
+            return top
+        return None
+
+    def chain_props(self, top) -> list[str]:
+        """The property names of a member chain, outermost last: module.constructor.prototype -> [constructor, prototype]."""
+        props: list[str] = []
+        n = top
+        while n is not None:
+            if n.type == "member_expression":
+                props.insert(0, self.t(self.f(n, "property")))
+                n = self.f(n, "object")
+            elif n.type == "subscript_expression":
+                idx = self.f(n, "index")
+                props.insert(0, self.t(idx).strip("'\"`") if idx is not None and idx.type == "string" else "[]")
+                n = self.f(n, "object")
+            elif n.type in _JS_WRAP and self.unwrap(n) != n:
+                n = self.unwrap(n)
+            else:
+                break
+        return props
+
+    def _loader_writes(self) -> str:
+        """Writes to require / module.require / Module.* / Module._load / arguments[...] (I1, I2)."""
+        for m in self._hits(_LOADER_WRITE_RE):
+            n = self.root.named_descendant_for_byte_range(m.start(1), m.end(1))
+            if n is None or n.start_byte != m.start(1) or n.end_byte != m.end(1):
+                continue
+            if n.type not in ("identifier", "property_identifier"):
+                continue
+            base = n
+            if n.type == "property_identifier":
+                base = n.parent  # x._load: the member expression
+                if base is None or base.type != "member_expression":
+                    continue
+            top = self.write_target(base)
+            if top is None:
+                continue
+            name = self.t(n)
+            if n.type == "identifier":
+                if name in ("require", "arguments"):
+                    return f"writes {name}"
+                if name == "module":
+                    props = self.chain_props(top)
+                    if props[:1] in (["require"], ["constructor"], ["paths"]):
+                        return "writes module." + props[0]
+                    continue
+                if name == "Module" and top != n:
+                    return "writes Module"
+            else:  # x._load = ..., X.prototype.require = ...: only on the module system's own objects
+                obj = self.f(base, "object")
+                root = obj
+                while root is not None and root.type in {"member_expression", "subscript_expression"} | _JS_WRAP:
+                    nxt = self.f(root, "object") if root.type in ("member_expression", "subscript_expression") else self.unwrap(root)
+                    if nxt == root:
+                        break
+                    root = nxt
+                if root is None:
+                    continue
+                mod = self.module_of(root) if root.type in ("identifier", "call_expression") else None
+                rt = self.t(root)
+                if rt in ("Module", "module", "require") or (mod is not None and mod[0] == "module") or (
+                        name == "require" and self.t(obj).endswith("prototype")):
+                    return f"writes .{name}"
+        if self.module_patched("module"):
+            return "patches the module system"
+        return ""
+
+    def _loader_defs(self) -> str:
+        """The file defines a loader or interop name itself (I1): only createRequire / require made from the real
+        module "module", helpers imported from a helper package, and TypeScript's emitted __importDefault pass."""
+        for name in LOADER_NAMES:
+            for lst in self.decls(name).values():
+                for decl in lst:
+                    self.budget.tick()
+                    mod = self.decl_module(decl)
+                    if mod is not None and (mod == ("module", (name,)) or (mod[0] in HELPER_MODULES and mod[1] == (name,))):
+                        continue  # import { createRequire } from "module"; import { __importDefault } from "tslib"
+                    if name == "require" and self.verified_create_require(decl):
+                        continue
+                    if name == "__importDefault" and self.canonical_helper(decl):
+                        continue
+                    return f"defines {name}"
+        return ""
+
+    def verified_create_require(self, decl) -> bool:
+        """const require = createRequire(import.meta.url), createRequire being the real module's, never written."""
+        p = decl.parent
+        if p is None or p.type != "variable_declarator" or decl != self.f(p, "name"):
+            return False
+        v = self.f(p, "value")
+        v = self.unwrap(v) if v is not None else None
+        if v is None or v.type != "call_expression" or self.module_of(self.callee_node(v)) != ("module", ("createRequire",)):
+            return False
+        return not self.binding_patched(decl)
+
+    def literal(self, a) -> bool:
+        a = self.unwrap(a)
+        if a.type == "string":
+            return True
+        return a.type == "template_string" and not any(c.type == "template_substitution" for c in a.named_children)
+
+    def _dynamic_code(self) -> str:
+        """eval / Function / x.constructor(...) / vm with code that is not a literal, or eval / Function passed
+        around as a value (I3)."""
+        for m in self._hits(_EVAL_NAME_RE):
+            n = self.root.named_descendant_for_byte_range(m.start(), m.end())
+            if n is None or n.type != "identifier" or n.start_byte != m.start() or n.end_byte != m.end():
+                continue
+            if self.decl_scope(n) is not None:
+                continue
+            c, p = n, n.parent
+            while p is not None and (p.type == "parenthesized_expression" or (p.type == "sequence_expression" and c == p.named_children[-1])):
+                c, p = p, p.parent
+            if p is not None and p.type in ("call_expression", "new_expression") and c == self.f(p, "function" if p.type == "call_expression" else "constructor"):
+                if not all(self.literal(a) for a in self.args_of(p)):
+                    return f"non-literal {self.t(n)}"
+                continue
+            if p is not None and p.type == "member_expression" and c == self.f(p, "object"):
+                continue  # Function.prototype.apply.call(...): a read (a .constructor call is checked below)
+            if p is not None and p.type == "unary_expression" and self.t(p).startswith("typeof"):
+                continue
+            if p is not None and p.type in ("binary_expression",):
+                continue
+            return f"{self.t(n)} as a value"
+        for m in self._hits(_CTOR_CALL_RE):
+            g = 1 if m.group(1) else 2
+            n = self.root.named_descendant_for_byte_range(m.start(g), m.end(g))
+            call = n
+            while call is not None and call.type != "call_expression":
+                call = call.parent
+            if call is not None and not all(self.literal(a) for a in self.args_of(call)):
+                return "non-literal constructor call"
+        for m in self._hits(_VM_RE):
+            n = self.root.named_descendant_for_byte_range(m.start(), m.end())
+            call = n
+            while call is not None and call.type not in ("call_expression", "new_expression"):
+                call = call.parent
+            if call is None:
+                continue
+            path = self.module_of(self.callee_node(call))
+            if path is not None and path[0] == "vm" and not all(self.literal(a) for a in self.args_of(call)):
+                return "non-literal vm code"
+        return ""
+
+    def strict_file(self) -> bool:
+        if self.rel.endswith((".mjs", ".mts")):
+            return True
+        for c in self.root.named_children:
+            if c.type in ("import_statement", "export_statement"):
+                return True
+        first = next((c for c in self.root.named_children if c.type not in ("comment", "hash_bang_line")), None)
+        return first is not None and first.type == "expression_statement" and self.t(first).strip(" ;\n") in ('"use strict"', "'use strict'")
+
+    def _annex_b(self) -> str:
+        """A block-level function in sloppy code that has the name of an outer binding (Annex B, I3 F6)."""
+        if self.strict_file():
+            return ""
+        for m in self._hits(_FUNCTION_RE):
+            n = self.root.descendant_for_byte_range(m.start(), m.start() + 8)
+            fd = n.parent if n is not None else None
+            if fd is None or fd.type not in ("function_declaration", "generator_function_declaration"):
+                continue
+            blk = fd.parent
+            if blk is None or blk.type in ("program",) or (blk.type == "statement_block" and blk.parent is not None and blk.parent.type in _JS_FUNCS):
+                continue
+            name = self.f(fd, "name")
+            if name is None:
+                continue
+            outer = [k for k in self.decls(self.t(name)) if k != _k(blk)]
+            if outer:
+                return f"block function {self.t(name)} redeclares an outer binding"
+        return ""
+
+    def _type_imports(self) -> str:
+        """TS `import type` of a launcher module: erased at runtime, a binding on the tree (I3 T2)."""
+        if not self.ts:
+            return ""
+        for m in self._hits(_TYPE_IMPORT_RE):
+            st = self.root.named_descendant_for_byte_range(m.start(), m.start() + 6)
+            while st is not None and st.type != "import_statement":
+                st = st.parent
+            if st is None:
+                continue
+            src = self.f(st, "source")
+            mod = self.t(src)[1:-1].removeprefix("node:") if src is not None else ""
+            root = "/".join(mod.split("/")[:2]) if mod.startswith("@") else mod.split("/")[0]
+            if root not in LAUNCH_MODULES and mod not in LAUNCH_MODULES:
+                continue
+            if any(c.type == "type" for c in st.children) or any(
+                    c.type == "type" for s in self.walk(st) if s.type == "import_specifier" for c in s.children):
+                return f"import type from {mod}"
+        return ""
+
     # -------- copies
 
     def env_nodes(self):
@@ -600,21 +925,27 @@ class _Js:
             yield n
 
     def copy_of(self, e):
-        """(copy node, family, debug target) for an env object used as a whole copy, or None."""
+        """(copy node, family, debug target, bindable) for an env object used as a whole copy, or None."""
         n, p = self.up(e)
         if p is None:
             return None
         if p.type == "spread_element":
             obj = p.parent
-            return (obj, "spread", None) if obj is not None and obj.type == "object" else None
+            return (obj, "spread", None, True) if obj is not None and obj.type == "object" else None
         if p.type != "arguments":
             return None
         call = p.parent
         c, i = self.callee(call), self.arg_index(call, n)
         if c == "Object.assign" and i >= 1:
-            return call, "spread", None
+            return call, "spread", None, True
         if c == "structuredClone" and i == 0:
-            return call, "spread", None
+            return call, "spread", None, True
+        if call.type == "new_expression" and c == "URLSearchParams" and i == 0:
+            return call, "spread", None, False  # every variable, as a query string (R47 d)
+        if c in ("Reflect.ownKeys", "Object.getOwnPropertyNames") and i == 0:
+            return self.chain(call), "spread", None, False
+        if i == 0 and (self.module_of(self.callee_node(call)) or ("", ()))[0] == "util" and c.endswith(("inspect", "format")):
+            return call, "spread", None, False
         if c in ("Object.entries", "Object.values", "Object.keys") and i == 0:
             debug = None
             if c == "Object.keys":
@@ -622,13 +953,14 @@ class _Js:
                 m = PREFIX_FILTER_RE.match(tail)
                 if m is not None and not SECRETISH_RE.search(m.group(1)):
                     debug = True
-            return self.chain(call), "old", debug
+            return self.chain(call), "old", debug, True
         return None
 
     def chain(self, call):
         """Object.fromEntries(Object.entries(process.env).filter(...).map(...)) as one copy."""
         c = call
         while True:
+            self.budget.tick()
             n, p = self.up(c)
             if p is not None and p.type == "member_expression" and n == self.f(p, "object"):
                 q = p.parent
@@ -643,11 +975,12 @@ class _Js:
     def is_env_key(self, key) -> bool:
         return key is not None and self.t(key).strip("'\"`") == "env"
 
-    # -------- bound
+    # -------- bound (R45 3, R47 a: every use is a launcher env slot, on doubt not bound)
 
     def use(self, n, mode: str, depth: int) -> str:
-        """"ok" (ends in a launcher's env slot), "skip" (not a use of the whole value) or "bad"."""
+        """"ok" (ends in a launcher's env slot), "skip" (the value is dropped) or "bad"."""
         while True:
+            self.budget.tick()
             n, p = self.up(n)
             if p is None:
                 return "bad"
@@ -663,8 +996,10 @@ class _Js:
                 if op in ("||", "??") or (op == "&&" and n == self.f(p, "right")):
                     n = p
                     continue
-                if op == "&&" or op in ("===", "!==", "==", "!=", "instanceof") or (op == "in" and n == self.f(p, "right")):
-                    return "skip"
+                other = self.f(p, "right") if n == self.f(p, "left") else self.f(p, "left")
+                nullish = other is not None and self.t(other) in ("null", "undefined")
+                if op in ("&&", "===", "!==") or (op in ("==", "!=") and nullish) or (op == "in" and n == self.f(p, "right")):
+                    return "skip"  # a truthiness / identity test: nothing of the copy is read
                 return "bad"
             if t == "sequence_expression":
                 kids = [c for c in p.named_children if c.type != "comment"]
@@ -689,8 +1024,8 @@ class _Js:
                 call = p.parent
                 if mode == "opts" and self.launcher(call):
                     return "ok"
-                if mode == "env" and self.callee(call) == "Object.assign":
-                    n = call
+                if mode == "env" and self.callee(call) == "Object.assign" and self.fresh_assign(call, n):
+                    n = call  # Object.assign({}, copy, {...}): the call's value is a new copy (C1: not into another object)
                     continue
                 return "bad"
             if t == "variable_declarator":
@@ -724,41 +1059,115 @@ class _Js:
                 return "skip"
             return "bad"
 
-    def ref_use(self, r, mode: str, depth: int) -> str:
+    def fresh_assign(self, call, n) -> bool:
+        """Object.assign(<object literal>, ..., n, ...): the copy lands in a new object, not in one used elsewhere."""
+        args = self.args_of(call)
+        return bool(args) and args[0] != n and self.unwrap(args[0]).type == "object"
+
+    def key_ok(self, member, write: bool = False) -> bool:
+        """A single named key (x.k, x["k"], x[0]), not __proto__ / constructor / prototype."""
+        if member.type == "member_expression":
+            prop = self.f(member, "property")
+            return prop is not None and prop.type == "property_identifier" and self.t(prop) not in _PROTO_KEYS
+        idx = self.f(member, "index")
+        if idx is None or idx.type not in ("string", "number"):
+            return False
+        return self.t(idx).strip("'\"`") not in _PROTO_KEYS
+
+    def written(self, member) -> bool:
+        """member is the target of a write: x.k = v, x.k += v, x.k++, delete x.k."""
+        n, q = self.up(member)
+        if q is None:
+            return False
+        if q.type in ("assignment_expression", "augmented_assignment_expression") and n == self.f(q, "left"):
+            return True
+        if q.type == "update_expression":
+            return True
+        return q.type == "unary_expression" and self.t(q).startswith("delete")
+
+    def writeback(self, member, decl) -> bool:
+        """A key read whose value only goes back into the same copy: env.PATH = env.PATH + ":" + dir."""
+        n = member
+        while True:
+            self.budget.tick()
+            n, p = self.up(n)
+            if p is None:
+                return False
+            if p.type in ("binary_expression", "template_substitution", "template_string", "ternary_expression"):
+                if p.type == "ternary_expression" and n == self.f(p, "condition"):
+                    return False
+                n = p
+                continue
+            if p.type in ("assignment_expression", "augmented_assignment_expression") and n == self.f(p, "right"):
+                left = self.f(p, "left")
+                if left is None or left.type not in ("member_expression", "subscript_expression") or not self.key_ok(left, True):
+                    return False
+                obj = self.unwrap(self.f(left, "object"))
+                return obj.type == "identifier" and self.resolve(obj) == decl
+            return False
+
+    def tested(self, n) -> bool:
+        """n is only tested: if (!env.X), typeof env.X, env.X == null, a condition."""
+        n, p = self.up(n)
+        if p is None:
+            return False
+        if p.type == "unary_expression":
+            op = self.f(p, "operator")
+            return op is not None and self.t(op) in ("!", "typeof")
+        if p.type == "binary_expression":
+            op = self.t(self.f(p, "operator"))
+            other = self.f(p, "right") if n == self.f(p, "left") else self.f(p, "left")
+            return op in ("==", "!=", "===", "!==") and other is not None and self.t(other) in ("null", "undefined")
+        if p.type in ("if_statement", "while_statement", "do_statement", "ternary_expression"):
+            return n == self.f(p, "condition")
+        return False
+
+    def ref_use(self, r, mode: str, depth: int, decl=None) -> str:
         if r.type == "shorthand_property_identifier":
             if mode == "env" and self.t(r) == "env":
                 return self.use(r.parent, "opts", depth)  # spawn(cmd, args, { env })
             return "bad"
-        p = r.parent
+        n, p = self.up(r)
         if p is None:
             return "bad"
         t = p.type
-        if t == "member_expression" and r == self.f(p, "object"):
-            return "bad" if self.t(self.f(p, "property")) in ("toString", "valueOf", "toJSON") else "skip"
-        if t == "subscript_expression" and r == self.f(p, "object"):
-            return "skip"
+        if t in ("member_expression", "subscript_expression") and n == self.f(p, "object"):
+            if mode == "opts":
+                # options holding the copy: writing an option, or reading another named one, is not a use of it
+                if not self.key_ok(p, False):
+                    return "bad"
+                if self.written(p):
+                    return "skip"
+                key = self.f(p, "property") if p.type == "member_expression" else self.f(p, "index")
+                return "bad" if self.is_env_key(key) or self.calls_member(p) else "skip"
+            if self.written(p) and self.key_ok(p, True):
+                return "skip"  # env.X = "1", env["X"] = v, delete env.X: one key written, nothing read
+            if self.key_ok(p, False) and decl is not None and (self.writeback(p, decl) or self.tested(p)):
+                return "skip"
+            return "bad"  # a key read, a method call, iteration source (R47 a, C1)
         if t == "unary_expression":
-            return "skip"
-        if t in ("assignment_expression", "augmented_assignment_expression") and r == self.f(p, "left"):
-            return "skip"
+            op = self.f(p, "operator")
+            return "skip" if op is not None and self.t(op) in ("!", "typeof", "void", "delete") else "bad"
+        if t in ("assignment_expression", "augmented_assignment_expression") and n == self.f(p, "left"):
+            return "skip" if t == "assignment_expression" else "bad"
         if t == "update_expression":
-            return "skip"
-        if t == "for_in_statement" and r == self.f(p, "right") and self.t(self.f(p, "operator")) == "in":
-            return "skip"
-        if t == "arguments" and self.callee(p.parent) == "Object.keys":
-            return "skip"
-        if t == "parenthesized_expression" and p.parent is not None and p.parent.type in ("if_statement", "while_statement", "do_statement"):
-            return "skip"
+            return "bad"
+        if t in ("if_statement", "while_statement", "do_statement") and n == self.f(p, "condition"):
+            return "skip"  # if (env)
         if t in ("export_specifier", "export_clause"):
             return "bad"
         return self.use(r, mode, depth)
+
+    def calls_member(self, member) -> bool:
+        n, q = self.up(member)
+        return q is not None and q.type == "call_expression" and self.f(q, "function") == n
 
     def var(self, decl, mode: str, depth: int) -> str:
         if depth >= _DEPTH:
             return "bad"
         ok = False
         for r in self.refs(decl):
-            u = self.ref_use(r, mode, depth + 1)
+            u = self.ref_use(r, mode, depth + 1, decl)
             if u == "bad":
                 return "bad"
             ok = ok or u == "ok"
@@ -794,6 +1203,7 @@ class _Js:
         if method:
             rx = re.compile(rb"\.\s*" + re.escape(self.src[name.start_byte : name.end_byte]) + rb"\s*\(")
             for m in rx.finditer(self.src):
+                self.budget.tick()
                 q = self.root.named_descendant_for_byte_range(m.start() + 1, m.end() - 1)
                 while q is not None and q.type == "property_identifier":
                     q = q.parent
@@ -896,6 +1306,7 @@ class _Js:
 
     def sink(self, n, depth: int) -> bool:
         while True:
+            self.budget.tick()
             p = n.parent
             if p is None:
                 return False
@@ -950,18 +1361,14 @@ class _Js:
 
     # -------- driver
 
-    def copies(self) -> list[EnvCopy]:
+    def found(self) -> list[tuple]:
+        """(pos, line, family, copy node, debug, bindable) for every copy: detection only."""
         out = []
         for e in self.env_nodes():
             c = self.copy_of(e)
-            if c is None:
-                continue
-            node, family, debug = c
-            bound = bool(debug) and self.debug_bound(node)
-            if not bound:
-                bound = self.use(node, "env", 0) == "ok"
-            sink = not bound and self.sink(node, 0)
-            out.append(EnvCopy(self.char(e.start_byte), e.start_point[0] + 1, family, bound, sink))
+            if c is not None:
+                node, family, debug, bindable = c
+                out.append((self.char(e.start_byte), e.start_point[0] + 1, family, node, debug, bindable))
         return out
 
 
@@ -989,6 +1396,7 @@ class _Py:
         self.parent: dict[int, ast.AST] = {}
         self.scope_of: dict[int, _Scope] = {}
         self.names: dict[str, list[ast.Name]] = {}
+        self._name_refs: dict[tuple, list] = {}
         self.module = _Scope(self.tree, None)
         self.scopes: dict[int, _Scope] = {id(self.tree): self.module}
         self._build(self.tree, self.module)
@@ -997,6 +1405,8 @@ class _Py:
         for ln in self.lines:
             self.starts.append(self.starts[-1] + len(ln) + 1)
         self._patches()
+        self._untrusted: str | None = None
+        self.budget = _Budget()
 
     # -------- scopes
 
@@ -1118,7 +1528,13 @@ class _Py:
         return self.scope_of.get(id(n), self.module)
 
     def name_refs(self, name: str, scope: _Scope) -> list[ast.Name]:
-        return [n for n in self.names.get(name, []) if self.resolve(name, self.scope_of[id(n)]) is scope]
+        key = (name, id(scope))
+        got = self._name_refs.get(key)
+        if got is None:
+            names = self.names.get(name, [])
+            self.budget.tick(len(names))
+            got = self._name_refs[key] = [n for n in names if self.resolve(name, self.scope_of[id(n)]) is scope]
+        return got
 
     # -------- modules and launchers
 
@@ -1262,6 +1678,102 @@ class _Py:
             return True
         return path[0] == "os" and bool(call.args) and call.args[-1] is n
 
+    # -------- untrusted resolution (R47 b)
+
+    def untrusted(self) -> str:
+        if self._untrusted is None:
+            self._untrusted = self._why_untrusted()
+        return self._untrusted
+
+    def module_names(self, mod: str) -> set[str]:
+        """Names some binding of which imports exactly module mod (import sys, import sys as s)."""
+        out = set()
+        for n in ast.walk(self.tree):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    if a.name == mod:
+                        out.add(a.asname or a.name)
+        return out
+
+    def _why_untrusted(self) -> str:
+        sys_names = self.module_names("sys")
+        bi_names = self.module_names("builtins")
+        for n in ast.walk(self.tree):
+            self.budget.tick()
+            # a loader name defined here: class importlib, def __import__, import_module = ..., from x import import_module
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name in PY_LOADER_NAMES:
+                return f"defines {n.name}"
+            if isinstance(n, ast.Name) and n.id in PY_LOADER_NAMES and not isinstance(n.ctx, ast.Load):
+                return f"defines {n.id}"
+            if isinstance(n, ast.arg) and n.arg in PY_LOADER_NAMES:
+                return f"defines {n.arg}"
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    if (a.asname or a.name.split(".")[0]) in PY_LOADER_NAMES and a.name.split(".")[0] != "importlib":
+                        return f"defines {a.asname or a.name}"
+                    if a.asname and a.asname in PY_LOADER_NAMES:
+                        return f"defines {a.asname}"
+            if isinstance(n, ast.ImportFrom):
+                for a in n.names:
+                    bound = a.asname or a.name
+                    if n.module == "sys" and a.name in ("modules", "meta_path", "path_hooks", "*"):
+                        return f"imports sys.{a.name}"
+                    if bound in PY_LOADER_NAMES and not (n.module == "importlib" and a.name == bound) and not (
+                            n.module == "builtins" and a.name == "__import__" and bound == "__import__"):
+                        return f"defines {bound}"
+            # __builtins__, and builtins / sys used other than as module.attr reads
+            if isinstance(n, ast.Name) and n.id == "__builtins__":
+                return "uses __builtins__"
+            if isinstance(n, ast.Name) and (n.id in bi_names or n.id in sys_names) and isinstance(n.ctx, ast.Load):
+                why = self._module_use(n, n.id in sys_names)
+                if why:
+                    return why
+            if isinstance(n, ast.Call):
+                fn = ast.unparse(n.func)
+                if fn in ("importlib.import_module", "import_module", "__import__", "importlib.__import__", "builtins.__import__"):
+                    a = n.args[0] if n.args else None
+                    if not (isinstance(a, ast.Constant) and isinstance(a.value, str)) or a.value.split(".")[0] in ("sys", "builtins", "importlib"):
+                        return "dynamic import"
+                if fn in ("exec", "eval", "compile", "builtins.exec", "builtins.eval", "builtins.compile") and self.builtin_name(n.func):
+                    a = n.args[0] if n.args else None
+                    if not (isinstance(a, ast.Constant) and isinstance(a.value, (str, bytes))):
+                        return f"non-literal {fn}"
+            if isinstance(n, ast.Name) and n.id in ("exec", "eval", "compile") and isinstance(n.ctx, ast.Load):
+                p = self.parent.get(id(n))
+                if not (isinstance(p, ast.Call) and p.func is n) and self.builtin_name(n):
+                    return f"{n.id} as a value"
+        return ""
+
+    def builtin_name(self, f) -> bool:
+        """f (a Name or builtins.x) is the builtin, not a local or imported name of that spelling."""
+        if isinstance(f, ast.Attribute):
+            return True
+        return isinstance(f, ast.Name) and self.resolve(f.id, self.scope_at(f)) is None
+
+    def _module_use(self, n: ast.Name, is_sys: bool) -> str:
+        """sys / builtins used other than as a plain attribute read: setattr(sys, ...), vars(builtins),
+        builtins.__import__ = f, sys.modules[...] = x, m = sys.modules, sys.meta_path.insert(...)."""
+        if self.resolve(n.id, self.scope_at(n)) is None:
+            return ""
+        p = self.parent.get(id(n))
+        if not (isinstance(p, ast.Attribute) and p.value is n):
+            return f"{n.id} used as a value"
+        if p.attr.startswith("__"):
+            return f"{n.id}.{p.attr}"
+        if not is_sys:
+            top, q = p, self.parent.get(id(p))
+            while isinstance(q, (ast.Attribute, ast.Subscript)) and q.value is top:
+                top, q = q, self.parent.get(id(q))
+            return "writes builtins" if not isinstance(top.ctx, ast.Load) else ""
+        if p.attr in ("meta_path", "path_hooks", "path_importer_cache"):
+            return f"sys.{p.attr}"
+        if p.attr != "modules":
+            return "writes sys" if not isinstance(p.ctx, ast.Load) else ""
+        q = self.parent.get(id(p))
+        if isinstance(q, ast.Compare) and any(c is p for c in q.comparators) and all(isinstance(o, (ast.In, ast.NotIn)) for o in q.ops):
+            return ""  # "x" in sys.modules
+        return "sys.modules"
+
     # -------- copies
 
     def is_environ(self, n) -> bool:
@@ -1270,25 +1782,33 @@ class _Py:
             base = self.import_path(nm, self.resolve(nm, self.scope_at(n)))
             return nm == "os" if base is None else base == ("os", ())
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
-            base = self.import_path(n.id, self.resolve(n.id, self.scope_at(n)))
-            return base == ("os", ("environ",))
+            s = self.resolve(n.id, self.scope_at(n))
+            if s is None and n.id == "environ":
+                return self.star_os  # from os import *
+            return self.import_path(n.id, s) == ("os", ("environ",))
+        if (isinstance(n, ast.Call) and ast.unparse(n.func) == "getattr" and len(n.args) == 2 and isinstance(n.args[1], ast.Constant)
+                and n.args[1].value == "environ" and isinstance(n.args[0], ast.Name)):
+            return self.import_path(n.args[0].id, self.resolve(n.args[0].id, self.scope_at(n.args[0]))) == ("os", ())
         return False
 
     def copy_of(self, e):
+        """(copy node, family, bindable) for os.environ used as a whole copy, or None."""
         p = self.parent.get(id(e))
         if isinstance(p, ast.Dict) and any(k is None and v is e for k, v in zip(p.keys, p.values)):
-            return p, "spread"
+            return p, "spread", True
         if isinstance(p, ast.keyword) and p.arg is None:
             call = self.parent.get(id(p))
             if isinstance(call, ast.Call) and ast.unparse(call.func) == "dict":
-                return call, "spread"
-            return None
+                return call, "spread", True
+            return e, "spread", False  # f(**os.environ): every variable as keyword arguments (I5, R47 d)
+        if isinstance(p, ast.BinOp) and isinstance(p.op, ast.BitOr):
+            return p, "spread", True  # os.environ | {...}
         if isinstance(p, ast.Call) and e in p.args and p.args[0] is e:
             fn = ast.unparse(p.func)
             if fn == "dict":
-                return p, "old"
+                return p, "old", True
             if fn in ("copy.copy", "copy.deepcopy", "copy", "deepcopy"):
-                return p, "spread"
+                return p, "spread", True
             return None
         if isinstance(p, ast.Attribute) and p.value is e and p.attr in ("copy", "items"):
             call = self.parent.get(id(p))
@@ -1300,11 +1820,12 @@ class _Py:
                         c = q
                     elif isinstance(q, ast.comprehension) and q.iter is c:
                         c = self.parent[id(q)]
-                return c, "old"
+                return c, "old", True
         return None
 
     def use(self, n, mode: str, depth: int) -> str:
         while True:
+            self.budget.tick()
             p = self.parent.get(id(n))
             if p is None:
                 return "bad"
@@ -1348,6 +1869,9 @@ class _Py:
                     n = call
                     continue
                 return "bad"
+            if isinstance(p, ast.BinOp) and isinstance(p.op, ast.BitOr) and mode == "env":
+                n = p  # {**copy} | {"A": "1"}: still a copy
+                continue
             if isinstance(p, ast.IfExp):
                 if n is p.test:
                     return "skip"
@@ -1383,22 +1907,52 @@ class _Py:
             n = self.parent.get(id(n))
         return n if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) else None
 
+    def writeback(self, sub: ast.Subscript, name: str) -> bool:
+        """env[k] read whose value only goes back into the same copy: env["PATH"] = env["PATH"] + os.pathsep + d."""
+        n = sub
+        while True:
+            self.budget.tick()
+            p = self.parent.get(id(n))
+            if isinstance(p, (ast.BinOp, ast.JoinedStr, ast.FormattedValue)) or (isinstance(p, ast.IfExp) and n is not p.test):
+                n = p
+                continue
+            if isinstance(p, ast.Assign) and n is p.value and len(p.targets) == 1:
+                tg = p.targets[0]
+                return isinstance(tg, ast.Subscript) and isinstance(tg.value, ast.Name) and tg.value.id == name
+            if isinstance(p, ast.AugAssign) and n is p.value:
+                tg = p.target
+                return isinstance(tg, ast.Subscript) and isinstance(tg.value, ast.Name) and tg.value.id == name
+            return False
+
     def ref_use(self, r: ast.Name, mode: str, depth: int) -> str:
+        """R47 a: writing or deleting keys and testing the copy are not uses of it; reading, iterating or
+        merging it is."""
         if not isinstance(r.ctx, ast.Load):
             return "skip"
         p = self.parent.get(id(r))
+        stmt = self.parent.get(id(self.parent.get(id(p)))) if isinstance(p, ast.Attribute) else None
         if isinstance(p, ast.Subscript) and p.value is r:
-            return "skip"
+            if not isinstance(p.ctx, ast.Load):
+                return "skip"  # env["X"] = "1", del env["X"]
+            key = p.slice.value if isinstance(p.slice, ast.Constant) and isinstance(p.slice.value, str) else None
+            if mode == "opts" and key is not None and key != "env":
+                return "skip"
+            return "skip" if mode == "env" and self.writeback(p, r.id) else "bad"
         if isinstance(p, ast.Attribute) and p.value is r:
             call = self.parent.get(id(p))
-            if p.attr in ("copy",) and isinstance(call, ast.Call) and call.func is p:
+            if p.attr in ("copy",) and isinstance(call, ast.Call) and call.func is p and mode == "env":
                 return self.use(call, mode, depth)
-            if p.attr in ("update", "pop", "setdefault", "get", "keys", "clear", "__contains__", "__getitem__", "__setitem__", "__delitem__"):
+            if isinstance(call, ast.Call) and call.func is p and isinstance(stmt, ast.Expr) and p.attr in (
+                    "update", "pop", "setdefault", "clear", "__setitem__", "__delitem__", "popitem"):
+                return "skip"  # env.update(A="1"), env.pop("X", None) as a statement: the value is dropped
+            if (mode == "opts" and p.attr == "get" and isinstance(call, ast.Call) and call.func is p and call.args
+                    and isinstance(call.args[0], ast.Constant) and call.args[0].value != "env"):
                 return "skip"
             return "bad"
         if isinstance(p, ast.Compare) and any(c is r for c in p.comparators) and all(isinstance(o, (ast.In, ast.NotIn)) for o in p.ops):
             return "skip"
-        if isinstance(p, (ast.For, ast.AsyncFor, ast.comprehension)) and p.iter is r:
+        if (isinstance(p, ast.Compare) and p.left is r and all(isinstance(o, (ast.Is, ast.IsNot)) for o in p.ops)
+                and all(isinstance(c, ast.Constant) and c.value is None for c in p.comparators)):
             return "skip"
         if isinstance(p, (ast.If, ast.While, ast.Assert)) and p.test is r:
             return "skip"
@@ -1424,6 +1978,7 @@ class _Py:
         out = []
         if scope.kind == "class":
             for n in ast.walk(self.tree):
+                self.budget.tick()
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == fn.name:
                     out.append(n)
             return out
@@ -1462,6 +2017,7 @@ class _Py:
 
     def sink(self, n, depth: int) -> bool:
         while True:
+            self.budget.tick()
             p = self.parent.get(id(n))
             if p is None:
                 return False
@@ -1513,18 +2069,18 @@ class _Py:
         col = len(line.encode()[: node.col_offset].decode("utf-8", "replace"))
         return self.starts[node.lineno - 1] + col
 
-    def copies(self) -> list[EnvCopy]:
+    def found(self) -> list[tuple]:
+        """(pos, line, family, copy node, debug, bindable) for every copy: detection only."""
         out = []
+        self.star_os = any(isinstance(n, ast.ImportFrom) and n.module == "os" and any(a.name == "*" for a in n.names)
+                           for n in ast.walk(self.tree))
         for e in ast.walk(self.tree):
-            if not isinstance(e, (ast.Attribute, ast.Name)) or not self.is_environ(e):
+            if not isinstance(e, (ast.Attribute, ast.Name, ast.Call)) or not self.is_environ(e):
                 continue
             c = self.copy_of(e)
-            if c is None:
-                continue
-            node, family = c
-            bound = self.use(node, "env", 0) == "ok"
-            sink = not bound and self.sink(node, 0)
-            out.append(EnvCopy(self.char(e), e.lineno, family, bound, sink))
+            if c is not None:
+                node, family, bindable = c
+                out.append((self.char(e), e.lineno, family, node, None, bindable))
         return out
 
 
@@ -1537,19 +2093,51 @@ def _flow(rel: str, text: str, is_net: IsNet):
     return _Js(rel, text, is_net)
 
 
-def env_copies(rel: str, text: str, is_net: IsNet) -> tuple[EnvCopy, ...] | None:
+def _analyse(flow, budget: _Budget | None = None) -> list[EnvCopy]:
+    flow.budget = _Budget(10**12, 10**9)  # detection is linear: never cut short
+    found = flow.found()
+    if not found:
+        return []
+    flow.budget = budget or _Budget()
+    try:
+        why = flow.untrusted()
+        out = []
+        for pos, line, family, node, debug, bindable in found:
+            bound = False
+            if bindable and not why:
+                bound = (bool(debug) and flow.debug_bound(node)) or flow.use(node, "env", 0) == "ok"
+            sink = not bound and flow.sink(node, 0)
+            out.append(EnvCopy(pos, line, family, bound, sink, why))
+        return out
+    except BudgetExceeded:
+        return [EnvCopy(pos, line, family, False, False, "work budget exceeded", True) for pos, line, family, *_ in found]
+
+
+def env_copies(rel: str, text: str, is_net: IsNet, budget: _Budget | None = None) -> tuple[EnvCopy, ...] | None:
     """Every whole-environment copy in a Python or JS/TS file, or None when it does not parse (R45 5)."""
     if "environ" not in text and "env" not in text:
         return ()
     try:
-        return tuple(_flow(rel, text, is_net).copies())
+        return tuple(_analyse(_flow(rel, text, is_net), budget))
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None
+
+
+def untrusted_reason(rel: str, text: str) -> str:
+    """Why nothing in this file may be bound (R47 b), or "" (for tests and reports)."""
+    try:
+        f = _flow(rel, text, lambda *_: False)
+        f.budget = _Budget(10**12, 10**9)
+        return f.untrusted()
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return "unparseable"
 
 
 def launcher_text(rel: str, text: str, callee: str) -> bool:
     """Whether `callee` (as text, resolved at module level) is a real process launcher in this file."""
     try:
-        return _flow(rel, text, lambda *_: False).launcher_text(callee)
+        f = _flow(rel, text, lambda *_: False)
+        f.budget = _Budget()
+        return not f.untrusted() and f.launcher_text(callee)
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         return False
