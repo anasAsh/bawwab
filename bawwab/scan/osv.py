@@ -97,3 +97,43 @@ def known_malware(kind: str, name: str, version: str | None, *, base: str = OSV_
     label = f"{name}@{version}" if version else name
     evidence = f"{label} is listed as malicious in OSV ({ids})" + (f": {summary}" if summary else "")
     return [Finding("identity.known-malicious", Severity.CRITICAL, "identity", evidence[:300])]
+
+
+BATCH_MAX = 1000  # OSV querybatch limit per request
+
+
+def known_malware_batch(kind: str, pkgs: list[tuple[str, str]], *, base: str = OSV_URL, timeout: float = 10,
+                        budget: float = DEFAULT_BUDGET_S) -> list[Finding]:
+    """Exact name==version pairs checked in OSV querybatch requests within one deadline.
+    identity.known-malicious (CRITICAL) per MAL-* hit. Unlike known_malware, a failed or incomplete answer is
+    plugin.deps-unverified (MED, fail closed): these packages are installed without any other scan."""
+    ecosystem = ECOSYSTEMS.get(kind)
+    if ecosystem is None or not pkgs:
+        return []
+    url = base.rstrip("/") + "/v1/querybatch"
+    deadline = time.monotonic() + budget
+    out: list[Finding] = []
+    try:
+        for i in range(0, len(pkgs), BATCH_MAX):
+            chunk = pkgs[i:i + BATCH_MAX]
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise OsvError(f"no answer within {budget:g}s")
+            data = _post(url, {"queries": [{"package": {"name": n, "ecosystem": ecosystem}, "version": v}
+                                           for n, v in chunk]}, min(timeout, left))
+            results = data.get("results")
+            if not isinstance(results, list) or len(results) != len(chunk):
+                raise OsvError("incomplete answer")
+            for (n, v), res in zip(chunk, results):
+                if not isinstance(res, dict) or res.get("next_page_token"):
+                    raise OsvError(f"incomplete answer for {n}")
+                ids = sorted({x["id"] for x in res.get("vulns") or []
+                              if isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"].startswith("MAL-")})
+                if ids:
+                    out.append(Finding("identity.known-malicious", Severity.CRITICAL, "identity",
+                                       f"{n}=={v} (locked dependency) is listed as malicious in OSV ({', '.join(ids)})"[:300]))
+    except OsvError as e:
+        return out + [Finding("plugin.deps-unverified", Severity.MED, "gate",
+                              f"{len(pkgs)} locked dependencies could not be checked for known malware (OSV): "
+                              f"{str(e)[:160]}")]
+    return out

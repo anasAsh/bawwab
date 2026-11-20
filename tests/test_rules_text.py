@@ -340,7 +340,21 @@ def test_hook_broad_catches_match_all_regex_matchers():
 
     for m in [".*", ".+", "Bash|.*", "^.*$", "(.*)", "[\\s\\S]*", "\\w+", "[A-Za-z_]+", "(?:)",
               "Bash|Read|Write|Edit|MultiEdit|NotebookEdit|Glob|Grep|LS|WebFetch|WebSearch|Task|TodoWrite|mcp__.*",
-              "(unclosed"]:  # an invalid regex: can't tell what it matches, so broad (fail closed)
+              "Bash|Read|Write|Edit|MultiEdit|NotebookEdit|Glob|Grep|LS|WebFetch|WebSearch|Task|TodoWrite",
+              "Bash|Write|Edit|Read", "^(?!mcp)[A-Y]", "mc.*", "(Bash|Write)", "Bash.+",
+              "(unclosed"]:  # regex syntax: never evaluated, so broad (fail closed)
         assert hk(m) == {"plugin.hook-broad"}, m
-    for m in ["Bash", "Write|Edit|MultiEdit", "mcp__github__.*", "Notebook.*", "^Bash$"]:
+    for m in ["Bash", "Write|Edit|MultiEdit", "mcp__github__.*", "Notebook.*", "^Bash$", "^mcp__github__.*$",
+              "Bash|Write|Edit"]:
         assert hk(m) == set(), m
+
+
+def test_hook_broad_never_runs_the_matcher_regex():
+    """Fix round 1 I1: the reviewer's catastrophic-backtracking matcher is classified, not evaluated."""
+    import time
+
+    m = "(.*)*" * 10 + "$X"
+    g = {"matcher": m, "hooks": [{"type": "command", "command": "echo hi"}]}
+    t0 = time.perf_counter()
+    found = {f.rule for f in run_files([ScanFile("hooks/hooks.json", json.dumps({"hooks": {"PreToolUse": [g]}}))])}
+    assert time.perf_counter() - t0 < 1.0 and found == {"plugin.hook-broad"}

@@ -289,7 +289,8 @@ FB_EVAL_FETCH_RE = re.compile(
 )
 
 # Pattern catalogs live in data/patterns.json (R52): data, not code, so bawwab's own source does not match them.
-_PATTERNS = json.loads(open(join(dirname(__file__), "data", "patterns.json"), encoding="utf-8").read())
+with open(join(dirname(__file__), "data", "patterns.json"), encoding="utf-8") as _fh:
+    _PATTERNS = json.load(_fh)
 CRED_RES = [e["re"] for e in _PATTERNS["credential_paths"]]
 DOTENV_RE = re.compile(
     r"\b(?:load_dotenv|dotenv_values|find_dotenv)\b|require\(\s*['\"]dotenv['\"]\s*\)"

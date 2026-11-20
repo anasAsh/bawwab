@@ -4,8 +4,8 @@ from __future__ import annotations
 import hashlib
 import os
 import shlex
-import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -195,12 +195,7 @@ def release_lock() -> None:
 
 def spawn_background(cwd: Path, full: bool = False) -> None:
     """Start `bawwab inventory --background` detached; full=True is init --scan / scan --all."""
-    exe = shutil.which("bawwab")
-    if exe:
-        cmd = [exe]
-    else:
-        root = os.environ.get("CLAUDE_PLUGIN_ROOT") or str(Path(__file__).resolve().parent.parent)
-        cmd = ["uv", "run", "--project", root, "--quiet", "bawwab"]
+    cmd = [sys.executable, "-m", "bawwab.cli"]  # this same code and environment: no PATH lookup (fix round 1 I2)
     try:
         subprocess.Popen(
             [*cmd, "inventory", "--background", *(["--full"] if full else []), "--cwd", str(cwd)],

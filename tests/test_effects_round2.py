@@ -21,6 +21,7 @@ from bawwab.paths import bawwab_home, child_env, child_token
 from bawwab.store import open_store
 from bawwab.types import Verdict
 from test_effects import FakeScan, _w
+from _shim import write_uv_shim
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
 
@@ -183,6 +184,7 @@ def _fake_bawwab(tmp_path: Path) -> tuple[dict, Path]:
     exe = b / "bawwab"
     exe.write_text(f"#!{sys.executable}\nopen({str(log)!r}, 'w').write('x')\n")
     exe.chmod(0o755)
+    write_uv_shim(exe.parent)
     env = {k: v for k, v in os.environ.items() if k != "BAWWAB_CHILD"}
     env["PATH"] = f"{b}:{os.environ.get('PATH', '')}"
     return env, log

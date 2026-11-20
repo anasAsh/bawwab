@@ -51,11 +51,14 @@ class EffectsFailed(Exception):
 # ------------------------------------------------------------------ files shared with the hook
 
 def fp_file() -> Path:
-    """The fingerprint code the hook runs: $CLAUDE_PLUGIN_ROOT/hooks/fingerprint.py under the plugin (an absolute
-    root that has it), else the package's own copy (bawwab/_fingerprint.py, a link to hooks/fingerprint.py in the
-    source tree and a plain file in a wheel). Never the cwd or a repo being scanned."""
-    root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-    if root and os.path.isabs(root):
+    """The fingerprint code the hook runs: <plugin root>/hooks/fingerprint.py when this package runs from a
+    plugin tree (found from __file__, as selfid does; CLAUDE_PLUGIN_ROOT is never trusted to load code), else the
+    package's own copy (bawwab/_fingerprint.py, a link to hooks/fingerprint.py in the source tree and a plain
+    file in a wheel). Never the cwd or a repo being scanned."""
+    from bawwab.selfid import running_root
+
+    root = running_root()
+    if root is not None:
         p = Path(root) / "hooks" / "fingerprint.py"
         if p.is_file():
             return p

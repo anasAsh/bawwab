@@ -61,8 +61,9 @@ def test_e2e_ordinary_call_silent(proj, tmp_path):
 def test_plugin_manifest():
     m = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
     assert m["name"] == "bawwab" and m["version"] == "0.1.0"
-    assert m["mcpServers"]["bawwab"] == {
-        "command": "uv", "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "--quiet", "bawwab-mcp"]}
+    assert m["mcpServers"]["bawwab"] == {  # fix round 1: pinned to uv.lock, venv in the plugin data dir
+        "command": "uv", "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "--frozen", "--quiet", "bawwab-mcp"],
+        "env": {"UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"}}
 
 
 def test_marketplace_manifest():
@@ -86,9 +87,10 @@ def test_hooks_manifest():
         assert group["matcher"] == "*"
         assert hook == {"type": "command", "command": cmd + sub, "timeout": hook["timeout"]}
         assert hook["timeout"] >= 600
-    for event, sub in (("SessionStart", "inventory"), ("UserPromptSubmit", "notify")):
-        group, hook = only(event)
-        assert "matcher" not in group and hook == {"type": "command", "command": cmd + sub}
+    group, hook = only("SessionStart")  # above the inventory child's 60 s (fix round 1)
+    assert "matcher" not in group and hook == {"type": "command", "command": cmd + "inventory", "timeout": 90}
+    group, hook = only("UserPromptSubmit")
+    assert "matcher" not in group and hook == {"type": "command", "command": cmd + "notify"}
     assert set(h) == {"PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit"}
 
 
@@ -97,3 +99,32 @@ def test_skill_rules():
     assert text.startswith("---\nname: bawwab\ndescription: ")
     for needle in ("verbatim", "bawwab approve", "--deep", "bawwab explain", "scan_mcp_server"):
         assert needle in text
+
+
+def test_hook_runs_its_own_project_never_bawwab_from_path(tmp_path):
+    """Fix round 1 I2: `uv run --project <the hook's own root> --frozen`, never a `bawwab` found on PATH."""
+    import sys
+
+    from _shim import write_uv_shim
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    marker, log, seen = tmp_path / "path-bawwab-ran", tmp_path / "uv.log", tmp_path / "env"
+    (a / "bawwab").write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').write('x')\n")
+    (a / "bawwab").chmod(0o755)
+    (b / "bawwab").write_text(f"#!{sys.executable}\nimport os\n"
+                              f"open({str(seen)!r}, 'w').write(os.environ.get('UV_PROJECT_ENVIRONMENT', '-'))\n")
+    (b / "bawwab").chmod(0o755)
+    write_uv_shim(b, log)
+    data_dir = tmp_path / "plugin-data"
+    env = {k: v for k, v in os.environ.items() if k != "BAWWAB_CHILD"}
+    env.update(PATH=f"{a}:{b}:{os.environ['PATH']}", CLAUDE_PLUGIN_ROOT=str(tmp_path / "elsewhere"),
+               CLAUDE_PLUGIN_DATA=str(data_dir))
+    data = {"tool_name": "Bash", "tool_input": {"command": "claude mcp add x -- npx -y x@1"}, "cwd": str(tmp_path)}
+    r = subprocess.run(["python3", str(HOOK), "gate"], input=json.dumps(data), capture_output=True, text=True,
+                       env=env, timeout=60)
+    assert r.returncode == 0
+    assert not marker.exists()
+    assert log.read_text().split() == ["run", "--project", str(ROOT.resolve()), "--frozen", "--quiet", "bawwab", "gate"]
+    assert seen.read_text() == str(data_dir / "venv")

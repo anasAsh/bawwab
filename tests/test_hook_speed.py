@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
+from _shim import write_uv_shim
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
 LS = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/tmp"})
@@ -50,6 +51,7 @@ def _fake_bawwab(tmp_path: Path, body: str) -> dict:
     exe = b / "bawwab"
     exe.write_text(f"#!{sys.executable}\n{body}\n")
     exe.chmod(0o755)
+    write_uv_shim(exe.parent)
     return {"PATH": f"{b}:{os.environ.get('PATH', '')}"}
 
 

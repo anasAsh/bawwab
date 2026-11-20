@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -107,6 +108,8 @@ def _child_target(spec: dict, root: Path) -> Target | None:
     if not isinstance(cmd, str) or not isinstance(args, list) or not all(isinstance(a, str) for a in args):
         return None
     if Path(cmd).name == "uv" and args[:1] == ["run"]:
+        if not _uv_env_ok(spec.get("env")):
+            return None
         return _uv_project_script(sub(cmd), [sub(a) for a in args], root)
     t = target_from_command(sub(cmd), [sub(a) for a in args])
     if t is not None and t.kind == "local" and not (t.path and Path(t.path).is_dir()):
@@ -119,13 +122,14 @@ _UV_RUN_PLAIN_FLAGS = {"--quiet", "-q", "--frozen", "--locked", "--offline", "--
 
 
 def _uv_project_script(cmd: str, args: list[str], root: Path) -> Target | None:
-    """`uv run --project <dir inside the plugin> [plain flags] <script>`: the project's own console script,
-    declared in <dir>/pyproject.toml [project.scripts] as module:function with the module inside <dir>.
-    Anything else (no --project, a dir outside the plugin, unknown flags, an undeclared script): None."""
+    """`uv run --project <dir inside the plugin> --frozen|--locked [plain flags] <script>`: the project's own
+    console script, declared in <dir>/pyproject.toml [project.scripts] as module:function with the module inside
+    <dir>, and everything uv installs for it pinned in <dir>/uv.lock to PyPI (see _uv_locked_packages).
+    Anything else: None (unresolved, fail closed)."""
     import os
     import tomllib
 
-    a, project, rest = args[1:], None, []
+    a, project, rest, pinned = args[1:], None, [], False
     i = 0
     while i < len(a):
         x = a[i]
@@ -134,13 +138,14 @@ def _uv_project_script(cmd: str, args: list[str], root: Path) -> Target | None:
         elif x.startswith("--project=") and project is None:
             project, i = x.split("=", 1)[1], i + 1
         elif x in _UV_RUN_PLAIN_FLAGS:
+            pinned = pinned or x in ("--frozen", "--locked")
             i += 1
         elif x.startswith("-"):
-            return None
+            return None  # --with, --index, --extra-index-url, ...: unscanned code or another index
         else:
             rest = a[i:]
             break
-    if not project or not rest:
+    if not project or not rest or not pinned:
         return None
     base = os.path.realpath(root)
     proj = os.path.realpath(project if os.path.isabs(project) else os.path.join(base, project))
@@ -155,7 +160,127 @@ def _uv_project_script(cmd: str, args: list[str], root: Path) -> Target | None:
     rel = module.replace(".", os.sep)
     if not module or not any(os.path.isfile(os.path.join(proj, rel + ext)) for ext in (".py", os.sep + "__init__.py")):
         return None
+    if _uv_locked_packages(proj) is None:
+        return None
     return Target("local", " ".join([cmd, *args]), name=rest[0], path=proj)
+
+
+def _uv_env_ok(env: object) -> bool:
+    """Server env that can't change what uv installs or runs: no UV_*/PIP_*/PYTHON* settings, except the venv
+    location in the plugin's data dir."""
+    if env is None:
+        return True
+    if not isinstance(env, dict):
+        return False
+    for k, v in env.items():
+        k = str(k).upper()
+        if k == "UV_PROJECT_ENVIRONMENT":
+            if not (isinstance(v, str) and v.startswith("${CLAUDE_PLUGIN_DATA}/") and ".." not in v):
+                return False
+        elif k.startswith(("UV_", "PIP_", "PYTHON")):
+            return False
+    return True
+
+
+PYPI_SIMPLE = "https://pypi.org/simple"
+PYPI_FILES_HOST = "files.pythonhosted.org"
+# build backends whose package is the only build requirement allowed (fix round 1 C1c)
+_BUILD_BACKENDS = {"uv_build": {"uv_build", "uv-build"}, "hatchling.build": {"hatchling"},
+                   "setuptools.build_meta": {"setuptools", "wheel"}}
+# [tool.uv] keys that point uv at another index, local wheels or other sources
+_UV_SOURCE_KEYS = {"index", "sources", "index-url", "extra-index-url", "find-links", "indexes", "index-strategy"}
+_REQ_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*(.*)$", re.S)
+
+
+def _plain_req(req: object) -> str | None:
+    """The distribution name of a plain registry requirement; None for a direct reference (`x @ url`) or junk."""
+    if not isinstance(req, str):
+        return None
+    m = _REQ_NAME_RE.match(req)
+    if not m or "@" in m.group(3).split(";", 1)[0]:
+        return None
+    return m.group(1).lower().replace("_", "-")
+
+
+def _uv_locked_packages(proj: str) -> list[tuple[str, str]] | None:
+    """The third-party (name, version) pairs uv installs for the project, when ALL of these hold; else None:
+    - <proj>/uv.lock exists, and there is no uv.toml;
+    - pyproject sets no [tool.uv] index, sources or find-links, and every requirement is a plain one;
+    - the build backend is uv_build, hatchling or setuptools, and it is the only build requirement;
+    - every locked package comes from PyPI (https://pypi.org/simple, files on files.pythonhosted.org), except
+      the project itself (editable/virtual ".")."""
+    import os
+    import tomllib
+    from urllib.parse import urlsplit
+
+    try:
+        if os.path.lexists(os.path.join(proj, "uv.toml")):
+            return None
+        with open(os.path.join(proj, "pyproject.toml"), "rb") as fh:
+            py = tomllib.load(fh)
+        with open(os.path.join(proj, "uv.lock"), "rb") as fh:
+            lock = tomllib.load(fh)
+    except (OSError, ValueError, RecursionError):
+        return None
+    tool_uv = (py.get("tool") or {}).get("uv") or {}
+    if not isinstance(tool_uv, dict) or _has_keys(tool_uv, _UV_SOURCE_KEYS):
+        return None
+    project = py.get("project") or {}
+    reqs = list(project.get("dependencies") or [])
+    for group in (project.get("optional-dependencies") or {}).values():
+        reqs += list(group or [])
+    for group in (py.get("dependency-groups") or {}).values():
+        reqs += [x for x in (group or []) if not isinstance(x, dict)]  # {include-group = ...} is a reference
+    if any(_plain_req(r) is None for r in reqs):
+        return None
+    bs = py.get("build-system")
+    allowed = _BUILD_BACKENDS.get(bs.get("build-backend")) if isinstance(bs, dict) else None
+    if not allowed or "backend-path" in bs or not all(_plain_req(r) in allowed for r in bs.get("requires") or []):
+        return None
+    out: list[tuple[str, str]] = []
+    pkgs = lock.get("package")
+    if not isinstance(pkgs, list):
+        return None
+    for pk in pkgs:
+        if not isinstance(pk, dict) or not isinstance(pk.get("name"), str):
+            return None
+        src = pk.get("source")
+        if not isinstance(src, dict) or len(src) != 1:
+            return None
+        (kind, val), = src.items()
+        if kind in ("editable", "virtual") and val == ".":
+            continue  # the project itself: its files are in the tree and scanned
+        if kind != "registry" or val != PYPI_SIMPLE or not isinstance(pk.get("version"), str):
+            return None
+        files = ([pk["sdist"]] if "sdist" in pk else []) + list(pk.get("wheels") or [])
+        for fl in files:
+            u = urlsplit(fl.get("url", "")) if isinstance(fl, dict) else None
+            if u is None or u.scheme != "https" or u.hostname != PYPI_FILES_HOST:
+                return None
+        out.append((pk["name"], pk["version"]))
+    return out
+
+
+def _has_keys(d: object, keys: set[str]) -> bool:
+    if isinstance(d, dict):
+        return any(k in keys or _has_keys(v, keys) for k, v in d.items())
+    if isinstance(d, list):
+        return any(_has_keys(v, keys) for v in d)
+    return False
+
+
+def _uv_deps_findings(spec: dict, t: Target, ctx: _Ctx) -> list[Finding]:
+    """For a resolved `uv run --project` server: the locked third-party packages, checked against OSV MAL-*
+    advisories in one batch. An unavailable lookup is MED and never cached (fail closed)."""
+    from bawwab.scan.osv import known_malware_batch
+
+    if Path(str(spec.get("command", ""))).name != "uv" or t.kind != "local" or not t.path:
+        return []
+    pkgs = _uv_locked_packages(t.path)
+    if pkgs is None:  # changed since it was resolved
+        return [Finding("plugin.unresolved-server", Severity.MED, "gate", "uv project changed while scanning")]
+    opts = ctx.fetch_opts or FetchOpts()
+    return known_malware_batch("pypi", pkgs, base=opts.osv_url, timeout=min(opts.timeout_s, 10))
 
 
 def _is_plugin_root(t: Target | None, root: Path) -> bool:
@@ -181,6 +306,8 @@ def _scan_children(f: Fetched, ctx: _Ctx, depth: int, label: str = "") -> list[F
     prefetched = ctx.prefetched if f is ctx.prefetch_for else None
     resolved = prefetched if prefetched is not None else _resolve_children(f, servers, ctx)
     for name, (t, cf) in resolved.items():
+        if t is not None:
+            out.extend(_prefix(_uv_deps_findings(servers.get(name) or {}, t, ctx), name))
         if cf is None and _is_plugin_root(t, f.root):
             continue  # scanned as part of the plugin itself
         if t is None:
@@ -331,7 +458,7 @@ def _apply_trust(f: Fetched, findings: list[Finding], cfg: Config) -> list[Findi
     return [x for x in findings if x.source in ("identity", "gate", "trust") or x.severity >= Severity.HIGH]
 
 
-TRANSIENT_RULES = {"judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error", "fetch.auth-required"}
+TRANSIENT_RULES = {"plugin.deps-unverified", "judge.unavailable", "sandbox.unavailable", "fetch.failed", "gate.error", "rules.error", "fetch.auth-required"}
 
 
 def _remote_children(f: Fetched) -> bool:

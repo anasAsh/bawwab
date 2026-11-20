@@ -21,6 +21,7 @@ from bawwab.paths import bawwab_home
 from bawwab.store import open_store
 from bawwab.types import Verdict
 from test_effects import FakeScan, _w
+from _shim import write_uv_shim
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
 
@@ -249,6 +250,7 @@ def _fake_bawwab(tmp_path: Path, body: str) -> dict:
     exe = b / "bawwab"
     exe.write_text(f"#!{sys.executable}\nimport sys\n{body}\n")
     exe.chmod(0o755)
+    write_uv_shim(exe.parent)
     return {**os.environ, "PATH": f"{b}:{os.environ.get('PATH', '')}"}
 
 

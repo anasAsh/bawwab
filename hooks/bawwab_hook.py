@@ -110,14 +110,22 @@ def _deny(reason: str) -> str:
     }})
 
 
-def _bawwab_cmd(sub: str) -> list[str]:
-    import shutil
+PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-    exe = shutil.which("bawwab")
-    if exe:
-        return [exe, sub]
-    root = os.environ.get("CLAUDE_PLUGIN_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return ["uv", "run", "--project", root, "--quiet", "bawwab", sub]
+
+def _bawwab_cmd(sub: str) -> list[str]:
+    """Always this plugin's own code, pinned to its uv.lock: never a `bawwab` found on PATH (version skew) and
+    never a root taken from the environment."""
+    return ["uv", "run", "--project", PLUGIN_ROOT, "--frozen", "--quiet", "bawwab", sub]
+
+
+def _child_env() -> dict:
+    """The venv lives in the plugin's data dir (shared with the MCP server), not inside the plugin root."""
+    env = dict(os.environ)
+    data = env.get("CLAUDE_PLUGIN_DATA")
+    if data and os.path.isabs(data):
+        env["UV_PROJECT_ENVIRONMENT"] = os.path.join(data, "venv")
+    return env
 
 
 def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
@@ -125,7 +133,8 @@ def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
     import subprocess
 
     try:
-        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=CHILD_TIMEOUT_S)
+        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=CHILD_TIMEOUT_S,
+                           env=_child_env())
     except subprocess.TimeoutExpired:
         return None, "timed out"
     except OSError as e:
@@ -227,7 +236,8 @@ def _passthrough(sub: str, timeout: int) -> int:
     except ValueError:
         _note_session(None)
     try:
-        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=timeout,
+                           env=_child_env())
         out = r.stdout.strip()
         if r.returncode == 0 and out and isinstance(json.loads(out), dict):
             print(out)

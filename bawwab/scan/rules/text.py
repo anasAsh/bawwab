@@ -504,27 +504,26 @@ def _hook_commands(data: object):
                     yield event, matcher, h["command"]
 
 
-# A tool name no matcher should name, and the tools a hook would need to match to see every call (R52).
-_PROBE_TOOL = "ZzQq_Probe"
-_ALL_TOOLS = ("Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS", "WebFetch",
-              "WebSearch", "Task", "TodoWrite", "mcp__srv__tool")
+# Hook matchers are classified as text, never compiled or run: a plugin-supplied regex could hang the scan
+# (fix round 1 I1). Narrow: a plain alternation of tool names that doesn't cover the core tools, or a literal
+# prefix of 3+ characters followed by `.*`. Everything else with regex syntax is broad (fail closed).
+_NAMES_RE = re.compile(r"\^?([A-Za-z0-9_]+(?:\|[A-Za-z0-9_]+)*)\$?")
+_PREFIX_RE = re.compile(r"\^?[A-Za-z0-9_]{3,}\.\*\$?")
+_CORE_TOOLS = frozenset({"Bash", "Write", "Edit", "Read"})
 
 
 def _broad_matcher(matcher: object) -> bool:
-    """True when the hook runs on every tool: no matcher, "", "*", or a regex matching a random tool name or
-    every common tool (".*", "Bash|.*", "^.*$"). A non-string or invalid regex: can't tell, so broad."""
-    if matcher is None:
-        return True
+    """True when the hook may run on every tool call: no matcher, "", "*", a non-string, a name list covering
+    Bash, Write, Edit and Read, or any matcher that is not a plain name list or a `prefix.*`."""
     if not isinstance(matcher, str):
         return True
     m = matcher.strip()
-    if m in ("", "*"):
+    if m in ("", "*") or len(m) > 500:
         return True
-    try:
-        rx = re.compile(m)
-    except (re.error, RecursionError, OverflowError):
-        return True
-    return rx.search(_PROBE_TOOL) is not None or all(rx.search(t) for t in _ALL_TOOLS)
+    names = _NAMES_RE.fullmatch(m)
+    if names:
+        return _CORE_TOOLS <= set(names.group(1).split("|"))
+    return _PREFIX_RE.fullmatch(m) is None
 
 
 class PluginRules:

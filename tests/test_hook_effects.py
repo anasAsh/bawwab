@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from _shim import write_uv_shim
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
 
@@ -36,6 +37,7 @@ def _fake_bawwab(tmp_path: Path, body: str) -> tuple[dict, Path]:
     exe.write_text(f"#!{sys.executable}\nimport sys, json\nopen({str(log)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
                    f"{body}\n")
     exe.chmod(0o755)
+    write_uv_shim(exe.parent)
     return {"PATH": f"{b}:{os.environ.get('PATH', '')}"}, log
 
 

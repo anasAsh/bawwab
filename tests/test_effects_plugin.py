@@ -28,33 +28,35 @@ def _plant(d: Path, marker: str) -> None:
         _w(d / rel, f"PLANTED = {marker!r}\n")
 
 
-def test_fingerprint_from_plugin_root(fresh_fp, monkeypatch, tmp_path):
+def test_fingerprint_from_running_plugin_root_not_env(fresh_fp, monkeypatch, tmp_path):
+    from bawwab import selfid
+
     root = tmp_path / "plugin"
     _w(root / "hooks/fingerprint.py", "PLANTED = 'plugin-root'\n")
-    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))
+    _w(root / "hooks/bawwab_hook.py", "")
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(root))  # the env var alone loads nothing (fix round 1)
+    m = fx.fp_module()
+    assert not hasattr(m, "PLANTED") and Path(m.__file__) == ROOT / "hooks" / "fingerprint.py"
+    fx._fp_mod = None
+    monkeypatch.setattr(selfid, "_HERE", root / "bawwab" / "selfid.py")  # the code runs from that plugin tree
     assert fx.fp_module().PLANTED == "plugin-root"
 
 
-def test_fingerprint_without_plugin_root_is_the_package_copy(fresh_fp, monkeypatch, tmp_path):
+def test_fingerprint_never_from_cwd(fresh_fp, monkeypatch, tmp_path):
     cwd = tmp_path / "scanned-repo"
     _plant(cwd, "cwd")
     monkeypatch.chdir(cwd)
     m = fx.fp_module()
-    assert not hasattr(m, "PLANTED")
-    assert Path(m.__file__).parent == Path(fx.__file__).resolve().parent
-    assert hasattr(m, "fingerprint") and hasattr(m, "quarantine_active")
+    assert not hasattr(m, "PLANTED") and hasattr(m, "fingerprint") and hasattr(m, "quarantine_active")
 
 
-def test_fingerprint_plugin_root_without_the_file_falls_back(fresh_fp, monkeypatch, tmp_path):
-    cwd = tmp_path / "scanned-repo"
-    _plant(cwd, "cwd")
-    monkeypatch.chdir(cwd)
-    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path / "empty"))
-    assert not hasattr(fx.fp_module(), "PLANTED")
-    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", "relative/dir")  # never resolved against the cwd
-    fx._fp_mod = None
-    _w(cwd / "relative/dir/hooks/fingerprint.py", "PLANTED = 'relative'\n")
-    assert not hasattr(fx.fp_module(), "PLANTED")
+def test_fingerprint_outside_a_plugin_tree_is_the_package_copy(fresh_fp, monkeypatch, tmp_path):
+    from bawwab import selfid
+
+    monkeypatch.setattr(selfid, "_HERE", tmp_path / "site-packages" / "bawwab" / "selfid.py")
+    _w(tmp_path / "site-packages/hooks/fingerprint.py", "PLANTED = 'other-package'\n")
+    m = fx.fp_module()
+    assert not hasattr(m, "PLANTED") and Path(m.__file__) == Path(fx.__file__).resolve().parent / "_fingerprint.py"
 
 
 def test_package_copy_is_the_hook_file():

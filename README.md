@@ -230,7 +230,9 @@ uvx --from "git+https://github.com/anasAsh/bawwab@feat/bawwab" bawwab scan <targ
 uvx bawwab scan <target>        # once it is published to PyPI
 ```
 
-The CLI scans and decides, but without the plugin nothing gates Claude's installs.
+The CLI scans and decides, but without the plugin nothing gates Claude's installs. Having both is fine: the
+plugin's hooks and MCP server always run the plugin's own copy, pinned to its `uv.lock` (`uv run --frozen`,
+with its virtualenv in the plugin's data folder), never a `bawwab` found on your `PATH`.
 
 ## Usage
 
