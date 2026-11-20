@@ -1,0 +1,5 @@
+{
+  "expected": "malicious",
+  "category": "credential-exfil",
+  "adversarial": true
+}

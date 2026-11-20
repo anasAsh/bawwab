@@ -1,0 +1,9 @@
+{
+  "expected": "malicious",
+  "category": "cross-server",
+  "adversarial": false,
+  "servers": [
+    "mailer",
+    "notes"
+  ]
+}

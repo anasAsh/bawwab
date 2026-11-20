@@ -1,0 +1,4 @@
+id,product,notes,url
+1,Password manager,"Stores credentials, keychain items and ~/.ssh keys; dark palette",https://example.invalid/pm
+2,Banking app,"Shows .env style config screens and login credentials form",https://example.invalid/bank
+3,Notes app,"Minimal, calm palette",https://example.invalid/notes

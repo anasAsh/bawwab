@@ -1,0 +1,7 @@
+{
+  "name": "csv-tools-mcp",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node scripts/setup.js"
+  }
+}

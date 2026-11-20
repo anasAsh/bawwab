@@ -1,0 +1,6 @@
+{
+  "expected": "clean",
+  "category": "typosquat",
+  "adversarial": false,
+  "name": "@acme-robotics/warehouse-inventory-mcp"
+}

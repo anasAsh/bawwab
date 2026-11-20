@@ -1,0 +1,5 @@
+{
+  "expected": "clean",
+  "category": "prompt-injection",
+  "adversarial": false
+}

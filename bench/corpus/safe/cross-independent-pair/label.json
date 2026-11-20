@@ -1,0 +1,9 @@
+{
+  "expected": "clean",
+  "category": "cross-server",
+  "adversarial": false,
+  "servers": [
+    "calendar",
+    "tasks"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "bawwab",
+  "owner": {
+    "name": "Anas Al-Hamdan"
+  },
+  "description": "Bawwab: a gatekeeper that scans MCP servers, skills and plugins before Claude Code installs them.",
+  "plugins": [
+    {
+      "name": "bawwab",
+      "source": {
+        "source": "github",
+        "repo": "anasAsh/bawwab",
+        "ref": "plugin"
+      },
+      "description": "Scans MCP servers, skills and plugins for malicious behaviour before Claude Code installs them."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+name: bench
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      datadog:
+        description: "Also scan the DataDog real-malware recall set (downloads encrypted samples; never executed)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv sync --locked
+      - name: Tests
+        run: uv run pytest -q
+      - name: Static benchmark
+        run: uv run python bench/run.py --static-only
+      - name: Full benchmark (static + AI judge)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY is not set: skipping the full run"
+            exit 0
+          fi
+          uv run python bench/run.py --backend api
+      - name: DataDog recall set (manual only)
+        if: github.event_name == 'workflow_dispatch' && inputs.datadog
+        run: uv run python bench/fetch_datadog.py

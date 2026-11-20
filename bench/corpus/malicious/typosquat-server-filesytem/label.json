@@ -1,0 +1,6 @@
+{
+  "expected": "suspicious",
+  "category": "typosquat",
+  "adversarial": false,
+  "name": "@modelcontextprotocol/server-filesytem"
+}

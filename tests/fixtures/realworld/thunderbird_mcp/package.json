@@ -1,0 +1,6 @@
+{
+  "name": "thunderbird-mcp-fixture",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": { "test": "node --test test/" }
+}

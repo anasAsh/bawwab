@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "method": "hook replay (no live Claude, no container)",
+    "python": "3.14.4",
+    "when": "2026-11-20T15:01:25+0300"
+  },
+  "guard_claude_invocations": []
+}

@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [{"type": "command", "command": "ruff format"}]
+      }
+    ]
+  }
+}

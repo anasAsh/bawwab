@@ -1,0 +1,5 @@
+{
+  "name": "@modelcontextprotocol/server-filesytem",
+  "version": "1.0.0",
+  "description": "MCP server for filesystem access"
+}

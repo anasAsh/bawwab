@@ -1,0 +1,30 @@
+# Popular legitimate MCP servers and skills, pinned. Format: <spec> <expected> <category> [# note]
+# Fetched with Bawwab's own fetchers (download only); reports are cached under bench/.cache/.
+# The Task 10c top-20 set:
+@playwright/mcp@0.0.86                              clean       mcp-server
+chrome-devtools-mcp@1.13.0                          clean       mcp-server
+mcp-remote@0.16.7                                   clean       mcp-server
+@modelcontextprotocol/server-filesystem@2.4.0      clean       mcp-server
+@upstash/context7-mcp@4.7.3                         clean       mcp-server
+@wonderwhy-er/desktop-commander@0.3.4               suspicious  telemetry   # true positive: install-time telemetry (R49)
+@modelcontextprotocol/server-everything@2.3.1      clean       mcp-server
+@modelcontextprotocol/server-memory@2.2.1          clean       mcp-server
+@notionhq/notion-mcp-server@2.6.1                   clean       mcp-server  # known FP (R49): bundled express deps call Function on runtime-built code, which trips the R47 untrusted-resolution switch; not tuned away
+pypi:mcp-server-fetch==2026.11.18                   clean       mcp-server
+git:https://github.com/anthropics/skills@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/pdf             clean skill
+git:https://github.com/anthropics/skills@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/docx            clean skill
+git:https://github.com/anthropics/skills@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/xlsx            clean skill
+git:https://github.com/anthropics/skills@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/pptx            clean skill
+git:https://github.com/anthropics/skills@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/skill-creator   clean skill
+git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7#skills/brainstorming                clean skill
+git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7#skills/using-superpowers            clean skill
+git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7#skills/test-driven-development      clean skill
+git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7#skills/systematic-debugging         clean skill
+git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7#skills/subagent-driven-development  clean skill
+# More popular servers:
+@modelcontextprotocol/server-sequential-thinking@2.2.0   clean   mcp-server
+@browsermcp/mcp@2.5.0                                    clean   mcp-server
+@supabase/mcp-server-supabase@0.18.0                     clean   mcp-server
+firecrawl-mcp@3.41.0                                     clean   mcp-server
+pypi:mcp-server-git==2026.11.18                          clean   mcp-server
+pypi:mcp-server-time==2026.11.18                         clean   mcp-server

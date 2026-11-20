@@ -1,0 +1,58 @@
+{
+  "python3_startup_reference": {
+    "n": 30,
+    "median_ms": 11.9,
+    "p95_ms": 27.3,
+    "min_ms": 10.7,
+    "max_ms": 27.8
+  },
+  "prefilter_bash_ls": {
+    "n": 30,
+    "median_ms": 35.1,
+    "p95_ms": 52.0,
+    "min_ms": 32.6,
+    "max_ms": 52.8
+  },
+  "prefilter_bash_git_status": {
+    "n": 30,
+    "median_ms": 36.1,
+    "p95_ms": 53.7,
+    "min_ms": 34.2,
+    "max_ms": 54.0
+  },
+  "prefilter_read": {
+    "n": 30,
+    "median_ms": 41.8,
+    "p95_ms": 52.8,
+    "min_ms": 32.8,
+    "max_ms": 53.2
+  },
+  "post_unchanged_bash": {
+    "n": 30,
+    "median_ms": 34.8,
+    "p95_ms": 52.0,
+    "min_ms": 33.3,
+    "max_ms": 52.5
+  },
+  "full_gate_install_uncached_scan": {
+    "n": 30,
+    "median_ms": 302.5,
+    "p95_ms": 358.6,
+    "min_ms": 254.4,
+    "max_ms": 362.3
+  },
+  "full_gate_install_cached_scan": {
+    "n": 30,
+    "median_ms": 294.9,
+    "p95_ms": 330.3,
+    "min_ms": 257.0,
+    "max_ms": 337.1
+  },
+  "post_effect_check_after_config_change": {
+    "n": 10,
+    "median_ms": 275.0,
+    "p95_ms": 308.6,
+    "min_ms": 258.7,
+    "max_ms": 308.6
+  }
+}

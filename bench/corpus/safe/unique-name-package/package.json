@@ -1,0 +1,5 @@
+{
+  "name": "@acme-robotics/warehouse-inventory-mcp",
+  "version": "1.0.0",
+  "description": "Inventory lookups for Acme warehouses"
+}

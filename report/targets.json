@@ -1,0 +1,3473 @@
+{
+ "schema": 1,
+ "generated_at": "2026-11-20T11:09:30+00:00",
+ "counts": {
+  "mcp": 50,
+  "skill": 30,
+  "plugin": 20
+ },
+ "targets": [
+  {
+   "id": "mcp-npm-playwright-mcp-8ec40f",
+   "rank": 1,
+   "kind": "mcp",
+   "kind_rank": 1,
+   "name": "@playwright/mcp",
+   "source": "npm",
+   "version": "0.0.86",
+   "commit": null,
+   "spec": "@playwright/mcp@0.0.86",
+   "url": "https://www.npmjs.com/package/@playwright/mcp/v/0.0.86",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 11283200,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@playwright/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-chrome-devtools-mcp-058e45",
+   "rank": 2,
+   "kind": "mcp",
+   "kind_rank": 2,
+   "name": "chrome-devtools-mcp",
+   "source": "npm",
+   "version": "1.13.0",
+   "commit": null,
+   "spec": "chrome-devtools-mcp@1.13.0",
+   "url": "https://www.npmjs.com/package/chrome-devtools-mcp/v/1.13.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 2264902,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/chrome-devtools-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-modelcontextprotocol-server-pdf-bb5912",
+   "rank": 3,
+   "kind": "mcp",
+   "kind_rank": 3,
+   "name": "@modelcontextprotocol/server-pdf",
+   "source": "npm",
+   "version": "2.0.4",
+   "commit": null,
+   "spec": "@modelcontextprotocol/server-pdf@2.0.4",
+   "url": "https://www.npmjs.com/package/@modelcontextprotocol/server-pdf/v/2.0.4",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 2256208,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@modelcontextprotocol/server-pdf"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-upstash-context7-mcp-c65c83",
+   "rank": 4,
+   "kind": "mcp",
+   "kind_rank": 4,
+   "name": "@upstash/context7-mcp",
+   "source": "npm",
+   "version": "4.7.3",
+   "commit": null,
+   "spec": "@upstash/context7-mcp@4.7.3",
+   "url": "https://www.npmjs.com/package/@upstash/context7-mcp/v/4.7.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 1426375,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@upstash/context7-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-wonderwhy-er-desktop-commander-6b14a1",
+   "rank": 5,
+   "kind": "mcp",
+   "kind_rank": 5,
+   "name": "@wonderwhy-er/desktop-commander",
+   "source": "npm",
+   "version": "0.3.4",
+   "commit": null,
+   "spec": "@wonderwhy-er/desktop-commander@0.3.4",
+   "url": "https://www.npmjs.com/package/@wonderwhy-er/desktop-commander/v/0.3.4",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 1418548,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@wonderwhy-er/desktop-commander"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-modelcontextprotocol-server-filesystem-4a1a11",
+   "rank": 6,
+   "kind": "mcp",
+   "kind_rank": 6,
+   "name": "@modelcontextprotocol/server-filesystem",
+   "source": "npm",
+   "version": "2.4.0",
+   "commit": null,
+   "spec": "@modelcontextprotocol/server-filesystem@2.4.0",
+   "url": "https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem/v/2.4.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 1222611,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@modelcontextprotocol/server-filesystem"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-mcp-remote-c3d9e4",
+   "rank": 7,
+   "kind": "mcp",
+   "kind_rank": 7,
+   "name": "mcp-remote",
+   "source": "npm",
+   "version": "0.16.7",
+   "commit": null,
+   "spec": "mcp-remote@0.16.7",
+   "url": "https://www.npmjs.com/package/mcp-remote/v/0.16.7",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 1154901,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/mcp-remote"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-for-blender-ed971d",
+   "rank": 8,
+   "kind": "mcp",
+   "kind_rank": 8,
+   "name": "mcp-for-blender",
+   "source": "pypi",
+   "version": "2.3.1",
+   "commit": null,
+   "spec": "pypi:mcp-for-blender==2.3.1",
+   "url": "https://pypi.org/project/mcp-for-blender/2.3.1/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 1088785,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-for-blender/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mcp-proxy-53d768",
+   "rank": 9,
+   "kind": "mcp",
+   "kind_rank": 9,
+   "name": "mcp-proxy",
+   "source": "npm",
+   "version": "6.11.0",
+   "commit": null,
+   "spec": "mcp-proxy@6.11.0",
+   "url": "https://www.npmjs.com/package/mcp-proxy/v/6.11.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 941651,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/mcp-proxy"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-proxy-for-aws-3d5fc3",
+   "rank": 10,
+   "kind": "mcp",
+   "kind_rank": 10,
+   "name": "mcp-proxy-for-aws",
+   "source": "pypi",
+   "version": "2.0.0",
+   "commit": null,
+   "spec": "pypi:mcp-proxy-for-aws==2.0.0",
+   "url": "https://pypi.org/project/mcp-proxy-for-aws/2.0.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 655015,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-proxy-for-aws/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-atlassian-87c383",
+   "rank": 11,
+   "kind": "mcp",
+   "kind_rank": 11,
+   "name": "mcp-atlassian",
+   "source": "pypi",
+   "version": "0.24.7",
+   "commit": null,
+   "spec": "pypi:mcp-atlassian==0.24.7",
+   "url": "https://pypi.org/project/mcp-atlassian/0.24.7/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 596167,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-atlassian/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcpo-e83d7c",
+   "rank": 12,
+   "kind": "mcp",
+   "kind_rank": 12,
+   "name": "mcpo",
+   "source": "pypi",
+   "version": "0.0.20",
+   "commit": null,
+   "spec": "pypi:mcpo==0.0.20",
+   "url": "https://pypi.org/project/mcpo/0.0.20/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 470688,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcpo/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-modelcontextprotocol-server-memory-52ae76",
+   "rank": 13,
+   "kind": "mcp",
+   "kind_rank": 13,
+   "name": "@modelcontextprotocol/server-memory",
+   "source": "npm",
+   "version": "2.2.1",
+   "commit": null,
+   "spec": "@modelcontextprotocol/server-memory@2.2.1",
+   "url": "https://www.npmjs.com/package/@modelcontextprotocol/server-memory/v/2.2.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 340089,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@modelcontextprotocol/server-memory"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-expo-mcp-c73522",
+   "rank": 14,
+   "kind": "mcp",
+   "kind_rank": 14,
+   "name": "expo-mcp",
+   "source": "npm",
+   "version": "0.2.4",
+   "commit": null,
+   "spec": "expo-mcp@0.2.4",
+   "url": "https://www.npmjs.com/package/expo-mcp/v/0.2.4",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 312171,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/expo-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-modelcontextprotocol-server-everything-c3c753",
+   "rank": 15,
+   "kind": "mcp",
+   "kind_rank": 15,
+   "name": "@modelcontextprotocol/server-everything",
+   "source": "npm",
+   "version": "2.3.1",
+   "commit": null,
+   "spec": "@modelcontextprotocol/server-everything@2.3.1",
+   "url": "https://www.npmjs.com/package/@modelcontextprotocol/server-everything/v/2.3.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 309312,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@modelcontextprotocol/server-everything"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-notionhq-notion-mcp-server-a25bfc",
+   "rank": 16,
+   "kind": "mcp",
+   "kind_rank": 16,
+   "name": "@notionhq/notion-mcp-server",
+   "source": "npm",
+   "version": "2.6.1",
+   "commit": null,
+   "spec": "@notionhq/notion-mcp-server@2.6.1",
+   "url": "https://www.npmjs.com/package/@notionhq/notion-mcp-server/v/2.6.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 297433,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@notionhq/notion-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-modelcontextprotocol-server-sequential-thinking-1ff28a",
+   "rank": 17,
+   "kind": "mcp",
+   "kind_rank": 17,
+   "name": "@modelcontextprotocol/server-sequential-thinking",
+   "source": "npm",
+   "version": "2.2.0",
+   "commit": null,
+   "spec": "@modelcontextprotocol/server-sequential-thinking@2.2.0",
+   "url": "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking/v/2.2.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 272174,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@modelcontextprotocol/server-sequential-thinking"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-pandacss-mcp-bca71e",
+   "rank": 18,
+   "kind": "mcp",
+   "kind_rank": 18,
+   "name": "@pandacss/mcp",
+   "source": "npm",
+   "version": "2.6.0",
+   "commit": null,
+   "spec": "@pandacss/mcp@2.6.0",
+   "url": "https://www.npmjs.com/package/@pandacss/mcp/v/2.6.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 261261,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@pandacss/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-hostinger-mcp-ff65cd",
+   "rank": 19,
+   "kind": "mcp",
+   "kind_rank": 19,
+   "name": "@hostinger/mcp",
+   "source": "npm",
+   "version": "4.14.1",
+   "commit": null,
+   "spec": "@hostinger/mcp@4.14.1",
+   "url": "https://www.npmjs.com/package/@hostinger/mcp/v/4.14.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 259331,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@hostinger/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-hostinger-api-mcp-903daf",
+   "rank": 20,
+   "kind": "mcp",
+   "kind_rank": 20,
+   "name": "hostinger-api-mcp",
+   "source": "npm",
+   "version": "4.14.1",
+   "commit": null,
+   "spec": "hostinger-api-mcp@4.14.1",
+   "url": "https://www.npmjs.com/package/hostinger-api-mcp/v/4.14.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 258121,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/hostinger-api-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-open-pencil-mcp-ba401a",
+   "rank": 21,
+   "kind": "mcp",
+   "kind_rank": 21,
+   "name": "@open-pencil/mcp",
+   "source": "npm",
+   "version": "0.16.0",
+   "commit": null,
+   "spec": "@open-pencil/mcp@0.16.0",
+   "url": "https://www.npmjs.com/package/@open-pencil/mcp/v/0.16.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 255395,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@open-pencil/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-supabase-mcp-server-supabase-b1094b",
+   "rank": 22,
+   "kind": "mcp",
+   "kind_rank": 22,
+   "name": "@supabase/mcp-server-supabase",
+   "source": "npm",
+   "version": "0.18.0",
+   "commit": null,
+   "spec": "@supabase/mcp-server-supabase@0.18.0",
+   "url": "https://www.npmjs.com/package/@supabase/mcp-server-supabase/v/0.18.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 246367,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@supabase/mcp-server-supabase"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-azure-mcp-f26559",
+   "rank": 23,
+   "kind": "mcp",
+   "kind_rank": 23,
+   "name": "@azure/mcp",
+   "source": "npm",
+   "version": "4.0.0-beta.9",
+   "commit": null,
+   "spec": "@azure/mcp@4.0.0-beta.9",
+   "url": "https://www.npmjs.com/package/@azure/mcp/v/4.0.0-beta.9",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 231463,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@azure/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-server-fetch-3ec497",
+   "rank": 24,
+   "kind": "mcp",
+   "kind_rank": 24,
+   "name": "mcp-server-fetch",
+   "source": "pypi",
+   "version": "2026.11.18",
+   "commit": null,
+   "spec": "pypi:mcp-server-fetch==2026.11.18",
+   "url": "https://pypi.org/project/mcp-server-fetch/2026.11.18/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 229883,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-server-fetch/recent"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-zereight-mcp-gitlab-4142ce",
+   "rank": 25,
+   "kind": "mcp",
+   "kind_rank": 25,
+   "name": "@zereight/mcp-gitlab",
+   "source": "npm",
+   "version": "2.3.30",
+   "commit": null,
+   "spec": "@zereight/mcp-gitlab@2.3.30",
+   "url": "https://www.npmjs.com/package/@zereight/mcp-gitlab/v/2.3.30",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 226557,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@zereight/mcp-gitlab"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-sentry-mcp-server-e1dcaf",
+   "rank": 26,
+   "kind": "mcp",
+   "kind_rank": 26,
+   "name": "@sentry/mcp-server",
+   "source": "npm",
+   "version": "0.50.0",
+   "commit": null,
+   "spec": "@sentry/mcp-server@0.50.0",
+   "url": "https://www.npmjs.com/package/@sentry/mcp-server/v/0.50.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 217016,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@sentry/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-next-devtools-mcp-28f604",
+   "rank": 27,
+   "kind": "mcp",
+   "kind_rank": 27,
+   "name": "next-devtools-mcp",
+   "source": "npm",
+   "version": "0.4.0",
+   "commit": null,
+   "spec": "next-devtools-mcp@0.4.0",
+   "url": "https://www.npmjs.com/package/next-devtools-mcp/v/0.4.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 177932,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/next-devtools-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-agentation-mcp-25c21c",
+   "rank": 28,
+   "kind": "mcp",
+   "kind_rank": 28,
+   "name": "agentation-mcp",
+   "source": "npm",
+   "version": "1.3.2",
+   "commit": null,
+   "spec": "agentation-mcp@1.3.2",
+   "url": "https://www.npmjs.com/package/agentation-mcp/v/1.3.2",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 146311,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/agentation-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-server-time-b9b2a7",
+   "rank": 29,
+   "kind": "mcp",
+   "kind_rank": 29,
+   "name": "mcp-server-time",
+   "source": "pypi",
+   "version": "2026.11.18",
+   "commit": null,
+   "spec": "pypi:mcp-server-time==2026.11.18",
+   "url": "https://pypi.org/project/mcp-server-time/2026.11.18/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 145836,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-server-time/recent"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-azure-devops-mcp-c5862c",
+   "rank": 30,
+   "kind": "mcp",
+   "kind_rank": 30,
+   "name": "@azure-devops/mcp",
+   "source": "npm",
+   "version": "2.11.0",
+   "commit": null,
+   "spec": "@azure-devops/mcp@2.11.0",
+   "url": "https://www.npmjs.com/package/@azure-devops/mcp/v/2.11.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 136515,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@azure-devops/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-launchdarkly-mcp-server-2d7863",
+   "rank": 31,
+   "kind": "mcp",
+   "kind_rank": 31,
+   "name": "@launchdarkly/mcp-server",
+   "source": "npm",
+   "version": "0.7.2",
+   "commit": null,
+   "spec": "@launchdarkly/mcp-server@0.7.2",
+   "url": "https://www.npmjs.com/package/@launchdarkly/mcp-server/v/0.7.2",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 134364,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@launchdarkly/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-postgres-mcp-748f15",
+   "rank": 32,
+   "kind": "mcp",
+   "kind_rank": 32,
+   "name": "postgres-mcp",
+   "source": "pypi",
+   "version": "0.3.0",
+   "commit": null,
+   "spec": "pypi:postgres-mcp==0.3.0",
+   "url": "https://pypi.org/project/postgres-mcp/0.3.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 132721,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/postgres-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-firecrawl-mcp-e434d0",
+   "rank": 33,
+   "kind": "mcp",
+   "kind_rank": 33,
+   "name": "firecrawl-mcp",
+   "source": "npm",
+   "version": "3.41.0",
+   "commit": null,
+   "spec": "firecrawl-mcp@3.41.0",
+   "url": "https://www.npmjs.com/package/firecrawl-mcp/v/3.41.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 129644,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/firecrawl-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-lean-lsp-mcp-3bc5bb",
+   "rank": 34,
+   "kind": "mcp",
+   "kind_rank": 34,
+   "name": "lean-lsp-mcp",
+   "source": "pypi",
+   "version": "0.33.0",
+   "commit": null,
+   "spec": "pypi:lean-lsp-mcp==0.33.0",
+   "url": "https://pypi.org/project/lean-lsp-mcp/0.33.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 128076,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/lean-lsp-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mongodb-mcp-server-5b8a21",
+   "rank": 35,
+   "kind": "mcp",
+   "kind_rank": 35,
+   "name": "mongodb-mcp-server",
+   "source": "npm",
+   "version": "3.3.0",
+   "commit": null,
+   "spec": "mongodb-mcp-server@3.3.0",
+   "url": "https://www.npmjs.com/package/mongodb-mcp-server/v/3.3.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 127139,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/mongodb-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mastra-mcp-docs-server-75c477",
+   "rank": 36,
+   "kind": "mcp",
+   "kind_rank": 36,
+   "name": "@mastra/mcp-docs-server",
+   "source": "npm",
+   "version": "1.3.15",
+   "commit": null,
+   "spec": "@mastra/mcp-docs-server@1.3.15",
+   "url": "https://www.npmjs.com/package/@mastra/mcp-docs-server/v/1.3.15",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 125893,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@mastra/mcp-docs-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-processon-mcp-server-processon-node-9bafe8",
+   "rank": 37,
+   "kind": "mcp",
+   "kind_rank": 37,
+   "name": "@processon/mcp-server-processon-node",
+   "source": "npm",
+   "version": "1.0.10",
+   "commit": null,
+   "spec": "@processon/mcp-server-processon-node@1.0.10",
+   "url": "https://www.npmjs.com/package/@processon/mcp-server-processon-node/v/1.0.10",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 123621,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@processon/mcp-server-processon-node"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-kubb-mcp-fc31e8",
+   "rank": 38,
+   "kind": "mcp",
+   "kind_rank": 38,
+   "name": "@kubb/mcp",
+   "source": "npm",
+   "version": "5.23.1",
+   "commit": null,
+   "spec": "@kubb/mcp@5.23.1",
+   "url": "https://www.npmjs.com/package/@kubb/mcp/v/5.23.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 118449,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@kubb/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-nx-mcp-34f7ae",
+   "rank": 39,
+   "kind": "mcp",
+   "kind_rank": 39,
+   "name": "nx-mcp",
+   "source": "npm",
+   "version": "0.25.4",
+   "commit": null,
+   "spec": "nx-mcp@0.25.4",
+   "url": "https://www.npmjs.com/package/nx-mcp/v/0.25.4",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 115783,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/nx-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-ha-mcp-8d09c8",
+   "rank": 40,
+   "kind": "mcp",
+   "kind_rank": 40,
+   "name": "ha-mcp",
+   "source": "pypi",
+   "version": "9.2.0",
+   "commit": null,
+   "spec": "pypi:ha-mcp==9.2.0",
+   "url": "https://pypi.org/project/ha-mcp/9.2.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 115669,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/ha-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-aikidosec-mcp-1a6106",
+   "rank": 41,
+   "kind": "mcp",
+   "kind_rank": 41,
+   "name": "@aikidosec/mcp",
+   "source": "npm",
+   "version": "1.0.35",
+   "commit": null,
+   "spec": "@aikidosec/mcp@1.0.35",
+   "url": "https://www.npmjs.com/package/@aikidosec/mcp/v/1.0.35",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 110882,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@aikidosec/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-sveltejs-mcp-3ee72d",
+   "rank": 42,
+   "kind": "mcp",
+   "kind_rank": 42,
+   "name": "@sveltejs/mcp",
+   "source": "npm",
+   "version": "0.1.31",
+   "commit": null,
+   "spec": "@sveltejs/mcp@0.1.31",
+   "url": "https://www.npmjs.com/package/@sveltejs/mcp/v/0.1.31",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 110281,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@sveltejs/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-proxy-for-aws-cli-3b6c0e",
+   "rank": 43,
+   "kind": "mcp",
+   "kind_rank": 43,
+   "name": "mcp-proxy-for-aws-cli",
+   "source": "pypi",
+   "version": "2.0.0",
+   "commit": null,
+   "spec": "pypi:mcp-proxy-for-aws-cli==2.0.0",
+   "url": "https://pypi.org/project/mcp-proxy-for-aws-cli/2.0.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 109990,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-proxy-for-aws-cli/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-sap-ux-fiori-mcp-server-4a4d98",
+   "rank": 44,
+   "kind": "mcp",
+   "kind_rank": 44,
+   "name": "@sap-ux/fiori-mcp-server",
+   "source": "npm",
+   "version": "1.17.0",
+   "commit": null,
+   "spec": "@sap-ux/fiori-mcp-server@1.17.0",
+   "url": "https://www.npmjs.com/package/@sap-ux/fiori-mcp-server/v/1.17.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 107745,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@sap-ux/fiori-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-server-git-2cb23c",
+   "rank": 45,
+   "kind": "mcp",
+   "kind_rank": 45,
+   "name": "mcp-server-git",
+   "source": "pypi",
+   "version": "2026.11.18",
+   "commit": null,
+   "spec": "pypi:mcp-server-git==2026.11.18",
+   "url": "https://pypi.org/project/mcp-server-git/2026.11.18/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 105960,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-server-git/recent"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "mcp-npm-currents-mcp-7c51e1",
+   "rank": 46,
+   "kind": "mcp",
+   "kind_rank": 46,
+   "name": "@currents/mcp",
+   "source": "npm",
+   "version": "2.7.0",
+   "commit": null,
+   "spec": "@currents/mcp@2.7.0",
+   "url": "https://www.npmjs.com/package/@currents/mcp/v/2.7.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 105161,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@currents/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-ui5-mcp-server-3383c5",
+   "rank": 47,
+   "kind": "mcp",
+   "kind_rank": 47,
+   "name": "@ui5/mcp-server",
+   "source": "npm",
+   "version": "0.3.3",
+   "commit": null,
+   "spec": "@ui5/mcp-server@0.3.3",
+   "url": "https://www.npmjs.com/package/@ui5/mcp-server/v/0.3.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 101666,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@ui5/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-aws-api-mcp-server-0b6aec",
+   "rank": 48,
+   "kind": "mcp",
+   "kind_rank": 48,
+   "name": "awslabs-aws-api-mcp-server",
+   "source": "pypi",
+   "version": "1.6.1",
+   "commit": null,
+   "spec": "pypi:awslabs-aws-api-mcp-server==1.6.1",
+   "url": "https://pypi.org/project/awslabs-aws-api-mcp-server/1.6.1/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 98382,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-aws-api-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-proxy-3e6bf4",
+   "rank": 49,
+   "kind": "mcp",
+   "kind_rank": 49,
+   "name": "mcp-proxy",
+   "source": "pypi",
+   "version": "0.15.0",
+   "commit": null,
+   "spec": "pypi:mcp-proxy==0.15.0",
+   "url": "https://pypi.org/project/mcp-proxy/0.15.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 94143,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-proxy/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-aws-documentation-mcp-server-9c4aeb",
+   "rank": 50,
+   "kind": "mcp",
+   "kind_rank": 50,
+   "name": "awslabs-aws-documentation-mcp-server",
+   "source": "pypi",
+   "version": "1.2.6",
+   "commit": null,
+   "spec": "pypi:awslabs-aws-documentation-mcp-server==1.2.6",
+   "url": "https://pypi.org/project/awslabs-aws-documentation-mcp-server/1.2.6/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 91127,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-aws-documentation-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-academy-guide-95c06f",
+   "rank": 51,
+   "kind": "skill",
+   "kind_rank": 1,
+   "name": "academy-guide",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/academy-guide",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/academy-guide",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/academy-guide",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-algorithmic-art-911b8a",
+   "rank": 52,
+   "kind": "skill",
+   "kind_rank": 2,
+   "name": "algorithmic-art",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/algorithmic-art",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/algorithmic-art",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/algorithmic-art",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-brand-guidelines-91cd72",
+   "rank": 53,
+   "kind": "skill",
+   "kind_rank": 3,
+   "name": "brand-guidelines",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/brand-guidelines",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/brand-guidelines",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/brand-guidelines",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-canvas-design-559e52",
+   "rank": 54,
+   "kind": "skill",
+   "kind_rank": 4,
+   "name": "canvas-design",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/canvas-design",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/canvas-design",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/canvas-design",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-claude-api-b91236",
+   "rank": 55,
+   "kind": "skill",
+   "kind_rank": 5,
+   "name": "claude-api",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/claude-api",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/claude-api",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/claude-api",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-discernment-nudge-c3ebb1",
+   "rank": 56,
+   "kind": "skill",
+   "kind_rank": 6,
+   "name": "discernment-nudge",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/discernment-nudge",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/discernment-nudge",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/discernment-nudge",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-doc-coauthoring-750689",
+   "rank": 57,
+   "kind": "skill",
+   "kind_rank": 7,
+   "name": "doc-coauthoring",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/doc-coauthoring",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/doc-coauthoring",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/doc-coauthoring",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-docx-00ffcc",
+   "rank": 58,
+   "kind": "skill",
+   "kind_rank": 8,
+   "name": "docx",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/docx",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/docx",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/docx",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-frontend-design-3628f6",
+   "rank": 59,
+   "kind": "skill",
+   "kind_rank": 9,
+   "name": "frontend-design",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/frontend-design",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/frontend-design",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/frontend-design",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-internal-comms-dd8982",
+   "rank": 60,
+   "kind": "skill",
+   "kind_rank": 10,
+   "name": "internal-comms",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/internal-comms",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/internal-comms",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/internal-comms",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-mcp-builder-cb47ad",
+   "rank": 61,
+   "kind": "skill",
+   "kind_rank": 11,
+   "name": "mcp-builder",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/mcp-builder",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/mcp-builder",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/mcp-builder",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-pdf-2194f7",
+   "rank": 62,
+   "kind": "skill",
+   "kind_rank": 12,
+   "name": "pdf",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/pdf",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/pdf",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/pdf",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-pptx-2c4f53",
+   "rank": 63,
+   "kind": "skill",
+   "kind_rank": 13,
+   "name": "pptx",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/pptx",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/pptx",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/pptx",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-skill-creator-abe73b",
+   "rank": 64,
+   "kind": "skill",
+   "kind_rank": 14,
+   "name": "skill-creator",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/skill-creator",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/skill-creator",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/skill-creator",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-slack-gif-creator-171a63",
+   "rank": 65,
+   "kind": "skill",
+   "kind_rank": 15,
+   "name": "slack-gif-creator",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/slack-gif-creator",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/slack-gif-creator",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/slack-gif-creator",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-theme-factory-14b3cc",
+   "rank": 66,
+   "kind": "skill",
+   "kind_rank": 16,
+   "name": "theme-factory",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/theme-factory",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/theme-factory",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/theme-factory",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-web-artifacts-builder-4f9efa",
+   "rank": 67,
+   "kind": "skill",
+   "kind_rank": 17,
+   "name": "web-artifacts-builder",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/web-artifacts-builder",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/web-artifacts-builder",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/web-artifacts-builder",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-webapp-testing-aa9d29",
+   "rank": 68,
+   "kind": "skill",
+   "kind_rank": 18,
+   "name": "webapp-testing",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/webapp-testing",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/webapp-testing",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/webapp-testing",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-xlsx-586453",
+   "rank": 69,
+   "kind": "skill",
+   "kind_rank": 19,
+   "name": "xlsx",
+   "source": "github",
+   "version": null,
+   "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+   "repo": "anthropics/skills",
+   "path": "skills/xlsx",
+   "spec": "git:https://github.com/anthropics/skills.git@e4bb5d960d87126ff3b3a8af1a104b7db67560ba#skills/xlsx",
+   "url": "https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/xlsx",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 197873,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "skill-affaan-m-ecc-skills-accessibility-657a36",
+   "rank": 70,
+   "kind": "skill",
+   "kind_rank": 20,
+   "name": "accessibility",
+   "source": "github",
+   "version": null,
+   "commit": "4adeee6732a12d1540f49a4d50a38ce8c97f9a53",
+   "repo": "affaan-m/ECC",
+   "path": "skills/accessibility",
+   "spec": "git:https://github.com/affaan-m/ECC.git@4adeee6732a12d1540f49a4d50a38ce8c97f9a53#skills/accessibility",
+   "url": "https://github.com/affaan-m/ECC/tree/4adeee6732a12d1540f49a4d50a38ce8c97f9a53/skills/accessibility",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 307489,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/affaan-m/ECC"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-affaan-m-ecc-skills-agent-architecture-audit-a5b3cb",
+   "rank": 71,
+   "kind": "skill",
+   "kind_rank": 21,
+   "name": "agent-architecture-audit",
+   "source": "github",
+   "version": null,
+   "commit": "4adeee6732a12d1540f49a4d50a38ce8c97f9a53",
+   "repo": "affaan-m/ECC",
+   "path": "skills/agent-architecture-audit",
+   "spec": "git:https://github.com/affaan-m/ECC.git@4adeee6732a12d1540f49a4d50a38ce8c97f9a53#skills/agent-architecture-audit",
+   "url": "https://github.com/affaan-m/ECC/tree/4adeee6732a12d1540f49a4d50a38ce8c97f9a53/skills/agent-architecture-audit",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 307489,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/affaan-m/ECC"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-multica-ai-andrej-karpathy-skills-skills-karpathy-guidelines-ffa669",
+   "rank": 72,
+   "kind": "skill",
+   "kind_rank": 22,
+   "name": "karpathy-guidelines",
+   "source": "github",
+   "version": null,
+   "commit": "2c606141936f1eeef17fa3043a72095b4765b9c2",
+   "repo": "multica-ai/andrej-karpathy-skills",
+   "path": "skills/karpathy-guidelines",
+   "spec": "git:https://github.com/multica-ai/andrej-karpathy-skills.git@2c606141936f1eeef17fa3043a72095b4765b9c2#skills/karpathy-guidelines",
+   "url": "https://github.com/multica-ai/andrej-karpathy-skills/tree/2c606141936f1eeef17fa3043a72095b4765b9c2/skills/karpathy-guidelines",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 234620,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/multica-ai/andrej-karpathy-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-langgenius-dify-skills-difyctl-58feaa",
+   "rank": 73,
+   "kind": "skill",
+   "kind_rank": 23,
+   "name": "difyctl",
+   "source": "github",
+   "version": null,
+   "commit": "63b9827e32faa532bf383f1acf1f9097f8b7b9a4",
+   "repo": "langgenius/dify",
+   "path": "skills/difyctl",
+   "spec": "git:https://github.com/langgenius/dify.git@63b9827e32faa532bf383f1acf1f9097f8b7b9a4#skills/difyctl",
+   "url": "https://github.com/langgenius/dify/tree/63b9827e32faa532bf383f1acf1f9097f8b7b9a4/skills/difyctl",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 161559,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/langgenius/dify"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-shubhamsaboo-awesome-llm-apps-agent_skills-advisor-orchestrator-worker-81a68d",
+   "rank": 74,
+   "kind": "skill",
+   "kind_rank": 24,
+   "name": "advisor-orchestrator-worker",
+   "source": "github",
+   "version": null,
+   "commit": "14c5f8ff0094659f321801385d2b52ccc65fea3b",
+   "repo": "Shubhamsaboo/awesome-llm-apps",
+   "path": "agent_skills/advisor-orchestrator-worker",
+   "spec": "git:https://github.com/Shubhamsaboo/awesome-llm-apps.git@14c5f8ff0094659f321801385d2b52ccc65fea3b#agent_skills/advisor-orchestrator-worker",
+   "url": "https://github.com/Shubhamsaboo/awesome-llm-apps/tree/14c5f8ff0094659f321801385d2b52ccc65fea3b/agent_skills/advisor-orchestrator-worker",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 145128,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Shubhamsaboo/awesome-llm-apps"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-shubhamsaboo-awesome-llm-apps-agent_skills-commit-archaeologist-8b2517",
+   "rank": 75,
+   "kind": "skill",
+   "kind_rank": 25,
+   "name": "commit-archaeologist",
+   "source": "github",
+   "version": null,
+   "commit": "14c5f8ff0094659f321801385d2b52ccc65fea3b",
+   "repo": "Shubhamsaboo/awesome-llm-apps",
+   "path": "agent_skills/commit-archaeologist",
+   "spec": "git:https://github.com/Shubhamsaboo/awesome-llm-apps.git@14c5f8ff0094659f321801385d2b52ccc65fea3b#agent_skills/commit-archaeologist",
+   "url": "https://github.com/Shubhamsaboo/awesome-llm-apps/tree/14c5f8ff0094659f321801385d2b52ccc65fea3b/agent_skills/commit-archaeologist",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 145128,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Shubhamsaboo/awesome-llm-apps"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-juliusbrussee-caveman-skills-cavecrew-973fdf",
+   "rank": 76,
+   "kind": "skill",
+   "kind_rank": 26,
+   "name": "cavecrew",
+   "source": "github",
+   "version": null,
+   "commit": "a192894723a8f47e7f504c7b5041967ff1f18e55",
+   "repo": "JuliusBrussee/caveman",
+   "path": "skills/cavecrew",
+   "spec": "git:https://github.com/JuliusBrussee/caveman.git@a192894723a8f47e7f504c7b5041967ff1f18e55#skills/cavecrew",
+   "url": "https://github.com/JuliusBrussee/caveman/tree/a192894723a8f47e7f504c7b5041967ff1f18e55/skills/cavecrew",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 121671,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/JuliusBrussee/caveman"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-juliusbrussee-caveman-skills-caveman-b95c66",
+   "rank": 77,
+   "kind": "skill",
+   "kind_rank": 27,
+   "name": "caveman",
+   "source": "github",
+   "version": null,
+   "commit": "a192894723a8f47e7f504c7b5041967ff1f18e55",
+   "repo": "JuliusBrussee/caveman",
+   "path": "skills/caveman",
+   "spec": "git:https://github.com/JuliusBrussee/caveman.git@a192894723a8f47e7f504c7b5041967ff1f18e55#skills/caveman",
+   "url": "https://github.com/JuliusBrussee/caveman/tree/a192894723a8f47e7f504c7b5041967ff1f18e55/skills/caveman",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 121671,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/JuliusBrussee/caveman"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-addyosmani-agent-skills-skills-accessibility-engineering-7ef9a0",
+   "rank": 78,
+   "kind": "skill",
+   "kind_rank": 28,
+   "name": "accessibility-engineering",
+   "source": "github",
+   "version": null,
+   "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee",
+   "repo": "addyosmani/agent-skills",
+   "path": "skills/accessibility-engineering",
+   "spec": "git:https://github.com/addyosmani/agent-skills.git@8c99fa36d90068c82d547f7c12a9d67a3e95f4ee#skills/accessibility-engineering",
+   "url": "https://github.com/addyosmani/agent-skills/tree/8c99fa36d90068c82d547f7c12a9d67a3e95f4ee/skills/accessibility-engineering",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 119282,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/addyosmani/agent-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-addyosmani-agent-skills-skills-api-and-interface-design-1543e2",
+   "rank": 79,
+   "kind": "skill",
+   "kind_rank": 29,
+   "name": "api-and-interface-design",
+   "source": "github",
+   "version": null,
+   "commit": "8c99fa36d90068c82d547f7c12a9d67a3e95f4ee",
+   "repo": "addyosmani/agent-skills",
+   "path": "skills/api-and-interface-design",
+   "spec": "git:https://github.com/addyosmani/agent-skills.git@8c99fa36d90068c82d547f7c12a9d67a3e95f4ee#skills/api-and-interface-design",
+   "url": "https://github.com/addyosmani/agent-skills/tree/8c99fa36d90068c82d547f7c12a9d67a3e95f4ee/skills/api-and-interface-design",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 119282,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/addyosmani/agent-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-leonxlnx-taste-skill-skills-taste-skill-f3b29d",
+   "rank": 80,
+   "kind": "skill",
+   "kind_rank": 30,
+   "name": "taste-skill",
+   "source": "github",
+   "version": null,
+   "commit": "f6b76575f949707b4e3c37cd86cb44b0b98643e8",
+   "repo": "Leonxlnx/taste-skill",
+   "path": "skills/taste-skill",
+   "spec": "git:https://github.com/Leonxlnx/taste-skill.git@f6b76575f949707b4e3c37cd86cb44b0b98643e8#skills/taste-skill",
+   "url": "https://github.com/Leonxlnx/taste-skill/tree/f6b76575f949707b4e3c37cd86cb44b0b98643e8/skills/taste-skill",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 119117,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Leonxlnx/taste-skill"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-mattpocock-skills-d1dbe9",
+   "rank": 81,
+   "kind": "plugin",
+   "kind_rank": 1,
+   "name": "mattpocock-skills",
+   "source": "github",
+   "version": null,
+   "commit": "49dd158d1076134a641b33efb035946536778336",
+   "repo": "mattpocock/skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/mattpocock/skills.git@49dd158d1076134a641b33efb035946536778336",
+   "url": "https://github.com/mattpocock/skills/tree/49dd158d1076134a641b33efb035946536778336",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 328485,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/mattpocock/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-obra-superpowers-574554",
+   "rank": 82,
+   "kind": "plugin",
+   "kind_rank": 2,
+   "name": "superpowers",
+   "source": "github",
+   "version": null,
+   "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+   "repo": "obra/superpowers",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/obra/superpowers.git@22f0b463e7a5e579904dd6211a520321035526f7",
+   "url": "https://github.com/obra/superpowers/tree/22f0b463e7a5e579904dd6211a520321035526f7",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 322452,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/obra/superpowers"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-dietrichgebert-ponytail-1cb7b1",
+   "rank": 83,
+   "kind": "plugin",
+   "kind_rank": 3,
+   "name": "ponytail",
+   "source": "github",
+   "version": null,
+   "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+   "repo": "DietrichGebert/ponytail",
+   "path": "",
+   "marketplace": "DietrichGebert/ponytail",
+   "spec": "git:https://github.com/DietrichGebert/ponytail.git@96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+   "url": "https://github.com/DietrichGebert/ponytail/tree/96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 195197,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/DietrichGebert/ponytail"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-thedotmack-claude-mem-plugin-b07831",
+   "rank": 84,
+   "kind": "plugin",
+   "kind_rank": 4,
+   "name": "claude-mem",
+   "source": "github",
+   "version": null,
+   "commit": "c0f37d60b2e4860851575e3cbb003f23fc340d4e",
+   "repo": "thedotmack/claude-mem",
+   "path": "plugin",
+   "marketplace": "thedotmack/claude-mem",
+   "spec": "git:https://github.com/thedotmack/claude-mem.git@c0f37d60b2e4860851575e3cbb003f23fc340d4e#plugin",
+   "url": "https://github.com/thedotmack/claude-mem/tree/c0f37d60b2e4860851575e3cbb003f23fc340d4e/plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 118537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/thedotmack/claude-mem"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-thedotmack-claude-mem-cowork-0017bd",
+   "rank": 85,
+   "kind": "plugin",
+   "kind_rank": 5,
+   "name": "cmem-pro",
+   "source": "github",
+   "version": null,
+   "commit": "c0f37d60b2e4860851575e3cbb003f23fc340d4e",
+   "repo": "thedotmack/claude-mem",
+   "path": "cowork",
+   "marketplace": "thedotmack/claude-mem",
+   "spec": "git:https://github.com/thedotmack/claude-mem.git@c0f37d60b2e4860851575e3cbb003f23fc340d4e#cowork",
+   "url": "https://github.com/thedotmack/claude-mem/tree/c0f37d60b2e4860851575e3cbb003f23fc340d4e/cowork",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 118537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/thedotmack/claude-mem"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-heygen-com-hyperframes-b89ef0",
+   "rank": 86,
+   "kind": "plugin",
+   "kind_rank": 6,
+   "name": "hyperframes",
+   "source": "github",
+   "version": null,
+   "commit": "8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2",
+   "repo": "heygen-com/hyperframes",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/heygen-com/hyperframes.git@8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2",
+   "url": "https://github.com/heygen-com/hyperframes/tree/8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 87230,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/heygen-com/hyperframes"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-career-ops-hq-career-ops-a4b120",
+   "rank": 87,
+   "kind": "plugin",
+   "kind_rank": 7,
+   "name": "career-ops",
+   "source": "github",
+   "version": null,
+   "commit": "41eddf425f2cc40978075eea55243b1ee8dc64c6",
+   "repo": "career-ops-hq/career-ops",
+   "path": "",
+   "marketplace": "career-ops-hq/career-ops",
+   "spec": "git:https://github.com/career-ops-hq/career-ops.git@41eddf425f2cc40978075eea55243b1ee8dc64c6",
+   "url": "https://github.com/career-ops-hq/career-ops/tree/41eddf425f2cc40978075eea55243b1ee8dc64c6",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 83876,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/career-ops-hq/career-ops"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-ayghri-i-have-adhd-f35840",
+   "rank": 88,
+   "kind": "plugin",
+   "kind_rank": 8,
+   "name": "i-have-adhd",
+   "source": "github",
+   "version": null,
+   "commit": "1ecea1993b7fce257ffbd686c070948b5e07eda6",
+   "repo": "ayghri/i-have-adhd",
+   "path": "",
+   "marketplace": "ayghri/i-have-adhd",
+   "spec": "git:https://github.com/ayghri/i-have-adhd.git@1ecea1993b7fce257ffbd686c070948b5e07eda6",
+   "url": "https://github.com/ayghri/i-have-adhd/tree/1ecea1993b7fce257ffbd686c070948b5e07eda6",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 61756,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ayghri/i-have-adhd"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-coreyhaines31-marketingskills-6f54ea",
+   "rank": 89,
+   "kind": "plugin",
+   "kind_rank": 9,
+   "name": "marketing-skills",
+   "source": "github",
+   "version": null,
+   "commit": "5b2b400eec1e7e1cec76245a715d0b0d4fd2a9c1",
+   "repo": "coreyhaines31/marketingskills",
+   "path": "",
+   "marketplace": "coreyhaines31/marketingskills",
+   "spec": "git:https://github.com/coreyhaines31/marketingskills.git@5b2b400eec1e7e1cec76245a715d0b0d4fd2a9c1",
+   "url": "https://github.com/coreyhaines31/marketingskills/tree/5b2b400eec1e7e1cec76245a715d0b0d4fd2a9c1",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 61611,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/coreyhaines31/marketingskills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-chromedevtools-chrome-devtools-mcp-db4496",
+   "rank": 90,
+   "kind": "plugin",
+   "kind_rank": 10,
+   "name": "chrome-devtools-mcp",
+   "source": "github",
+   "version": null,
+   "commit": "a878bcad39584337e055778353246820deafa7c0",
+   "repo": "ChromeDevTools/chrome-devtools-mcp",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/ChromeDevTools/chrome-devtools-mcp.git@a878bcad39584337e055778353246820deafa7c0",
+   "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/tree/a878bcad39584337e055778353246820deafa7c0",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 58449,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ChromeDevTools/chrome-devtools-mcp"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-sickn33-agentic-awesome-skills-plugins-agentic-awesome-skills-claude-e9562a",
+   "rank": 91,
+   "kind": "plugin",
+   "kind_rank": 11,
+   "name": "agentic-awesome-skills",
+   "source": "github",
+   "version": null,
+   "commit": "4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea",
+   "repo": "sickn33/agentic-awesome-skills",
+   "path": "plugins/agentic-awesome-skills-claude",
+   "marketplace": "sickn33/agentic-awesome-skills",
+   "spec": "git:https://github.com/sickn33/agentic-awesome-skills.git@4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea#plugins/agentic-awesome-skills-claude",
+   "url": "https://github.com/sickn33/agentic-awesome-skills/tree/4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea/plugins/agentic-awesome-skills-claude",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 50025,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/sickn33/agentic-awesome-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-sickn33-agentic-awesome-skills-plugins-agentic-bundle-essentials-ecc7b1",
+   "rank": 92,
+   "kind": "plugin",
+   "kind_rank": 12,
+   "name": "agentic-bundle-essentials",
+   "source": "github",
+   "version": null,
+   "commit": "4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea",
+   "repo": "sickn33/agentic-awesome-skills",
+   "path": "plugins/agentic-bundle-essentials",
+   "marketplace": "sickn33/agentic-awesome-skills",
+   "spec": "git:https://github.com/sickn33/agentic-awesome-skills.git@4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea#plugins/agentic-bundle-essentials",
+   "url": "https://github.com/sickn33/agentic-awesome-skills/tree/4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea/plugins/agentic-bundle-essentials",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 50025,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/sickn33/agentic-awesome-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-anthropics-claude-plugins-official-plugins-agent-sdk-dev-0d2dd6",
+   "rank": 93,
+   "kind": "plugin",
+   "kind_rank": 13,
+   "name": "agent-sdk-dev",
+   "source": "github",
+   "version": null,
+   "commit": "d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6",
+   "repo": "anthropics/claude-plugins-official",
+   "path": "plugins/agent-sdk-dev",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/anthropics/claude-plugins-official.git@d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6#plugins/agent-sdk-dev",
+   "url": "https://github.com/anthropics/claude-plugins-official/tree/d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6/plugins/agent-sdk-dev",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 47773,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/claude-plugins-official"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-anthropics-claude-plugins-official-external_plugins-asana-b8cfe9",
+   "rank": 94,
+   "kind": "plugin",
+   "kind_rank": 14,
+   "name": "asana",
+   "source": "github",
+   "version": null,
+   "commit": "d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6",
+   "repo": "anthropics/claude-plugins-official",
+   "path": "external_plugins/asana",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/anthropics/claude-plugins-official.git@d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6#external_plugins/asana",
+   "url": "https://github.com/anthropics/claude-plugins-official/tree/d7d32797e7e02708d0bb00ffe8b8f2397dc1aea6/external_plugins/asana",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 47773,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/claude-plugins-official"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-wshobson-agents-plugins-documentation-standards-7e55cb",
+   "rank": 95,
+   "kind": "plugin",
+   "kind_rank": 15,
+   "name": "documentation-standards",
+   "source": "github",
+   "version": null,
+   "commit": "42203085cfc5736204bf0f6d436dff7e1da0bf3f",
+   "repo": "wshobson/agents",
+   "path": "plugins/documentation-standards",
+   "marketplace": "wshobson/agents",
+   "spec": "git:https://github.com/wshobson/agents.git@42203085cfc5736204bf0f6d436dff7e1da0bf3f#plugins/documentation-standards",
+   "url": "https://github.com/wshobson/agents/tree/42203085cfc5736204bf0f6d436dff7e1da0bf3f/plugins/documentation-standards",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 42719,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/wshobson/agents"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-wshobson-agents-plugins-code-documentation-2c98dc",
+   "rank": 96,
+   "kind": "plugin",
+   "kind_rank": 16,
+   "name": "code-documentation",
+   "source": "github",
+   "version": null,
+   "commit": "42203085cfc5736204bf0f6d436dff7e1da0bf3f",
+   "repo": "wshobson/agents",
+   "path": "plugins/code-documentation",
+   "marketplace": "wshobson/agents",
+   "spec": "git:https://github.com/wshobson/agents.git@42203085cfc5736204bf0f6d436dff7e1da0bf3f#plugins/code-documentation",
+   "url": "https://github.com/wshobson/agents/tree/42203085cfc5736204bf0f6d436dff7e1da0bf3f/plugins/code-documentation",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 42719,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/wshobson/agents"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-anthropics-knowledge-work-plugins-productivity-f91b3d",
+   "rank": 97,
+   "kind": "plugin",
+   "kind_rank": 17,
+   "name": "productivity",
+   "source": "github",
+   "version": null,
+   "commit": "0e0fcacddcc892eb92a1b7873ff9d68159c47571",
+   "repo": "anthropics/knowledge-work-plugins",
+   "path": "productivity",
+   "marketplace": "anthropics/knowledge-work-plugins",
+   "spec": "git:https://github.com/anthropics/knowledge-work-plugins.git@0e0fcacddcc892eb92a1b7873ff9d68159c47571#productivity",
+   "url": "https://github.com/anthropics/knowledge-work-plugins/tree/0e0fcacddcc892eb92a1b7873ff9d68159c47571/productivity",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 36600,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/knowledge-work-plugins"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-anthropics-knowledge-work-plugins-enterprise-search-4fcf3f",
+   "rank": 98,
+   "kind": "plugin",
+   "kind_rank": 18,
+   "name": "enterprise-search",
+   "source": "github",
+   "version": null,
+   "commit": "0e0fcacddcc892eb92a1b7873ff9d68159c47571",
+   "repo": "anthropics/knowledge-work-plugins",
+   "path": "enterprise-search",
+   "marketplace": "anthropics/knowledge-work-plugins",
+   "spec": "git:https://github.com/anthropics/knowledge-work-plugins.git@0e0fcacddcc892eb92a1b7873ff9d68159c47571#enterprise-search",
+   "url": "https://github.com/anthropics/knowledge-work-plugins/tree/0e0fcacddcc892eb92a1b7873ff9d68159c47571/enterprise-search",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 36600,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/knowledge-work-plugins"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-mksglu-context-mode-plugins-claude-code-f529ad",
+   "rank": 99,
+   "kind": "plugin",
+   "kind_rank": 19,
+   "name": "context-mode",
+   "source": "github",
+   "version": null,
+   "commit": "a0e429558100c41fba1bb91be852da23c3423a90",
+   "repo": "mksglu/context-mode",
+   "path": "plugins/claude-code",
+   "marketplace": "mksglu/context-mode",
+   "spec": "git:https://github.com/mksglu/context-mode.git@a0e429558100c41fba1bb91be852da23c3423a90#plugins/claude-code",
+   "url": "https://github.com/mksglu/context-mode/tree/a0e429558100c41fba1bb91be852da23c3423a90/plugins/claude-code",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 34325,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/mksglu/context-mode"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-alirezarezvani-claude-skills-marketing-skill-ed5f7f",
+   "rank": 100,
+   "kind": "plugin",
+   "kind_rank": 20,
+   "name": "marketing-skills",
+   "source": "github",
+   "version": null,
+   "commit": "f8593c4941210a621a6629ce1da9e07897976d5f",
+   "repo": "alirezarezvani/claude-skills",
+   "path": "marketing-skill",
+   "marketplace": "alirezarezvani/claude-skills",
+   "spec": "git:https://github.com/alirezarezvani/claude-skills.git@f8593c4941210a621a6629ce1da9e07897976d5f#marketing-skill",
+   "url": "https://github.com/alirezarezvani/claude-skills/tree/f8593c4941210a621a6629ce1da9e07897976d5f/marketing-skill",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 30172,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/alirezarezvani/claude-skills"
+   },
+   "selection": "ranked"
+  }
+ ],
+ "excluded": [
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/sdk",
+   "reason": "SDK library"
+  },
+  {
+   "source": "npm",
+   "name": "ai",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/server",
+   "reason": "SDK library (server half)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/client",
+   "reason": "SDK library (client half)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/ext-apps",
+   "reason": "SDK extension library"
+  },
+  {
+   "source": "npm",
+   "name": "@ai-sdk/mcp",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/node",
+   "reason": "SDK library"
+  },
+  {
+   "source": "npm",
+   "name": "agent-install",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@earendil-works/pi-mcp",
+   "reason": "description marks an MCP client"
+  },
+  {
+   "source": "npm",
+   "name": "@storybook/addon-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@assistant-ui/react",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "fallow",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/express",
+   "reason": "SDK library"
+  },
+  {
+   "source": "npm",
+   "name": "@storybook/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@better-auth/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "eve",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-handler",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "@better-auth/cimd",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@devframes/agentic",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/inspector",
+   "reason": "developer inspection tool"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/ext-tasks",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@posthog/mcp",
+   "reason": "SDK library"
+  },
+  {
+   "source": "npm",
+   "name": "agent-device",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "fastmcp",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "@lovable.dev/mcp-js",
+   "reason": "description marks a non-server package ('author mcp servers')"
+  },
+  {
+   "source": "npm",
+   "name": "@hono/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@deepseek-ai/dsh-mcp-client",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@copilotkit/aimock",
+   "reason": "mock server for tests"
+  },
+  {
+   "source": "npm",
+   "name": "@ag-ui/mcp-apps-middleware",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "mcporter",
+   "reason": "MCP client/runtime CLI"
+  },
+  {
+   "source": "npm",
+   "name": "@reactuses/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@rekog/mcp-nest",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@deepseek-ai/dsh-mcp-resources",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "pi-mcp-adapter",
+   "reason": "description marks a non-server package ('adapter extension')"
+  },
+  {
+   "source": "npm",
+   "name": "@ag-ui/mcp-middleware",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "add-mcp",
+   "reason": "installer CLI that adds servers to AI clients"
+  },
+  {
+   "source": "npm",
+   "name": "@langchain/mcp-adapters",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-ui/client",
+   "reason": "description marks a non-server package ('sdk')"
+  },
+  {
+   "source": "npm",
+   "name": "@copilotkit/mcp-apps-renderer",
+   "reason": "description marks a non-server package ('framework')"
+  },
+  {
+   "source": "npm",
+   "name": "@expo/mcp-tunnel",
+   "reason": "description marks an MCP client"
+  },
+  {
+   "source": "npm",
+   "name": "rea-agents",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@clerk/mcp-tools",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@oh-my-pi/pi-mnemopi",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@supabase/mcp-utils",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@anthropic-ai/mcpb",
+   "reason": "bundle packaging CLI"
+  },
+  {
+   "source": "npm",
+   "name": "evmole",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@blaxel/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "react-devtools-cdt-mcp",
+   "reason": "description marks a non-server package ('library')"
+  },
+  {
+   "source": "npm",
+   "name": "@payloadcms/plugin-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/conformance",
+   "reason": "test suite"
+  },
+  {
+   "source": "npm",
+   "name": "yahoo-finance2",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-b/transports",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-b/webmcp-ts-sdk",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-b/global",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "blume",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@tanstack/ai-mcp",
+   "reason": "MCP client library"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-ui/server",
+   "reason": "description marks a non-server package ('sdk')"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/hono",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@raishin/vanguard-frontier-agentic",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "mockserver-client",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "ruvector",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "claude-mem",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "figma-developer-mcp",
+   "reason": "description marks a non-server package ('framework')"
+  },
+  {
+   "source": "npm",
+   "name": "@openai/mcp-extensions",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@bytebase/dbhub",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "workers-mcp",
+   "reason": "deployment CLI that turns a Cloudflare Worker into a server"
+  },
+  {
+   "source": "npm",
+   "name": "n8n-nodes-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-types",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@cargo-ai/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "clerk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-metrics",
+   "reason": "description marks a non-server package ('helpers')"
+  },
+  {
+   "source": "npm",
+   "name": "@deepseek-ai/dsh-mcp-manager",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "agentdb",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@nitrostack/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@nitrostack/widgets",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@nitrostack/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "supergateway",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@okki-aireach/aireach-cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "agentic-flow",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@gitkraken/gk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@azure/mcp-linux-x64",
+   "reason": "platform-specific binary of another package"
+  },
+  {
+   "source": "npm",
+   "name": "@executor-js/plugin-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@sap-ux/fiori-docs-embeddings",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "pi-mcp-extension",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-atlas-api-client",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@claude-flow/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-tools-mongodb",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-core",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-atlas-telemetry",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@azure/mcp-win32-x64",
+   "reason": "platform-specific binary of another package"
+  },
+  {
+   "source": "npm",
+   "name": "use-webmcp-tool",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "cline",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-tools-atlas",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-tools-assistant",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-cli",
+   "reason": "description marks a non-server package ('helpers')"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-tools-atlas-local",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-fetch",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-ui",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-setup",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-logging",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mongodb-js/mcp-http-runners",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "kordoc",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "dsh-windows-mcp",
+   "reason": "description marks an MCP client"
+  },
+  {
+   "source": "npm",
+   "name": "metaharness",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "n8n-nodes-mcp-client",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@vercel/mcp-adapter",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-framework",
+   "reason": "framework/scaffolder"
+  },
+  {
+   "source": "npm",
+   "name": "@claude-flow/shared",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "ctx7",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "agnost",
+   "reason": "description marks a non-server package ('sdk')"
+  },
+  {
+   "source": "npm",
+   "name": "gitnexus",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@tobilu/qmd",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/todos",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "context-mode",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-evals",
+   "reason": "description marks a non-server package ('evaluating')"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-lite",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@domscribe/relay",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@claude-flow/neural",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@modelcontextprotocol/fastify",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@vouchington/mcp-server",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mcpjam/sdk",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@agents-dev/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@n8n/mcp-apps",
+   "reason": "description marks a non-server package ('helpers')"
+  },
+  {
+   "source": "npm",
+   "name": "instar",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "ruflo",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@claude-flow/cli-core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "rsshub",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@microsoft/jsts-upgrade-assistant",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "polotno",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@n8n/mcp-browser",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "dsh-free-search",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "corsair",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "slack-mcp-server-linux-amd64",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@smthrs/mcp",
+   "reason": "MCP client adapter"
+  },
+  {
+   "source": "npm",
+   "name": "@nuxtjs/mcp-toolkit",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@azure/mcp-darwin-arm64",
+   "reason": "platform-specific binary of another package"
+  },
+  {
+   "source": "npm",
+   "name": "xmcp",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "@expo/agent-cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-use",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "kubernetes-mcp-server-linux-amd64",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-use/inspector",
+   "reason": "description marks a non-server package ('inspector')"
+  },
+  {
+   "source": "npm",
+   "name": "agnix",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@warmhub/sdk-ts",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@yawlabs/ctxlint",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/projects",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/mementos",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "endform",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@google/stitch-sdk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "skybridge",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/conversations",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/skills",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@bilig/headless",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@stacksjs/ai",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "headroom-ai",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "critical",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mcp-use/cli",
+   "reason": "developer CLI"
+  },
+  {
+   "source": "npm",
+   "name": "@traceloop/instrumentation-mcp",
+   "reason": "description marks a non-server package ('instrumentation')"
+  },
+  {
+   "source": "npm",
+   "name": "@cedar-policy/mcp-schema-generator-wasm",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "configure",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@k2b/fibel",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@pascal-app/lingo",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@cotal-ai/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@docmd/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@docmd/api",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@agentskit/tools",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@aident-ai/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@databuddy/sdk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@univerjs-pro/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@prefecthq/fastmcp-ts",
+   "reason": "framework"
+  },
+  {
+   "source": "npm",
+   "name": "mcp-echo-server",
+   "reason": "template"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/connectors",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "dynoxide",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "mockserver-node",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@hasna/files",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@shogo-ai/sdk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@voltagent/mcp-server",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@univerjs-pro/sheets-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@rekog/mcp-nest-auth",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "openapi-mcp-generator",
+   "reason": "description marks a non-server package ('generates mcp')"
+  },
+  {
+   "source": "npm",
+   "name": "frog",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@wong2/mcp-cli",
+   "reason": "description marks a non-server package ('inspector')"
+  },
+  {
+   "source": "npm",
+   "name": "@inkeep/open-knowledge",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "malicious-mcp-server",
+   "reason": "self-described test fixture"
+  },
+  {
+   "source": "npm",
+   "name": "@reticlehq/core",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "poplin",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "decocms",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@aralroca/gui-agent",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@mastra/mcp-apps-components",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@nanonets/graft",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "callscript",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@open-mercato/ai-assistant",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@reticlehq/browser",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@nest-openapi/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@aifinpay/skill",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "cotal-ai",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "usewebmcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@theia/ai-mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@procedures/client",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@adcp/sdk",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "convex-mcp-gateway",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@convex-dev/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@mcpjam/cli",
+   "reason": "developer test CLI"
+  },
+  {
+   "source": "npm",
+   "name": "flare-redact",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@getopencrawl/cli",
+   "reason": "name lacks 'mcp' and the description does not lead with 'MCP server' (a general tool with an MCP mode)"
+  },
+  {
+   "source": "npm",
+   "name": "@nestjs/mcp",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@salesforce/mcp-provider-lwc-experts",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "npm",
+   "name": "@salesforce/mcp-provider-aura-experts",
+   "reason": "no executable (bin): a library, not a runnable server"
+  },
+  {
+   "source": "pypi",
+   "name": "mcp",
+   "reason": "SDK library"
+  },
+  {
+   "source": "pypi",
+   "name": "mcp-types",
+   "reason": "description marks a non-server package ('wire types')"
+  },
+  {
+   "source": "pypi",
+   "name": "fastmcp",
+   "reason": "framework"
+  },
+  {
+   "source": "pypi",
+   "name": "fastmcp-slim",
+   "reason": "framework"
+  },
+  {
+   "source": "pypi",
+   "name": "langchain-mcp-adapters",
+   "reason": "framework"
+  },
+  {
+   "source": "pypi",
+   "name": "fastapi-mcp",
+   "reason": "framework"
+  },
+  {
+   "source": "pypi",
+   "name": "opentelemetry-instrumentation-mcp",
+   "reason": "description marks a non-server package ('instrumentation')"
+  },
+  {
+   "source": "pypi",
+   "name": "databricks-mcp",
+   "reason": "description marks a non-server package ('helpers')"
+  },
+  {
+   "source": "pypi",
+   "name": "fastmcp-tasks",
+   "reason": "framework"
+  },
+  {
+   "source": "pypi",
+   "name": "fastmcp-extensions",
+   "reason": "description marks a non-server package ('library')"
+  },
+  {
+   "source": "pypi",
+   "name": "uipath-mcp",
+   "reason": "description marks a non-server package ('sdk')"
+  },
+  {
+   "source": "pypi",
+   "name": "openinference-instrumentation-mcp",
+   "reason": "description marks a non-server package ('instrumentation')"
+  },
+  {
+   "source": "pypi",
+   "name": "fast-agent-mcp",
+   "reason": "description marks a non-server package ('evaluate')"
+  },
+  {
+   "source": "pypi",
+   "name": "mcpadapt",
+   "reason": "description marks a non-server package ('framework')"
+  },
+  {
+   "source": "pypi",
+   "name": "markitdown-mcp",
+   "reason": "description marks a non-server package ('library')"
+  },
+  {
+   "marketplace": "anthropics/claude-plugins-official",
+   "name": "rootly",
+   "reason": "hosting repository unavailable"
+  },
+  {
+   "marketplace": "anthropics/claude-plugins-official",
+   "name": "sentry-cli",
+   "reason": "hosting repository unavailable"
+  },
+  {
+   "marketplace": "anthropics/claude-plugins-official",
+   "name": "xcode",
+   "reason": "source type 'command' cannot be fetched statically"
+  },
+  {
+   "marketplace": "davepoon/buildwithclaude",
+   "name": "codex-orchestrator",
+   "reason": "source repository unavailable"
+  },
+  {
+   "marketplace": "davepoon/buildwithclaude",
+   "name": "agentwhy",
+   "reason": "source type 'npm' cannot be fetched statically"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/ask-matt",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/code-review",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/codebase-design",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/diagnosing-bugs",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/domain-modeling",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/grill-with-docs",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/implement",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/implement-spec",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/improve-codebase-architecture",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/pr",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/prototype",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/research",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/retro",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/setup-matt-pocock-skills",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/tdd",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/to-spec",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/to-tickets",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/triage",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/wayfinder",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/engineering/wizard",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/chief-of-staff",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/claude-handoff",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/loop-me",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/setup-ts-deep-modules",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/software-factory",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/writing-beats",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/writing-fragments",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/in-progress/writing-shape",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/misc/git-guardrails-claude-code",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/misc/migrate-to-shoehorn",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/misc/scaffold-exercises",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/misc/setup-pre-commit",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/grill-me",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/grilling",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/handoff",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/teach",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/to-questionnaire",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/wait-what",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "mattpocock/skills",
+   "path": "skills/productivity/writing-for-agents",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/brainstorming",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/diagnosing-superpowers",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/dispatching-parallel-agents",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/executing-plans",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/finishing-a-development-branch",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/receiving-code-review",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/requesting-code-review",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/subagent-driven-development",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/systematic-debugging",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/test-driven-development",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/using-git-worktrees",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/using-superpowers",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/verification-before-completion",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/writing-plans",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "obra/superpowers",
+   "path": "skills/writing-skills",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail-audit",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail-debt",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail-gain",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail-help",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "DietrichGebert/ponytail",
+   "path": "skills/ponytail-review",
+   "reason": "already scanned as part of a selected plugin"
+  }
+ ]
+}

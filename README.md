@@ -133,7 +133,7 @@ project's `.claude/bawwab.json` can only raise it.
 
 ## Benchmark
 
-Bawwab is measured against a labelled corpus in [`bench/`](https://github.com/anasAsh/bawwab/tree/feat/bawwab/bench): handwritten malicious samples for every rule
+Bawwab is measured against a labelled corpus in [`bench/`](bench/): handwritten malicious samples for every rule
 family (canary values and `.invalid` hosts only), samples written to talk the AI reviewer out of a finding,
 benign look-alikes, and popular real packages and skills at pinned versions. Real malware comes from the
 [DataDog malicious-software-packages dataset](https://github.com/DataDog/malicious-software-packages-dataset),
@@ -362,7 +362,7 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
 
 Bawwab is analysed from two sides:
 
-- **Bawwab itself: STRIDE per component.** [`docs/threat-model.md`](https://github.com/anasAsh/bawwab/blob/feat/bawwab/docs/threat-model.md) lists the assets
+- **Bawwab itself: STRIDE per component.** [`docs/threat-model.md`](docs/threat-model.md) lists the assets
   (your credentials, Claude's config, the approval store, verdict integrity, Bawwab's own code, your
   attention), the actors (a malicious extension author, a prompt-injected agent, a deliberately adversarial
   same-user agent, a hostile registry or server), the trust boundaries and data flow, and for each component
@@ -371,7 +371,7 @@ Bawwab is analysed from two sides:
   disclosure, Denial of service and Elevation of privilege threats, with the control that answers each, the
   residual risk that remains, and the top open risks in priority order.
 - **What Bawwab detects in other extensions: a mapped rule catalogue.** Every rule is mapped in
-  [`taxonomy.json`](https://github.com/anasAsh/bawwab/blob/feat/bawwab/bawwab/scan/rules/data/taxonomy.json) to the
+  [`taxonomy.json`](bawwab/scan/rules/data/taxonomy.json) to the
   [OWASP Top 10 for LLM Applications (2025)](https://genai.owasp.org/llm-top-10/) (e.g. LLM01 prompt
   injection, LLM03 supply chain), the [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/)
   (ASI ids),
@@ -471,7 +471,7 @@ Please use canary values and `.invalid` hosts, never live malware.
 
 The known-malware lookup queries [OSV](https://osv.dev), which publishes the
 [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) data under the Apache License 2.0.
-See [NOTICE](https://github.com/anasAsh/bawwab/blob/feat/bawwab/NOTICE).
+See [NOTICE](NOTICE).
 
 <div align="center">
 <sub>Built with care in Amman 🇯🇴 · <i>"A good gatekeeper knows who to let in."</i></sub>

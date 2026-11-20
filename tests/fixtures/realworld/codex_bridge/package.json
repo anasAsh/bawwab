@@ -1,0 +1,5 @@
+{
+  "name": "codex-bridge-fixture",
+  "version": "1.0.0",
+  "bin": { "codex-bridge": "cli.js" }
+}

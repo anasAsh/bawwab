@@ -1,0 +1,5 @@
+{
+  "expected": "malicious",
+  "category": "remote-code",
+  "adversarial": false
+}

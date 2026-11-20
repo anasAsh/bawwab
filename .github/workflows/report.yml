@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The code that builds the report. Change to main once feat/bawwab is merged.
-  SOURCE_REF: feat/bawwab
+  # The code that builds the report.
+  SOURCE_REF: main
 
 jobs:
   scan:
