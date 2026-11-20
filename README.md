@@ -63,7 +63,9 @@ Deep scan first:  ! bawwab scan --deep @someone/github-mcp@1.2.0
 Explain a finding:  ! bawwab explain F3a91c
 ```
 
-Only **you** can approve it. Claude can't run `bawwab approve` itself, so a prompt-injected agent can't wave itself through.
+Approving is meant for **you**: the gate refuses `bawwab approve` when Claude runs it in any form the gate
+recognises. It can't see every program Claude might write and run, so this stops a steered agent's ordinary
+attempts, not a determined one (see [Honest limitations](#honest-limitations)).
 
 ## How it works
 
@@ -311,9 +313,10 @@ Reports come back framed as untrusted data, with bawwab's own instructions kept 
 
 Everything Bawwab scans is written by someone who may be attacking the agent that reads the result. So:
 
-- **Approval is out of the agent's reach.** `bawwab approve`, `reject` and `init --skip`, edits to Bawwab's own
+- **Approval is kept for you.** `bawwab approve`, `reject` and `init --skip`, edits to Bawwab's own
   files and state, and disabling or uninstalling the plugin are protected actions: the gate denies them when
-  Claude tries, in any form it can recognise. Only you, from a `!` shell, can let something through.
+  Claude tries, in any form it can recognise. You approve from a `!` shell. Routes the gate can't see are
+  listed under [Honest limitations](#honest-limitations).
 - **The review can only raise risk.** Claude's review sees the scanned text as quoted, untrusted data and is
   asked a narrow question. Its answer can raise a verdict, never lower one, and a garbled answer counts as
   suspicious. Text written to talk the reviewer out of a finding is part of the benchmark.
@@ -353,7 +356,7 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   an approvable block, and a few direct calls can come out plain.
 
   It does **not** cover: a script changed earlier in the same command (`git checkout`/`pull` then run it),
-  copies, moves, install and rsync of scripts are not checked (a copied script is still read when a covered runner runs it),
+  copies, moves, `install` and `rsync` of scripts (a copied script is still read when a covered runner runs it),
   multi-line argv lists, JS template literals and other interpolated strings, and imports in Python/Node,
   aliases written into a git config file or set through `GIT_CONFIG_*`, git hooks, npm/just/tox scripts, build
   tools, make includes computed at make time or matched by a glob, `make -I` include paths, `MAKEFILES=`,
