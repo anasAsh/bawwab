@@ -406,6 +406,7 @@ def index_page(views: list[View], meta: dict, repo: str, tax: dict | None = None
         (c["suspicious"], VERDICT_LABEL["suspicious"]), (c["malicious"], VERDICT_LABEL["malicious"]),
         (c["not-verified"], VERDICT_LABEL["not-verified"])])
     review = "".join(f"<li>{e(k)}: {n}</li>" for k, n in sorted(oc.items())) or "<li>Nothing was flagged.</li>"
+    confirmed = sum(1 for v in flagged if "confirm" in v.outcome.lower())
     commit = e(meta.get("bawwab_commit", "unknown"))
     dirty = " (with uncommitted changes)" if meta.get("bawwab_dirty") else ""
     body = f"""
@@ -413,6 +414,8 @@ def index_page(views: list[View], meta: dict, repo: str, tax: dict | None = None
 <p class="lede">{kinds['mcp']} MCP servers, {kinds['skill']} skills and {kinds['plugin']} plugins, ranked by downloads or GitHub stars,
 each pinned to an exact version or commit and scanned with Bawwab's static rules. Scan date: {e(meta.get('scan_date', 'unknown'))}.</p>
 <section aria-labelledby="h-counts"><h2 id="h-counts">Headline counts</h2>
+<p class="lede"><strong>{len(flagged)} flagged by static rules · {confirmed} confirmed harmful after hand-review.</strong>
+The rule verdicts below are what the scanner said before anyone read the code; each target's page shows the reviewed outcome next to it.</p>
 <div class="stats">{stats}</div>
 <p>Every target that was not clean was checked by hand before publication. Review outcome for the {len(flagged)} flagged targets:</p>
 <ul>{review}</ul>

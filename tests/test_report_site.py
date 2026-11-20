@@ -336,3 +336,11 @@ def test_resume_reuses_only_same_pin_commit_and_ruleset():
     assert not scan.is_done(prev, "a@1", "c1", "r2")
     assert not scan.is_done(dict(prev, status="error"), "a@1", "c1", "r1", retry_errors=True)
     assert not scan.is_done(None, "a@1", "c1", "r1")
+
+
+def test_index_leads_with_reviewed_outcome():
+    """User decision 2026-11-20: the overview leads with flagged-vs-confirmed, not the raw 'malicious' count."""
+    import re
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "report" / "build_site.py").read_text()
+    assert re.search(r"flagged by static rules · \{confirmed\} confirmed harmful after hand-review", html)
