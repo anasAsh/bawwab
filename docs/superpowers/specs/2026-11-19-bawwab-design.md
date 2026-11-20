@@ -41,7 +41,8 @@ human in the loop whenever anything looks off.
 - Gates for agents other than Claude Code. The scanner stays
   agent-agnostic. In v1, the config readers for the inventory and the
   effect check are written as **agent adapters**, with only the Claude Code
-  adapter implemented. *(Decided during build, 2026-11-19.)*
+  adapter implemented. *(Decided during build, 2026-11-19.)* v1.1 adds
+  watched (not gated) adapters for four more agents: see "v1.1 as built".
 
 ## Roadmap: v1.1, multiple agents on one machine (user-approved 2026-11-19)
 
@@ -59,6 +60,106 @@ human in the loop whenever anything looks off.
   Code's, checked per agent.
 - Monitoring tool calls at runtime after installation.
 - A hosted service or public verdict registry.
+
+### v1.1 as built (2026-11-21)
+
+**Gated vs watched.** `ADAPTERS` stays Claude Code alone: it is the only
+*gated* agent (hooks block before and after an install, and its
+quarantine blocks tool calls). The four new adapters are *watched*
+(`WATCHED` in `bawwab/agents/__init__.py`). The hook's fingerprint loads
+only the gated watch table (`HOOK_TABLES` in `hooks/fingerprint.py`), so
+Claude Code's hot path and its effect check are unchanged, and another
+agent's item never blocks Claude Code. Each adapter is driven by its
+stdlib-only `bawwab/agents/<name>_watch.py` table (config files with the
+key path of their servers or hooks and how to parse them, skill dirs,
+extension dirs). `bawwab/agents/generic.py` turns the tables into the same
+`EffectItem`s the effect check uses. Env, header and auth values are
+replaced by hashes in an item's value: a changed secret is still a change,
+but no report, hold or notification carries it.
+
+**Config locations** (checked against each agent's docs on 2026-11-21):
+
+| Agent | MCP servers | Other watched items | Source |
+|-|-|-|-|
+| Codex CLI | `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and a trusted project's `.codex/config.toml`: `[mcp_servers.<name>]` (command, args, env, env_vars, cwd / url, http_headers...; `enabled = false` is off and not checked) | hooks: `[hooks]` in config.toml and `hooks.json` (user, project); skills: `~/.agents/skills`, `<repo>/.agents/skills`, legacy `~/.codex/skills` | learn.chatgpt.com/docs (MCP, hooks, build-skills) |
+| Cursor | `~/.cursor/mcp.json`, `<project>/.cursor/mcp.json`: `mcpServers` | hooks: `~/.cursor/hooks.json`, `<project>/.cursor/hooks.json` (`hooks` map) | cursor.com/docs/context/mcp, /agent/hooks |
+| Claude Desktop | `claude_desktop_config.json` in `~/Library/Application Support/Claude/` (macOS) or `~/.config/Claude/` (Linux, `$XDG_CONFIG_HOME`): `mcpServers` | extensions: `Claude Extensions/<id>/` next to it (path from third-party docs only: unverified) | modelcontextprotocol.io/docs/develop/connect-local-servers |
+| VS Code / Copilot | user profile `mcp.json` (`~/.config/Code/User/`, macOS `~/Library/Application Support/Code/User/`, also `Code - Insiders`) and workspace `.vscode/mcp.json`: `servers`; legacy `"mcp": {"servers"}` in user settings.json; Copilot `~/.copilot/mcp-config.json` (`$COPILOT_HOME`): `mcpServers`. JSON with comments is read. | skills: `~/.copilot/skills`, `<workspace>/.github/skills` | code.visualstudio.com/docs/agents/reference/mcp-configuration, /agent-customization/migrate-customizations |
+
+Workspace `.mcp.json` (also read by Copilot) stays the Claude Code
+adapter's; `.agents/skills` is the Codex adapter's (Copilot reads it too).
+Not watched yet: Codex plugins and marketplaces (`[plugins]`,
+`[marketplaces]`; format not documented where checked), Copilot agent hooks
+(preview), Cursor rules.
+
+**What "quarantine" means per agent.**
+
+- **Claude Code (gated):** unchanged (§1b): an *active* quarantine row;
+  every non-read-only tool call is denied until the user approves or
+  rejects. The watcher runs Claude Code's own effect check (`effects.refresh`
+  from a project-less scope dir under `~/.bawwab`, i.e. user scope only),
+  exactly as the hook would. A change made while Claude Code is closed is
+  then quarantined and notified right after it happens, not only at the
+  next session's first tool call. An MCP server Claude Code starts at
+  launch may still run once: no hook blocks a server start.
+- **Codex CLI, Cursor, Claude Desktop, VS Code (watched):** a *hold*: a
+  quarantine row with status `held`. It only **records and reports**: the
+  item's report and an approval id are stored, a desktop notification is
+  shown and `bawwab status` lists it. The agent is **not stopped**: Bawwab
+  does not edit the agent's config on its own, and the agent may already
+  have started the server before the watcher saw it. `bawwab approve <id>`
+  accepts the item (it is not reported again until it changes); `bawwab
+  reject <id>` removes it: the server entry from the agent's JSON file or
+  plain `[mcp_servers.<name>]` TOML table (backup in `~/.bawwab/backups/`,
+  the rewritten TOML checked with `tomllib` to differ only by that entry),
+  or a skill/extension dir moved to `~/.bawwab/quarantine/`. Hooks in TOML,
+  inline TOML tables and JSON files with comments are left for the user to
+  edit, and reject says so.
+- **Security levels** (§1c) apply as for Claude Code's config changes:
+  high holds anything not clean, medium holds malicious and warns about
+  suspicious, low only warns. A warned item is accepted as `warned`,
+  reported once (notification plus the queued warning).
+
+**Hooks in other agents, checked per agent** (none is installed by
+Bawwab yet):
+
+- **Codex CLI:** comparable. `PreToolUse` can deny (`permissionDecision:
+  "deny"`, or exit 2) for shell, `apply_patch` and MCP tools, and there is
+  `SessionStart`; new or changed hooks need the user's trust in `/hooks`.
+  A Codex gate is the next step.
+- **Cursor:** partly. `beforeShellExecution` / `beforeMCPExecution` can
+  deny, but a failing hook is fail-open unless `failClosed` is set. Could
+  enforce a hold by denying a held server's tools.
+- **VS Code / Copilot:** agent hooks are in preview (`preToolUse` can
+  deny); not relied on.
+- **Claude Desktop:** no hook mechanism: holds stay report-only.
+
+**Watcher.** `bawwab watch` is a foreground loop (default every 2 s). Per
+agent it takes the cheap fingerprint (stat data) of the agent's paths, user
+scope plus the projects in `--project` or `config.json` `watch.projects`.
+A change must hold still for the debounce time (1.5 s) before it is
+checked. The semantic digest (only the server and hook keys count, so
+Codex rewriting project trust in `config.toml` is noise) then decides
+whether the items are evaluated. Evaluation is the effect check's own
+(`effects._evaluate`: approved, scanned clean, or baseline). State lives in
+`~/.bawwab/watch.json`: per-agent fingerprint and digest, plus a heartbeat
+that `bawwab status` shows. A file caught mid-write is read again on the
+next pass. A failing agent is logged and notified once, and doesn't stop
+the others. The first pass checks every item of the watched agents (there
+is no `init --skip` for them). `--once` runs one pass and prints the
+status. `bawwab watch --install` writes `~/.config/systemd/user/bawwab-watch.service`
+(Linux) or `~/Library/LaunchAgents/dev.bawwab.watch.plist` (macOS) and
+enables it. The service runs `python -P -m bawwab.cli watch` in
+`~/.bawwab`. `--uninstall` stops and removes it; `--unit-dir` writes
+elsewhere and never starts anything (tests). Notifications use
+`notify-send` or `osascript` (text passed as argv), best effort, never
+fatal.
+
+**Limits.** Detection is after the fact. The watcher is not part of
+Bawwab's self-protection: an agent (or Claude) that can run `systemctl
+--user stop` can stop it, and `watch --uninstall` is not a protected
+action. A changed config is noticed within about interval plus debounce
+while the service runs.
 
 ## Anti-goals (failure even if it "works")
 

@@ -301,6 +301,11 @@ bawwab diff <name>             # what changed since you trusted it
 # Everything already installed
 bawwab init --scan             # first run: scan everything now
 bawwab effects                 # what is on hold, with every finding and evidence
+
+# Other agents on this machine (Cursor, Codex CLI, Claude Desktop, VS Code)
+bawwab watch --install         # background watcher as a user service (systemd / launchd)
+bawwab watch --once            # one pass now, then print the status
+bawwab status                  # what is quarantined or on hold, across every agent
 ```
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
@@ -427,7 +432,10 @@ or labelled "Not yet reviewed".
   Approving the code itself is a separate decision. `PATH` is not on that list, because so many
   legitimate configs set it (nvm, Homebrew), so a server env `PATH=/somewhere:…` that makes its `command` resolve
   to another program isn't caught.
-- v1 protects **Claude Code**. Cursor, Codex CLI, Claude Desktop and VS Code are planned for v1.1 (see roadmap).
+- Bawwab **gates Claude Code** only. For Cursor, Codex CLI, Claude Desktop and VS Code the watcher (`bawwab watch`)
+  detects a new or changed server, skill or extension right after it is installed and puts what isn't clean on
+  hold, but a hold only records and reports it (desktop notification, `bawwab status`): that agent is not stopped
+  and may already be running it. `bawwab reject <id>` removes it from the agent's config.
 
 ## Roadmap
 
@@ -443,7 +451,8 @@ or labelled "Not yet reviewed".
 - [ ] One-command Claude Code plugin
 - [ ] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox
 - [ ] Deep mode: Docker sandbox with canary credentials
-- [ ] **v1.1:** Cursor, Codex CLI, Claude Desktop and VS Code adapters, plus a background watcher
+- [x] **v1.1:** Cursor, Codex CLI, Claude Desktop and VS Code adapters, plus a background watcher
+- [ ] Blocking hooks in other agents (Codex CLI's `PreToolUse` is comparable; Cursor's partly)
 
 ## Development
 
