@@ -212,6 +212,31 @@ def outcome_of(v: View) -> str:
     return "Reviewed: false alarm"
 
 
+SEVERITY_RANK = {"low": 0, "med": 1, "high": 2, "critical": 3}
+
+
+def loc_of(f: dict) -> str:
+    """'file:line' for a finding (raw scanned text: escape before output)."""
+    return (f.get("file") or "") + (f":{int(f['line'])}" if f.get("file") and isinstance(f.get("line"), int) else "")
+
+
+def why_flagged(v: View) -> list[tuple[str, str, int, str]]:
+    """(rule, title, count, first location) for the counted findings at the view's highest severity, one per
+    rule, sorted by rule id. Those are the findings that set the label; lower ones are only listed below."""
+    if v.state not in ("suspicious", "malicious") or not v.counted:
+        return []
+    top = max(SEVERITY_RANK.get(f.get("severity") or "", 0) for f, _ in v.counted)
+    groups: dict[str, list[dict]] = {}
+    for f, _ in v.counted:
+        if SEVERITY_RANK.get(f.get("severity") or "", 0) == top:
+            groups.setdefault(str(f.get("rule") or ""), []).append(f)
+    out = []
+    for rule in sorted(groups):
+        info = CATALOG.get(rule)
+        out.append((rule, info.title if info else rule, len(groups[rule]), loc_of(groups[rule][0])))
+    return out
+
+
 def plan(targets: list[dict], results: dict, review: dict) -> tuple[list[View], list[str], list[str]]:
     """(views, publish-blocking problems, warnings)."""
     views: list[View] = []
@@ -467,7 +492,7 @@ def targets_page(views: list[View]) -> str:
             + f'</td><td>{e(KIND_LABEL[tg["kind"]])}</td>'
             f'<td class="hide-sm"><code>{t(version_of(tg), 40)}</code></td>'
             f'<td class="num hide-sm">{e(pop_text(tg))}</td>'
-            f'<td>{badge(v.state)}</td><td class="num">{nfind}</td>'
+            f'<td>{badge(v.state)}</td><td class="hide-sm why">{why_short(v)}</td><td class="num">{nfind}</td>'
             f'<td class="hide-sm">{e(v.outcome)}</td></tr>')
     opts = "".join(f'<option value="{k}">{e(lbl)}</option>' for k, lbl in VERDICT_LABEL.items())
     kopts = "".join(f'<option value="{k}">{e(lbl)}</option>' for k, lbl in KIND_LABEL.items())
@@ -484,7 +509,7 @@ def targets_page(views: list[View]) -> str:
 <thead><tr><th scope="col" class="num" data-key="rank" aria-sort="ascending"><button type="button">#</button></th>
 <th scope="col" data-key="name"><button type="button">Name</button></th><th scope="col">Kind</th>
 <th scope="col" class="hide-sm">Version</th><th scope="col" class="num hide-sm" data-key="pop"><button type="button">Popularity</button></th>
-<th scope="col" data-key="statesort"><button type="button">Result</button></th>
+<th scope="col" data-key="statesort"><button type="button">Result</button></th><th scope="col" class="hide-sm">Why</th>
 <th scope="col" class="num" data-key="findings"><button type="button">Findings</button></th>
 <th scope="col" class="hide-sm">After review</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
@@ -515,6 +540,25 @@ def finding_card(f: dict, r: dict | None, tax: dict | None = None) -> str:
 </article>"""
 
 
+def why_section(v: View) -> str:
+    why = why_flagged(v)
+    if not why:
+        return ""
+    sev = max((f.get("severity") or "" for f, _ in v.counted), key=lambda s: SEVERITY_RANK.get(s, 0))
+    items = "".join(f"<li><code>{t(rule, 80)}</code>: {t(title, 120)} ({e(sev)}, {n}&times;"
+                    + (f" · first at {t(loc, 300)}" if loc else "") + ")</li>" for rule, title, n, loc in why)
+    return (f'<h2 id="why">Why it was flagged</h2><p>The static rules marked this '
+            f'&ldquo;{e(VERDICT_LABEL[v.state])}&rdquo; because of:</p><ul>{items}</ul>')
+
+
+def why_short(v: View) -> str:
+    """List-page summary: the first reason's title, plus how many more."""
+    why = why_flagged(v)
+    if not why:
+        return ""
+    return t(why[0][1], 120) + (f" +{len(why) - 1} more" if len(why) > 1 else "")
+
+
 def target_page(v: View, repo: str, tax: dict | None = None) -> str:
     tg, res = v.target, v.result or {}
     meta = [("Kind", e(KIND_LABEL[tg["kind"]])), ("Source", e(tg["source"]))]
@@ -535,7 +579,7 @@ def target_page(v: View, repo: str, tax: dict | None = None) -> str:
     dl = "".join(f"<dt>{k}</dt><dd>{val}</dd>" for k, val in meta)
     parts = [f"<h1>{t(tg['name'], 160)}</h1>",
              f"<p>{badge(v.state)} {'' if v.state in ('clean', 'not-verified') else e(v.outcome)}</p>",
-             f"<p>{e(VERDICT_NOTE[v.state])}</p>", f'<dl class="meta">{dl}</dl>']
+             f"<p>{e(VERDICT_NOTE[v.state])}</p>", why_section(v), f'<dl class="meta">{dl}</dl>']
     if v.summary:
         parts.append(f'<div class="note"><strong>Review note:</strong> {e(v.summary)}</div>')
     if v.state == "not-verified":

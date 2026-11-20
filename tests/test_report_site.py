@@ -344,3 +344,74 @@ def test_index_leads_with_reviewed_outcome():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "report" / "build_site.py").read_text()
     assert re.search(r"flagged by static rules · \{confirmed\} confirmed harmful after hand-review", html)
+
+
+# ------------------------------------------------------------------ why it was flagged
+
+def _why_section(page: str) -> str:
+    """The 'Why it was flagged' section of a target page, up to the next heading."""
+    start = page.index("Why it was flagged")
+    end = page.find("<h2", start)
+    return page[start:end if end >= 0 else None]
+
+
+def _malicious_fixture():
+    t = _npm_target()
+    crit = _finding(rule="exfil.combo", sev="critical", evidence="fetch(process.env.TOKEN)")
+    med = _finding(rule="install-script", sev="med", evidence="postinstall", file="package.json", line=1)
+    review = {t["id"]: {"findings": [{"match": {"key": crit["key"]}, "status": "false-positive", "note": "n"},
+                                     {"match": {"key": med["key"]}, "status": "expected-behaviour", "note": "n"}]}}
+    results = {t["id"]: _result(t, verdict="malicious", findings=[crit, med])}
+    return t, results, review
+
+
+def test_flagged_target_page_says_why(tmp_path):
+    t, results, review = _malicious_fixture()
+    out = tmp_path / "site"
+    views, _ = build_site.build(*_write(tmp_path, [t], results, review), out)
+    assert build_site.why_flagged(views[0]) == [
+        ("exfil.combo", build_site.CATALOG["exfil.combo"].title, 1, "index.js:3")]
+    page = (out / "t" / f"{t['id']}.html").read_text()
+    why = _why_section(page)
+    assert "exfil.combo" in why and build_site.CATALOG["exfil.combo"].title in why and "index.js:3" in why
+    assert "install-script" not in why  # lower severity: not the reason for the label...
+    assert "install-script" in page     # ...but still listed under Findings
+    assert page.index("Why it was flagged") < page.index("<h2>Findings")
+
+
+def test_why_names_rule_id_when_rule_is_not_in_catalog(tmp_path):
+    t = _npm_target()
+    f = _finding(rule="new.rule-not-in-catalog", sev="high")
+    review = {t["id"]: {"findings": [{"match": {"key": f["key"]}, "status": "false-positive", "note": "n"}]}}
+    out = tmp_path / "site"
+    views, _ = build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, findings=[f])}, review), out)
+    assert build_site.why_flagged(views[0]) == [("new.rule-not-in-catalog", "new.rule-not-in-catalog", 1, "index.js:3")]
+    assert "new.rule-not-in-catalog" in _why_section((out / "t" / f"{t['id']}.html").read_text())
+
+
+def test_targets_list_has_why_column(tmp_path):
+    t, results, review = _malicious_fixture()
+    clean = _npm_target("clean-mcp", rank=2)
+    results[clean["id"]] = _result(clean, verdict="clean")
+    out = tmp_path / "site"
+    views, _ = build_site.build(*_write(tmp_path, [t, clean], results, review), out)
+    assert build_site.why_flagged(views[1]) == []
+    listing = (out / "targets.html").read_text()
+    rows = re.findall(r"<tr data-kind.*?</tr>", listing, re.S)
+    assert ">Why</th>" in listing
+    assert build_site.CATALOG["exfil.combo"].title in rows[0]
+    assert '<td class="hide-sm why"></td>' in rows[1]
+
+
+def test_why_escapes_hostile_paths(tmp_path):
+    t = _npm_target()
+    f1 = _finding(sev="high", file="<img src=x onerror=alert(1)>.js")
+    f2 = _finding(rule='r"><img src=x onerror=alert(2)>', sev="high", evidence="y")
+    review = {t["id"]: {"findings": [{"match": {"key": f["key"]}, "status": "false-positive", "note": "n"}
+                                     for f in (f1, f2)]}}
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, findings=[f1, f2])}, review), out)
+    page = (out / "t" / f"{t['id']}.html").read_text()
+    why = _why_section(page)
+    assert "&lt;img src=x onerror=alert(1)&gt;.js" in why and "alert(2)" in why
+    assert "<img" not in page and "<img" not in (out / "targets.html").read_text()
