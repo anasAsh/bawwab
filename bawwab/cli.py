@@ -55,6 +55,22 @@ def _build() -> argparse.ArgumentParser:
     fx.add_argument("--cwd", help="project directory (default: the current directory)")
     fx.add_argument("--retry", action="store_true",
                     help="after a failed check or lost state: repair, rebuild by scanning, clear the error (user)")
+    w = sub.add_parser("watch", help="watch every coding agent's config: scan new or changed MCP servers, skills and "
+                                     "extensions, put what is not clean on hold, notify (foreground; --install for a "
+                                     "user service)")
+    w.add_argument("--once", action="store_true", help="one pass now (no debounce), then exit")
+    w.add_argument("--interval", type=float, default=2.0, help="seconds between passes (default 2)")
+    w.add_argument("--debounce", type=float, default=1.5, help="seconds a change must settle before it is checked")
+    w.add_argument("--project", action="append", default=None, metavar="DIR",
+                   help="also watch this project's config (repeatable; default: config.json watch.projects)")
+    w.add_argument("--agent", action="append", default=None, metavar="NAME",
+                   help="only these agents (claude-code, cursor, codex, claude-desktop, vscode)")
+    w.add_argument("--no-notify", action="store_true", help="no desktop notifications")
+    wg = w.add_mutually_exclusive_group()
+    wg.add_argument("--install", action="store_true", help="install the watcher as a user service and start it")
+    wg.add_argument("--uninstall", action="store_true", help="stop and remove the user service")
+    w.add_argument("--unit-dir", help=argparse.SUPPRESS)  # tests: write the unit here, never start it
+    sub.add_parser("status", help="what is quarantined or on hold, across every agent, and the watcher's state")
     st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
     st.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
     return p
@@ -166,7 +182,9 @@ def _decide(args) -> int:
             verb = "approved"
             if ok and q is not None:
                 effects.quarantined(store)  # settle it now: the gate stops blocking at once
-        elif q is not None and q["status"] == "active":
+                if q["status"] == effects.HELD:
+                    effects.quarantined(store, effects.HELD)
+        elif q is not None and q["status"] in ("active", effects.HELD):
             ok, msg = effects.reject_quarantined(qid, store)
             verb = "rejected and removed"
         else:
@@ -382,6 +400,45 @@ def _effects(args) -> int:
     return 1
 
 
+def _watch(args) -> int:
+    from bawwab import watch
+
+    unit_dir = Path(args.unit_dir) if args.unit_dir else None
+    if args.install:
+        _, msgs = watch.install_service(unit_dir)
+        print("\n".join(f"bawwab watch: {m}" for m in msgs))
+        return 0
+    if args.uninstall:
+        ok, msgs = watch.uninstall_service(unit_dir)
+        print("\n".join(f"bawwab watch: {m}" for m in msgs))
+        return 0 if ok else 1
+    from bawwab.agents import ALL_ADAPTERS
+
+    agents = None
+    if args.agent:
+        names = {a.name for a in ALL_ADAPTERS}
+        bad = [n for n in args.agent if n not in names]
+        if bad:
+            print(f"error: unknown agent {sanitise(bad[0], 40)} (one of {', '.join(sorted(names))})", file=sys.stderr)
+            return 3
+        agents = [a for a in ALL_ADAPTERS if a.name in args.agent]
+    rc = watch.run(args.interval, args.once, agents=agents, projects=args.project,
+                   notifier=None if args.no_notify else watch.notify, debounce=args.debounce)
+    if args.once:
+        text, n = watch.status_text()
+        print(text)
+        return 1 if n else rc
+    return rc
+
+
+def _status() -> int:
+    from bawwab import watch
+
+    text, n = watch.status_text()
+    print(text)
+    return 1 if n else 0
+
+
 def _plugin_roots() -> list[str]:
     """The bawwab plugin trees to set up: the one this code runs from, else every installed `bawwab@*` plugin
     (installed_plugins.json) that holds the hook."""
@@ -458,6 +515,10 @@ def main(argv: list[str] | None = None) -> int:
             return _decide(args)
         if args.cmd == "level":
             return _level(args)
+        if args.cmd == "watch":
+            return _watch(args)
+        if args.cmd == "status":
+            return _status()
         from bawwab.store import open_store
 
         if args.cmd == "diff":

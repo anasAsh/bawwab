@@ -599,13 +599,18 @@ def retry(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
 
 # ------------------------------------------------------------------ quarantine
 
-def quarantined(store: Store | None = None) -> list[dict]:
-    """Active quarantine entries, after settling approvals and re-issuing expired approval ids."""
+HELD = "held"  # the watcher's hold on an item of an agent without a blocking hook (bawwab/watch.py)
+
+
+def quarantined(store: Store | None = None, status: str = "active") -> list[dict]:
+    """Active quarantine entries (or, status=HELD, the watcher's holds), after settling approvals and re-issuing
+    expired approval ids."""
     store = store or open_store()
-    _take_error_marker(store, [])
+    if status == "active":
+        _take_error_marker(store, [])
     out: list[dict] = []
     reissued: dict[str, str] = {}  # a batch shares one id: re-issue it once
-    for q in store.active_quarantine():
+    for q in store.quarantine_rows(status):
         if store.is_approved(q["key"]) and not store.is_rejected(q["key"]):
             store.set_quarantine(q["qrow"], status="approved")
             item = json.loads(q["item"]) if q["item"] else {}
@@ -630,7 +635,8 @@ def quarantined(store: Store | None = None) -> list[dict]:
             reissued[q["id"]] = new_id
             q["id"] = new_id
         out.append(q)
-    _sync_flag(store)
+    if status == "active":
+        _sync_flag(store)
     return out
 
 
@@ -640,16 +646,17 @@ def find_quarantine(store: Store, qid: str) -> dict | None:
     if q is not None:
         return q
     key = store.pending_key(qid)
-    return next((x for x in store.active_quarantine() if x["key"] == key), None) if key else None
+    rows = store.active_quarantine() + store.quarantine_rows(HELD)
+    return next((x for x in rows if x["key"] == key), None) if key else None
 
 
 def reject_quarantined(qid: str, store: Store | None = None) -> tuple[bool, str]:
     """Remove the item (config entry, or move the dir/file to bawwab_home()/quarantine) and record the reject."""
     store = store or open_store()
     q = find_quarantine(store, qid)
-    if q is None or q["status"] != "active":
+    if q is None or q["status"] not in ("active", HELD):
         return False, "not an active quarantine id"
-    group = [x for x in store.active_quarantine() if x["id"] == q["id"]] or [q]  # a batch: every item
+    group = [x for x in store.quarantine_rows(q["status"]) if x["id"] == q["id"]] or [q]  # a batch: every item
     done: list[str] = []
     failed: list[str] = []
     for x in group:
