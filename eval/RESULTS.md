@@ -1,15 +1,55 @@
 # Bawwab effectiveness evaluation (Task 15)
 
-Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1–4). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
-`replicas.json`, `latency.json`, `baseline.json`, `summary.json`). Reproduce with
-`uv run python eval/run_eval.py` (about 3 minutes, offline). `tests/test_eval.py` replays a subset in CI.
+First run on 2026-11-20 against the `feat/bawwab` tree (after Task 15 fix rounds 1–4). **Re-run on 2026-11-21 inside a
+bubblewrap sandbox** at commit `b572bf7` (clean tree; `results/meta.json` records the commit, the sandbox and its
+self-check): every decision, outcome and finding matched the 2026-11-20 run, so the numbers in §1–§4 are unchanged.
+Only the latency table (§5) is new. Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
+`replicas.json`, `latency.json`, `baseline.json`, `summary.json`, `meta.json`). Reproduce with
+`uv run python eval/run_eval.py --compare` (about 6 minutes on a loaded machine, offline; see §0). `tests/test_eval.py` replays a subset in CI.
 `tests/test_eval_misses.py` pins every remaining miss as a strict xfail, and `tests/test_eval_fixes.py` covers the misses fixed in round 1.
+
+## 0. Sandbox and reproducibility
+
+Before 2026-11-21 the harness was isolated only by environment variables (scratch HOME/XDG, dead proxy, `claude`
+guard). The harness and every hook child still ran as the real user, with the real home writable and the network
+reachable by anything that ignores proxy variables. Now `run_eval.py` re-executes itself inside an OS sandbox
+([`isolation.py`](isolation.py)), chosen by `--sandbox`:
+
+| `--sandbox` | What it does | Status here |
+|---|---|---|
+| `auto` (default) | bwrap if it works, else docker, else **refuse** (never falls back to `none`) | picked bwrap |
+| `bwrap` | Unprivileged user namespaces. The real home is a blank tmpfs; the repo, the venv's Python, `uv`/`uvx` and the grammar cache are bound read-only at their own paths; `/tmp`, `/var/tmp`, `/run` are blank; only one scratch dir is writable; new network namespace (loopback only, which the local npm registry in §1 uses); new pid/ipc/uts/cgroup namespaces; cleared environment | **run** (the results here) |
+| `docker` | Image from [`Dockerfile`](Dockerfile) with a copy of the repo baked in (`uv sync --frozen`, grammars fetched at build time). Run with `--network none`, `--read-only`, `--cap-drop ALL`, `no-new-privileges`, pid/memory/cpu limits, the caller's uid; only a scratch dir is mounted | **not run**: the Docker daemon isn't reachable for this user (permission denied on `/var/run/docker.sock`). Tested only with a fake executor; the image has never been built |
+| `none` | The old environment-only isolation; must be asked for | used only for the latency comparison in §5 |
+
+**Self-check.** Before any entry runs, the inner harness checks from inside the sandbox that the host home's
+`.claude`, `.claude.json`, `.bawwab`, `.ssh`, `.aws`, … are not visible, that the repo is not writable, that a
+connect to a non-loopback address fails with "network unreachable", and that it is not root. If any check fails it
+refuses to produce numbers (exit 3), and the outer run refuses results whose `meta.json` doesn't confirm the sandbox
+it started. In this run all four checks passed (`results/meta.json`).
+
+**Trade-offs of bwrap vs Docker.** bwrap needs no daemon or image and starts in milliseconds, but it shares the host
+kernel and the host's `/usr` and `/etc` (read-only), so the toolchain is whatever the machine has: numbers are
+reproducible per tree, not bit-for-bit across machines. It also depends on unprivileged user namespaces, which
+Ubuntu 24.04+ restricts through AppArmor unless bwrap has a profile (it works for bwrap on this machine; plain
+`unshare -U` does not). Docker pins the toolchain in an image and adds resource limits, at the cost of daemon access
+and an image build that needs network.
+
+**Reproducibility.** `--compare [DIR]` compares the run's decisions, outcomes, gate kinds, verdicts and findings with
+the committed `results/` (timings, reason wording and diff text are left out) and exits 1 on any difference.
+- The first sandboxed run differed on 4 entries and one replica finding, none a real change. The fetch-failed
+  denies of the four "local directory as registry name" entries were classified as `suspicious`, because the
+  finding's evidence is cut to a fixed width and the sandbox's longer scratch path cut `ConnectError` to
+  `ConnectErro…`. The classifier now matches the `GET … failed` line. The replica finding differed only by a
+  mkdtemp suffix, which the comparison now ignores.
+- After that fix, two full sandboxed runs at clean commits (`891ae58`, then `b572bf7`) both matched the
+  2026-11-20 results exactly.
 
 ## Method: what this is and what it isn't
 
-**Hook replay, not live Claude, and no container.** The brief asked for headless `claude -p` runs in a container
-with a local Verdaccio and pypiserver. That wasn't possible here: there is no Docker socket, and Claude must not run.
-What was done instead:
+**Hook replay, not live Claude.** The brief asked for headless `claude -p` runs in a container with a local
+Verdaccio and pypiserver. That wasn't possible here: the Docker daemon isn't reachable, and Claude must not run.
+The run is OS-sandboxed (§0), but attack commands are still never executed. What was done instead:
 
 - **Red-team and normal work.** Each entry in [`redteam/attacks.yaml`](redteam/attacks.yaml) and
   [`redteam/normal.yaml`](redteam/normal.yaml) is the tool call Claude would make, written as PreToolUse JSON.
@@ -23,7 +63,7 @@ What was done instead:
   tries to approve that pending itself. Next comes the approval's effect: a real `bawwab approve --force`, run
   against the scratch store. Last, the blocked install is replayed. The attack counts as "missed" when that
   install then passes both the gate and the effect check.
-- **Isolation.** Every run gets HOME, `~/.bawwab`, XDG_\* and the tree-sitter grammar cache (a copy) under
+- **Isolation.** Inside the sandbox (§0), every run gets HOME, `~/.bawwab`, XDG_\* and the tree-sitter grammar cache (a copy) under
   `/var/tmp/bawwab-eval-*`. The Claude and Bawwab env vars are removed. The script refuses to start if HOME would
   resolve to the real home.
   - It deletes only the temp dir it created. A `--workdir` must be empty or new, and may not be or contain the real
@@ -260,10 +300,29 @@ best-effort … the effect check is the backstop" and the Task 9 parked list):
 
 ## 5. Latency added per tool call
 
-Wall time of `python3 hooks/bawwab_hook.py <sub>` on this machine, 30 runs each (10 for the last row). For scale, a
-bare `python3 -c pass` took 11.9 ms median and 27.3 ms p95.
+Wall time of `python3 hooks/bawwab_hook.py <sub>` on this machine, 30 runs each (10 for the last row).
 
-These figures come from the fix-round-2 full run. The round-3 eval run was at load average 7, so its latency numbers aren't used; this table is still the round-2 measurement. The machine was shared with other work (load average 3–5), so
+**2026-11-21, inside bwrap** (the full run at `b572bf7`, load average 3.5–5). A bare `python3 -c pass` took 27.5 ms
+median inside the sandbox.
+
+| Path | Median | p95 |
+|---|---:|---:|
+| Prefilter only: `Bash ls -la` | 70.3 ms | 78.6 ms |
+| Prefilter only: `Bash git status --short` | 70.2 ms | 79.5 ms |
+| Prefilter only: `Read` | 66.8 ms | 78.1 ms |
+| `post` with nothing changed | 60.4 ms | 77.7 ms |
+| Full gate, install-like call, scan not cached | 437.0 ms | 449.2 ms |
+| Full gate, same call, cached scan | 426.0 ms | 440.4 ms |
+| `post` effect check after a real config change | 448.4 ms | 463.9 ms |
+
+**The sandbox itself adds time, so these are not the latency a user sees.** Latency-only runs back to back on the
+same machine (load average 3.2–4.0), medians: outside the sandbox (`--sandbox none`) the prefilter paths took
+43–57 ms and the full gate 404–425 ms; inside bwrap before the pycache fix 79–102 ms and 444–464 ms; inside bwrap
+after it 79–83 ms and 433–451 ms. Process start-up is slower in the sandbox (`python3 -c pass`: 23–33 ms against
+8–23 ms). For per-call cost, use a `--sandbox none` run or the earlier figures below.
+
+**Earlier figures (outside any sandbox).** These come from the fix-round-2 full run. For scale, a bare
+`python3 -c pass` took 11.9 ms median and 27.3 ms p95. The round-3 eval run was at load average 7, so its latency numbers aren't used; this table is still the round-2 measurement. The machine was shared with other work (load average 3–5), so
 expect run-to-run noise of about 10–20 ms on the fast paths and more on p95. In round 1 a quieter latency-only run
 measured about 24 ms median on the prefilter path and 278 / 296 ms on the full gate.
 
@@ -283,7 +342,7 @@ start-up.
 ## 6. Baseline: mcp-scan
 
 **Not run.** `mcp-scan` is not installed, and `uvx --offline mcp-scan` fails ("mcp-scan was not found in the cache";
-`results/baseline.json`). The tool also needs network: it calls Invariant's analysis API and starts the servers it
+`results/baseline.json`; the same inside the sandbox). The tool also needs network: it calls Invariant's analysis API and starts the servers it
 scans. So it cannot run under this evaluation's offline, never-execute rules.
 
 ## Files
@@ -292,6 +351,8 @@ scans. So it cannot run under this evaluation's offline, never-execute rules.
 - `fixtures/`: the scratch project, the benign installed skill (`changelog`), and the prompt-injecting skill.
 - `redteam/attacks.yaml`, `redteam/normal.yaml`: the entries. They are YAML written in its JSON-compatible flow
   style, because bawwab's venv has no PyYAML; `run_eval.load_yaml` reads them either way.
-- `run_eval.py`: the harness. `--only`, `--ids`, `--keep` and `--workdir` are available for debugging. `--workdir`
+- `isolation.py`, `Dockerfile` (and the repo's `.dockerignore`): the sandbox runners (§0). Tests:
+  `tests/test_eval_isolation.py` (Docker through a fake executor; one real bwrap run when bwrap works).
+- `run_eval.py`: the harness. `--sandbox`, `--compare`, `--only`, `--ids`, `--keep` and `--workdir` are available. `--workdir`
   must be an empty or new dir; the run creates, and later removes, its own temp dir inside it.
 - `results/*.json`: the raw results of the run above. Machine paths are replaced by `<scratch>`, `<repo>` and `~`.

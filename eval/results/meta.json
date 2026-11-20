@@ -1,8 +1,32 @@
 {
   "meta": {
-    "method": "hook replay (no live Claude, no container)",
-    "python": "3.14.4",
-    "when": "2026-11-20T15:01:25+0300"
+    "method": "hook replay (no live Claude), isolation: bwrap",
+    "python": "3.12.16",
+    "when": "2026-11-21T01:28:49+0300",
+    "isolation": {
+      "runner": "bwrap",
+      "ok": true,
+      "checks": {
+        "host_home_hidden": {
+          "ok": true,
+          "visible": []
+        },
+        "repo_read_only": {
+          "ok": true,
+          "detail": "OSError"
+        },
+        "no_network": {
+          "ok": true,
+          "detail": "ENETUNREACH"
+        },
+        "not_root": {
+          "ok": true,
+          "uid": 1000
+        }
+      }
+    },
+    "commit": "b572bf7db55e2602c63aa0e438ae79a30b9c48b6",
+    "dirty": false
   },
   "guard_claude_invocations": []
 }

@@ -441,7 +441,7 @@ or labelled "Not yet reviewed".
 - [x] MCP server tools: `scan_mcp_server`, `scan_skill`, `scan_plugin`, `diff_since_trusted`, `explain_finding`
 - [x] Labelled benchmark with published precision and recall, run in CI
 - [ ] One-command Claude Code plugin
-- [ ] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox
+- [x] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox (bwrap; Docker runner untested, see `eval/RESULTS.md`)
 - [ ] Deep mode: Docker sandbox with canary credentials
 - [ ] **v1.1:** Cursor, Codex CLI, Claude Desktop and VS Code adapters, plus a background watcher
 
