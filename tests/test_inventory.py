@@ -223,7 +223,10 @@ def test_hook_notify_with_flag(home):
     import subprocess
     import sys
 
+    from conftest import _boot_token
+
     open_store().add_warning("bawwab: hook warning")
+    (Path(os.environ["BAWWAB_HOME"]) / "bootstrap-complete").write_text(_boot_token())  # setup done (I4)
     env = {**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]}
     r = subprocess.run([sys.executable, str(HOOK), "notify"], input="{}", capture_output=True, text=True,
                        env=env, timeout=60)

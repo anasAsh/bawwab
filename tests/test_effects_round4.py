@@ -19,6 +19,14 @@ from bawwab.types import Verdict
 from test_effects import FakeScan, _w
 
 
+
+@pytest.fixture(autouse=True)
+def _bootstrap_done():
+    """bawwab's first-run setup had finished (fix round 2, I4): the R39 transcript rule applies."""
+    d = Path.home() / ".claude/plugins/data/bawwab-bawwab-mkt"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "bootstrap-complete").write_text("x")
+
 def _d(cmd: str, cwd: str | None = None):
     return detect_install(HookInput("Bash", {"command": cmd}, cwd or str(Path.home() / "proj")))
 

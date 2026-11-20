@@ -157,7 +157,16 @@ def read_marker() -> dict | None:
 
 def write_marker(installed_at: str, init_state: str) -> None:
     data = json.dumps({"installed_at": installed_at, "init_state": init_state})
-    for p in fp_module().marker_paths(str(Path.home())):
+    fpm = fp_module()
+    for d in fpm.plugin_data_dirs(str(Path.home())):  # bawwab has written its state (lost-state rule, I4)
+        try:
+            p = os.path.join(d, fpm.STATE_CREATED)
+            if not os.path.exists(p):
+                with open(p, "w") as f:
+                    f.write(installed_at)
+        except OSError:
+            pass
+    for p in fpm.marker_paths(str(Path.home())):
         try:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             tmp = f"{p}.{os.getpid()}.tmp"

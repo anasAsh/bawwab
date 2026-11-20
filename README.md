@@ -212,8 +212,10 @@ The installed plugin is a runtime-only tree: the code, hooks, skill and manifest
 samples. The marketplace installs it from the repo's `plugin` branch.
 
 **Bawwab scans itself as SUSPICIOUS, and that's the honest answer.** It reads your Claude config
-(`~/.claude.json`, `~/.claude/…`) and runs a hook on every tool call: exactly what it would warn you about in
-any other plugin. Its rules aren't bent for itself, and nothing is exempt by name. So when Bawwab gates an
+(`~/.claude.json`, `~/.claude/…`), runs a hook on every tool call, and its MCP server starts through `uv run`,
+which downloads and installs its Python dependencies on first start (those are checked against the known-malware
+list, but not scanned): exactly what it would warn you about in any other plugin. The first start sets up in the
+background for about a minute; until then Bawwab holds install commands and lets everything else through. Its rules aren't bent for itself, and nothing is exempt by name. So when Bawwab gates an
 install or upgrade of Bawwab, you see those findings and approve once per version. Afterwards, the inventory and
 effect check recognise the copy whose code is actually running (same real path as the running hook, named
 `bawwab`, not a symlink) and list it as "bawwab (running code, not scanned)". Any other copy called bawwab is
@@ -311,6 +313,9 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
 
 ## Honest limitations
 
+- A plugin whose MCP server starts through a package manager (`uv run`, `npm start`, `poetry run`, …) is
+  always at least SUSPICIOUS: what it downloads and builds when it starts isn't scanned. Packages pinned in a
+  `uv.lock` are checked against the known-malware list (OSV), which only knows *reported* malware.
 - The hooks only see what **Claude** does. Things you install yourself in your own terminal aren't gated;
   the effect check and the session-start inventory catch them after the fact.
 - Bash parsing is best-effort. The gate recognises the install commands and config edits it knows, and bash

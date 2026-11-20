@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bawwab Claude Code hook entry point. Stdlib only.
 
-Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify)
+Usage: bawwab_hook.py <subcommand>   (gate | post | inventory | notify | bootstrap)
 
 `gate` (PreToolUse, every tool): a cheap pre-filter and the effect-check fingerprint
 (hooks/fingerprint.py) let ordinary calls through with no output and without importing
@@ -119,13 +119,148 @@ def _bawwab_cmd(sub: str) -> list[str]:
     return ["uv", "run", "--project", PLUGIN_ROOT, "--frozen", "--quiet", "bawwab", sub]
 
 
+def _boot_dir() -> str:
+    """Where the venv and the bootstrap files live: the plugin's data dir, else bawwab's home. Never the root."""
+    data = os.environ.get("CLAUDE_PLUGIN_DATA")
+    return data if data and os.path.isabs(data) else _bawwab_home()
+
+
+def _venv_dir() -> str:
+    v = os.environ.get("BAWWAB_VENV")  # a dev checkout's own venv (tests); absolute only
+    return v if v and os.path.isabs(v) else os.path.join(_boot_dir(), "venv")
+
+
 def _child_env() -> dict:
-    """The venv lives in the plugin's data dir (shared with the MCP server), not inside the plugin root."""
+    """The venv lives in the plugin's data dir (shared with the MCP server) or bawwab's home (fix round 2 M8),
+    never inside the plugin root."""
     env = dict(os.environ)
-    data = env.get("CLAUDE_PLUGIN_DATA")
-    if data and os.path.isabs(data):
-        env["UV_PROJECT_ENVIRONMENT"] = os.path.join(data, "venv")
+    env["UV_PROJECT_ENVIRONMENT"] = _venv_dir()
     return env
+
+
+# ------------------------------------------------------------------ first-run bootstrap (fix round 2, I4)
+# The first `uv run` downloads bawwab's dependencies, which can take longer than any hook timeout. So the venv
+# is synced by a detached `bootstrap` process, which writes <boot dir>/bootstrap-complete (this root and its
+# uv.lock) when done. Until then: installs (and an active quarantine) are denied, other calls pass, and
+# SessionStart says setup is running; the SessionStart work (and its first-run question) runs at the end of the
+# bootstrap and is shown on the next prompt.
+
+BOOT_DONE, BOOT_LOCK = "bootstrap-complete", "bootstrap.lock"
+BOOT_PENDING, BOOT_CONTEXT = "pending-sessionstart.json", "pending-context.txt"
+BOOT_STALE_S, BOOT_SYNC_S, BOOT_INVENTORY_S = 2400, 1800, 300
+SETUP_DENY = ("bawwab is still setting up (installing its own dependencies in the background), so it can't check "
+              "this install yet. Retry in a minute.")
+SETUP_CONTEXT = ("Bawwab (a security scanner for MCP servers, skills and plugins) is still setting up: it is "
+                 "installing its own dependencies in the background, which takes about a minute. Install commands "
+                 "are held until then. Its first-run question follows on a later prompt once setup finishes.")
+
+
+def _boot_token() -> str:
+    import hashlib
+
+    h = hashlib.sha256(PLUGIN_ROOT.encode() + b"\n")
+    try:
+        with open(os.path.join(PLUGIN_ROOT, "uv.lock"), "rb") as f:
+            h.update(f.read())
+    except OSError:
+        h.update(b"no-lock")
+    return h.hexdigest()
+
+
+def _bootstrapped() -> bool:
+    try:
+        with open(os.path.join(_boot_dir(), BOOT_DONE)) as f:
+            return f.read().strip() == _boot_token()
+    except OSError:
+        return False
+
+
+def _lock_fresh(path: str) -> bool:
+    import time
+
+    try:
+        pid_s, ts_s = open(path).read().split()
+        if time.time() - float(ts_s) > BOOT_STALE_S:
+            return False
+        os.kill(int(pid_s), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except (OSError, ValueError):
+        return os.path.exists(path)  # unreadable or another user's process: assume it runs
+
+
+def _write(path: str, text: str) -> None:
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _start_bootstrap(pending: str | None = None) -> None:
+    """Start the detached bootstrap unless one is running. Never raises."""
+    import subprocess
+
+    try:
+        d = _boot_dir()
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        if pending is not None:
+            _write(os.path.join(d, BOOT_PENDING), pending)
+        if _lock_fresh(os.path.join(d, BOOT_LOCK)):
+            return
+        subprocess.Popen([sys.executable, os.path.realpath(__file__), "bootstrap"], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:  # noqa: BLE001 - a failed start is retried by the next hook
+        pass
+
+
+def bootstrap() -> int:
+    """The detached first-run setup: sync the venv, run the SessionStart work, mark it complete."""
+    import subprocess
+    import time
+
+    d = _boot_dir()
+    lock = os.path.join(d, BOOT_LOCK)
+    try:
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        if os.path.exists(lock) and not _lock_fresh(lock):
+            os.unlink(lock)
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except OSError:
+        return 0  # another bootstrap runs
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(f"{os.getpid()} {time.time()}")
+        token = _boot_token()
+        r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen", "--quiet"], env=_child_env(),
+                           stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_SYNC_S)
+        if r.returncode != 0:
+            return 0
+        pending = os.path.join(d, BOOT_PENDING)
+        if os.path.exists(pending):
+            raw = open(pending).read()
+            try:
+                _note_session(json.loads(raw))
+            except ValueError:
+                _note_session(None)
+            try:
+                out = subprocess.run(_bawwab_cmd("inventory"), input=raw, capture_output=True, text=True,
+                                     timeout=BOOT_INVENTORY_S, env=_child_env()).stdout.strip()
+                ctx = json.loads(out).get("hookSpecificOutput", {}).get("additionalContext") if out else None
+                if isinstance(ctx, str) and ctx:
+                    _write(os.path.join(d, BOOT_CONTEXT), ctx)
+            except Exception:  # noqa: BLE001 - SessionStart work is retried next session
+                pass
+            os.unlink(pending)
+        _write(os.path.join(d, BOOT_DONE), token)
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        try:
+            os.unlink(lock)
+        except OSError:
+            pass
+    return 0
 
 
 def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
@@ -186,6 +321,11 @@ def gate() -> int:
     blocked = data.get("tool_name") not in READ_ONLY_TOOLS and _quarantine_flag()
     if not (install_like or changed or blocked):
         return 0
+    if not _bootstrapped():  # first run or upgrade: setup runs detached; installs wait, others pass
+        _start_bootstrap()
+        if install_like or blocked:
+            print(_deny(SETUP_DENY))
+        return 0
     try:
         # a broken bawwab never blocks an ordinary call; it does block installs and an active quarantine
         out = _run_gate(raw, deny_on_error=bool(install_like or blocked), effects=changed)
@@ -211,6 +351,9 @@ def post() -> int:
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0
+    if not _bootstrapped():  # the next gate call checks the change once setup is done
+        _start_bootstrap()
+        return 0
     try:
         out, err = _run_child("post", raw)
     except Exception as e:  # noqa: BLE001
@@ -223,7 +366,22 @@ def post() -> int:
     return 0
 
 
-def _passthrough(sub: str, timeout: int) -> int:
+def _context_json(event: str, text: str) -> str:
+    return json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}})
+
+
+def _take_boot_context() -> str | None:
+    """The SessionStart text (first-run question) the bootstrap produced, once."""
+    path = os.path.join(_boot_dir(), BOOT_CONTEXT)
+    try:
+        text = open(path).read()
+        os.unlink(path)
+        return text or None
+    except OSError:
+        return None
+
+
+def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
     """Run `bawwab <sub>` with our stdin and print its JSON output; never fail the hook."""
     import subprocess
 
@@ -235,14 +393,31 @@ def _passthrough(sub: str, timeout: int) -> int:
         _note_session(json.loads(raw))
     except ValueError:
         _note_session(None)
-    try:
-        r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=timeout,
-                           env=_child_env())
-        out = r.stdout.strip()
-        if r.returncode == 0 and out and isinstance(json.loads(out), dict):
-            print(out)
-    except Exception:  # noqa: BLE001 - informational hooks never block
-        pass
+    event = "SessionStart" if sub == "inventory" else "UserPromptSubmit"
+    if not _bootstrapped():
+        if sub == "inventory":
+            _start_bootstrap(raw)
+            print(_context_json(event, SETUP_CONTEXT))
+        return 0
+    extra = _take_boot_context() if sub == "notify" else None
+    out = None
+    if run:
+        try:
+            r = subprocess.run(_bawwab_cmd(sub), input=raw, capture_output=True, text=True, timeout=timeout,
+                               env=_child_env())
+            out = r.stdout.strip()
+            if not (r.returncode == 0 and out and isinstance(json.loads(out), dict)):
+                out = None
+        except Exception:  # noqa: BLE001 - informational hooks never block
+            out = None
+    if extra:
+        try:
+            prev = json.loads(out).get("hookSpecificOutput", {}).get("additionalContext") if out else None
+        except (ValueError, AttributeError):
+            prev = None
+        out = _context_json(event, extra + (f"\n\n{prev}" if isinstance(prev, str) and prev else ""))
+    if out:
+        print(out)
     return 0
 
 
@@ -277,7 +452,16 @@ def main(argv: list[str]) -> int:
     if argv[1:2] == ["inventory"]:
         return _passthrough("inventory", 60)
     if argv[1:2] == ["notify"]:
-        return _passthrough("notify", 30) if _flag_present() else 0
+        if _flag_present():
+            return _passthrough("notify", 30)
+        if os.path.exists(os.path.join(_boot_dir(), BOOT_CONTEXT)):
+            return _passthrough("notify", 30, run=False)
+        return 0
+    if argv[1:2] == ["bootstrap"]:
+        try:
+            return bootstrap()
+        except Exception:  # noqa: BLE001
+            return 0
     return 0
 
 

@@ -118,7 +118,11 @@ def test_hook_runs_its_own_project_never_bawwab_from_path(tmp_path):
     (b / "bawwab").chmod(0o755)
     write_uv_shim(b, log)
     data_dir = tmp_path / "plugin-data"
-    env = {k: v for k, v in os.environ.items() if k != "BAWWAB_CHILD"}
+    data_dir.mkdir()
+    from conftest import _boot_token
+
+    (data_dir / "bootstrap-complete").write_text(_boot_token())
+    env = {k: v for k, v in os.environ.items() if k not in ("BAWWAB_CHILD", "BAWWAB_VENV")}
     env.update(PATH=f"{a}:{b}:{os.environ['PATH']}", CLAUDE_PLUGIN_ROOT=str(tmp_path / "elsewhere"),
                CLAUDE_PLUGIN_DATA=str(data_dir))
     data = {"tool_name": "Bash", "tool_input": {"command": "claude mcp add x -- npx -y x@1"}, "cwd": str(tmp_path)}

@@ -210,6 +210,13 @@ scanning on its own.
     verified.
   - A reinstall resets `installedAt`. This is plausible, not verified; it
     opens a 10-minute window.
+  - **First-run setup markers (fix round 2, I4).** The first `uv` sync runs
+    detached and writes `bootstrap-complete` in bawwab's plugin data dir;
+    bawwab writes `state-created` there when it first writes its state.
+    Lost state is reported when `state-created` exists, or when the R39
+    transcript rule holds and `bootstrap-complete` exists, so a slow first
+    setup is never a false alarm. A wipe that also removes both data-dir
+    markers (and the transcripts' evidence) reads as a fresh install.
 
 ### 1b. Effect check (added during build, user-approved 2026-11-19)
 

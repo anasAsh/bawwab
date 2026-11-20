@@ -22,6 +22,7 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("rules.error", "A scan rule failed", "A rule crashed, so its findings are missing; the result is incomplete.", "Review the target manually; report the failing rule."),
         _r("install-script", "Runs code at install time", "Install hooks run automatically with your privileges before you can review anything.", "Read the script; prefer packages with no install hooks."),
         _r("install-script.remote", "Install script fetches remote content", "An install hook that downloads content can deliver a payload that differs from what was reviewed.", "Do not install; vendor the download or pin it by hash."),
+        _r("install.custom-index", "Installs packages from a non-PyPI index", "A script runs pip install (or uv pip install) with --index-url, --extra-index-url or -i pointing at another server, so the code it installs comes from a source Bawwab never scanned.", "Install from PyPI with pinned versions, or review the index and packages yourself."),
         _r("remote-code.pipe-shell", "Pipes a download into a shell", "Executes whatever the remote server returns, unreviewed.", "Download, verify a checksum, then run."),
         _r("remote-code.eval-fetch", "Evaluates fetched content", "Code fetched at runtime can change after review.", "Bundle the code instead of fetching it."),
         _r("obfuscation.eval-decoded", "Evaluates decoded content", "Decoding then executing a string is a standard way to hide a payload.", "Replace with plain code; treat the package as hostile."),

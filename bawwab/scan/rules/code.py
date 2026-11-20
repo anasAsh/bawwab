@@ -276,6 +276,13 @@ RUN_RE = re.compile(r"\b(sh|bash|zsh|chmod)\b")
 URL_IMPORT_RE = re.compile(r"^\(?\s*['\"`]https?://")
 
 PIPE_SHELL_RE = re.compile(r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b")
+# `pip install` / `uv pip install` from an index other than PyPI, in a shell line or an argv list (fix round 2).
+_ARGSEP = r"""['"]?(?:\s*,\s*|\s+)['"]?"""
+PIP_INDEX_RE = re.compile(
+    rf"(?:\bpip3?|\buv{_ARGSEP}pip){_ARGSEP}install\b[^\n]{{0,300}}?(?:--index-url|--extra-index-url|(?<![\w-])-i)"
+    rf"(?:{_ARGSEP}|=)['\"]?(https?://[^\s'\",\])]+)"
+)
+PYPI_HOSTS = {"pypi.org", "files.pythonhosted.org"}
 # Fallback for shell scripts and anything that did not parse.
 FB_EVAL_DECODED_RE = re.compile(
     r"\beval\b[^\n]*(?:base64\s+(?:-d|--decode)|\batob\b|b64decode|xxd\s+-r|rot13)"
@@ -1317,6 +1324,17 @@ class CodeRules:
         if m:
             sev = Severity.CRITICAL if is_install else Severity.HIGH
             out.append(_finding("remote-code.pipe-shell", sev, f, _line_of(raw, m.start())))
+        for m in PIP_INDEX_RE.finditer(raw):
+            from urllib.parse import urlsplit
+
+            try:
+                host = urlsplit(m.group(1)).hostname
+            except ValueError:
+                host = None
+            if host not in PYPI_HOSTS:
+                out.append(_finding("install.custom-index", Severity.MED, f, _line_of(raw, m.start()),
+                                    f"installs Python packages from {m.group(1)[:120]}"))
+                break
         if not f.rel.endswith(".min.js"):
             m = next((m for m in BLOB_RE.finditer(raw) if not m.group(1).isdigit() and not _image_b64(m.group(1))), None)
             if m:

@@ -6,6 +6,16 @@ from pathlib import Path
 import pytest
 
 REAL_HOME = Path.home()
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _boot_token() -> str:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_hook_for_token", _ROOT / "hooks" / "bawwab_hook.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m._boot_token()
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +32,11 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)  # an extra project scope
     monkeypatch.delenv("BAWWAB_SESSION_ID", raising=False)  # the hook sets it from its input (lost-state check)
     (root / "home").mkdir()
+    # The hook's first-run bootstrap (fix round 2, I4) is done: the dev checkout's own venv is the one to use.
+    # Tests of the bootstrap itself remove the marker or point BAWWAB_VENV elsewhere.
+    monkeypatch.setenv("BAWWAB_VENV", str(_ROOT / ".venv"))
+    (root / "bawwab").mkdir()
+    (root / "bawwab" / "bootstrap-complete").write_text(_boot_token())
     if "real_spawn" not in request.keywords:
         def _no_spawn(cwd):
             raise AssertionError("test tried to spawn the background inventory; mark it real_spawn or patch it")

@@ -234,6 +234,31 @@ def is_bawwab_plugin_dir(path: str) -> bool:
 
 
 LOST_AFTER = 600  # seconds: a plugin install older than this with no bawwab state means the state was lost
+STATE_CREATED = "state-created"  # in bawwab's plugin data dir: bawwab has written its state (fix round 2, I4)
+BOOTSTRAP_COMPLETE = "bootstrap-complete"  # in bawwab's plugin data dir: the first-run venv sync finished
+
+
+def plugin_data_dirs(home: str) -> list[str]:
+    """bawwab's plugin data dirs: $CLAUDE_PLUGIN_DATA (when it is bawwab's) and every bawwab-named dir under
+    <claude config>/plugins/data, so the user's `!` shell (no plugin env) finds the same ones as the hooks."""
+    out = []
+    pd = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if pd and os.path.isabs(pd) and is_bawwab_plugin_dir(pd):
+        out.append(os.path.normpath(pd))
+    base = os.path.join(_claude_dir(home), "plugins", "data")
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        names = []
+    for n in names:
+        d = os.path.join(base, n)
+        if is_bawwab_plugin_dir(d) and os.path.isdir(d) and os.path.normpath(d) not in out:
+            out.append(os.path.normpath(d))
+    return out
+
+
+def data_marker(home: str, name: str) -> bool:
+    return any(os.path.exists(os.path.join(d, name)) for d in plugin_data_dirs(home))
 
 
 def _claude_dir(home: str) -> str:
@@ -347,10 +372,17 @@ def plugin_lost(home: str, session_id: str | None = None) -> str | None:
     (wiped), never a fresh install. The reason, or None (a late first session gets the first-run flow).
     session_id defaults to BAWWAB_SESSION_ID, which the hook sets from its input."""
     at = plugin_installed_at(home)
-    if at is None or time.time() - at <= LOST_AFTER:
+    if at is None:
         return None
-    if not session_after(home, at, session_id or os.environ.get("BAWWAB_SESSION_ID") or None):
-        return None
+    # Fix round 2 (I4): bawwab wrote its state once (state-created survives in its data dir), or the R39
+    # transcript rule holds AND its first-run setup finished. A slow first setup is never "lost".
+    if not data_marker(home, STATE_CREATED):
+        if time.time() - at <= LOST_AFTER:
+            return None
+        if not session_after(home, at, session_id or os.environ.get("BAWWAB_SESSION_ID") or None):
+            return None
+        if not data_marker(home, BOOTSTRAP_COMPLETE):
+            return None
     return ("bawwab's state was lost: bawwab has been installed as a plugin since "
             f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(at))} and Claude Code has run since, but bawwab's "
             "state and install markers are missing")
