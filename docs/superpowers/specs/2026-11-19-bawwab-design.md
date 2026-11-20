@@ -238,12 +238,14 @@ scanning on its own.
     - scripts it reads: a file named on the command line and run by
       `sh|bash|dash|zsh|ksh <file>`, `sh < file`, `cat file | sh`, `. <file>`,
       `source <file>`, a path command word (`./file`), or `make` (its
-      makefiles and the literal includes that exist; includes computed at make
-      time are skipped). The gate reads the file as it is at check time (at
+      makefiles and the literal, non-glob includes that exist, relative to
+      make's directory; includes computed at make time or matched by a glob
+      are skipped, and `-I` include paths are not searched). The gate reads the file as it is at check time (at
       most 1 MB; never run), fills in the call's positional arguments, and
       follows nested script calls three files deep. A file run by
       `python|node|perl|ruby… <file>` is checked by the write rule's content
-      rule, so only literal single-line calls in that file are caught;
+      rule, so only literal single-line calls in plain strings or argv lists
+      in that file are caught;
     - a git shell alias holding a protected call, set on the command line:
       `git -c alias.X='!…'` and `git config [--global|--local|-f F] alias.X
       '!…'` (option values such as `-f`/`--type`/`--blob`/`--comment` are
@@ -254,17 +256,21 @@ scanning on its own.
       `tee`, a heredoc or a redirect, or by copying a script (shebang or
       execute bit). An edit is judged on the calls it adds.
 
-    The split is exact:
-    - **Plain deny** (no pending approval, never suggests `bawwab approve`;
-      "the user must run it themselves", or for a write "the user must run
-      that command themselves; Claude shouldn't write it into files"): a
-      protected call found inside a file the gate reads, in a command-line git
-      alias, or in a write; and an R55 hit whose only match is the text a
-      redirect, `tee` or heredoc writes (the command is checked again with
-      that text blanked).
-    - **Approvable block** (pending approval, as before): direct and wrapper
-      invocations; install-gate blocks; and a file the gate could not check
-      (unreadable, over 1 MB, nested more than three files deep).
+    Every hit is a deny. Which kind is best-effort, not exact:
+    - **Usually a plain deny** (no pending approval, never suggests `bawwab
+      approve`; "the user must run it themselves", or for a write "the user
+      must run that command themselves; Claude shouldn't write it into
+      files"): a protected call found inside a file the gate reads, in a
+      command-line git alias, or in a write; and an R55 hit whose only match is
+      the text a redirect, `tee` or heredoc writes (the command is checked
+      again with that text blanked, which only works for the quoted forms it
+      can match).
+    - **Usually an approvable block** (pending approval, as before): direct
+      and wrapper invocations; install-gate blocks; and a file the gate could
+      not check (unreadable, over 1 MB, nested more than three files deep).
+    - Some write and alias forms (an unquoted or escaped `echo … > f`,
+      `tee f <<< …`, `echo … | tee f`, aliases R55 also matches) still get an
+      approvable block, and a few direct calls can come out plain.
   - **Not covered (R57).** Once Claude can run a program it writes, static
     inspection can't keep the approve command from the same OS user. These
     routes are not refused, and an agent instructed to bypass bawwab (for
@@ -279,11 +285,14 @@ scanning on its own.
       `git checkout`, `git pull`, `cp`, `curl -o` or archive extract): the gate
       checks the file as it is when it reads it;
     - Python/Node calls the content rule doesn't parse (an argv list split
-      over lines, a template literal), and imports;
+      over lines, JS template literals and other interpolated strings), and
+      imports;
     - git aliases written into a git config file (an `[alias]` section) or set
       through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`;
     - make includes computed at make time (`-include $(OBJS:.o=.d)`,
-      `include $(wildcard *.mk)`);
+      `include $(wildcard *.mk)`) or matched by a glob (`include ev*.mk`),
+      `make -I` include paths, `MAKEFILES=`, `make --eval`/`-E`, and
+      `SHELL :=` in a makefile;
     - compiled programs, interpreters reading code from the network,
       runtime-computed paths, scripts run by a bare name on PATH;
     - write forms the rule doesn't parse (an argv list split over lines, a

@@ -41,24 +41,28 @@ Bawwab and Claude's tool shell run as the same OS user, so bawwab cannot fully k
 
 - direct and wrapper invocations it recognises: under bawwab's name, through a renamed symlink or copy of its
   launcher or console script, through `python -m bawwab` or `python -c` code that imports bawwab, and shell writes
-  to its store, plugin data dir or venv. These are a block the user can approve;
+  to its store, plugin data dir or venv;
 - calls inside scripts it reads: a file named on the command line and run by `sh`/`bash`/`dash`/`zsh`/`ksh`,
-  `.`/`source`, `./file` or `make` (its makefiles and the literal includes that exist), checked as it is when the
-  gate reads it, three nested files deep; and in a file run by `python`/`node`/…, calls in a form the gate
-  recognises (literal single-line calls in that file only). A script the gate can't read, over 1 MB or nested
-  deeper is a block the user can approve; a protected call found inside is a plain refusal;
+  `.`/`source`, `./file` or `make` (its makefiles and the literal, non-glob includes that exist in make's own
+  directory), checked as it is when the gate reads it, three nested files deep; and in a file run by
+  `python`/`node`/…, calls in a form the gate recognises (literal single-line calls in plain strings or argv lists
+  in that file only). A script the gate can't read, over 1 MB or nested deeper is refused too;
 - git `!` aliases holding such a call, set on the command line: `git -c alias.X='!…'` and
-  `git config [--global|--local|-f F] alias.X '!…'`. A plain refusal;
+  `git config [--global|--local|-f F] alias.X '!…'`;
 - writing such a call, in a form the gate recognises, into a file (Write/Edit, `tee`, heredocs, redirects, copying
-  a script). A plain refusal, including when the only match is the text being written.
+  a script).
 
-A plain refusal creates no pending approval and never suggests `bawwab approve`: the user runs the command
-themselves.
+Every hit is a deny. Whether a deny is a plain refusal (no pending approval, no `bawwab approve` suggestion: the
+user runs the command themselves) or an approvable block is best-effort. Hits inside files the gate reads, in
+command-line aliases and in writes are usually plain; direct calls and files it can't check are usually
+approvable; some write and alias forms still get an approvable block, and a few direct calls can come out plain.
 
 It does **not** cover: a script changed earlier in the same command (a `git checkout`, `git pull`, `cp` or
-download before running it), multi-line argv lists and imports in Python/Node code, aliases written into a git
-config file or set through `GIT_CONFIG_*`, git hooks and other config-borne commands, npm/yarn/pnpm/just/tox
-scripts, build tools, make includes computed at make time, process substitution, `$(cat f)` and `eval`,
+download before running it), multi-line argv lists, JS template literals and other interpolated strings, and
+imports in Python/Node code, aliases written into a git config file or set through `GIT_CONFIG_*`, git hooks and
+other config-borne commands, npm/yarn/pnpm/just/tox scripts, build tools, make includes computed at make time or
+matched by a glob, `make -I` include paths, `MAKEFILES=`, `make --eval`, `SHELL :=` in a makefile, process
+substitution, `$(cat f)` and `eval`,
 `BASH_ENV`, compiled programs, runtime-computed paths, or any program Claude writes and then runs. An agent
 instructed to bypass bawwab (for example by prompt injection) could approve through those routes, or by forging
 bawwab's state directly. Isolating bawwab's state from Claude (a separate OS user or a sandbox) is the only full

@@ -341,19 +341,23 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
 - Bawwab runs as the same OS user as Claude's tool shell, so it can't fully keep its approve command from
   Claude. The gate refuses Claude-run approvals (`approve`, `reject`, `init --skip`, `effects --retry`) only
   when it sees them:
-  - direct and wrapper invocations it recognises (any name or copy of the `bawwab` command, `python -m bawwab`):
-    a block you can approve;
+  - direct and wrapper invocations it recognises (any name or copy of the `bawwab` command, `python -m bawwab`);
   - inside scripts it reads (sh/bash/`.`/`source`/`./`/make files named on the command line), checked as they
-    are when the gate reads them; in Python/Node files only literal single-line calls in the named file:
-    a plain refusal, nothing to approve;
-  - git `!` aliases set on the command line (`git -c alias.X='!…'`, `git config [-f F] alias.X '!…'`): a plain
-    refusal;
-  - writing such a call, in a form it recognises, into a file: a plain refusal.
+    are when the gate reads them; in Python/Node files only literal single-line calls in plain strings or argv
+    lists in the named file;
+  - git `!` aliases set on the command line (`git -c alias.X='!…'`, `git config [-f F] alias.X '!…'`);
+  - writing such a call, in a form it recognises, into a file.
+
+  Every hit is a deny. Whether it is a plain refusal (nothing to approve; usual for hits inside files, aliases and
+  writes) or a block you can approve (usual for direct calls) is best-effort: some write and alias forms still get
+  an approvable block, and a few direct calls can come out plain.
 
   It does **not** cover: a script changed earlier in the same command (`git checkout`/`pull` then run it),
-  multi-line argv lists and imports in Python/Node, aliases written into a git config file or set through
-  `GIT_CONFIG_*`, git hooks, npm/just/tox scripts, build tools, make includes computed at make time, process
-  substitution, `$(cat f)`, `BASH_ENV`, or any program Claude writes and then runs. An agent instructed to
+  multi-line argv lists, JS template literals and other interpolated strings, and imports in Python/Node,
+  aliases written into a git config file or set through `GIT_CONFIG_*`, git hooks, npm/just/tox scripts, build
+  tools, make includes computed at make time or matched by a glob, `make -I` include paths, `MAKEFILES=`,
+  `make --eval`, `SHELL :=` in a makefile, process substitution, `$(cat f)`, `BASH_ENV`, or any program Claude
+  writes and then runs. An agent instructed to
   bypass bawwab (by prompt injection, for example) could approve through those routes. Approval that needs you
   to be present is planned for v1.1.
 - v1 protects **Claude Code**. Cursor, Codex CLI, Claude Desktop and VS Code are planned for v1.1 (see roadmap).
