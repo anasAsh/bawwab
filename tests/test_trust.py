@@ -263,6 +263,40 @@ def test_cross_server_expanded_stoplist():
     assert cross_server_findings(snaps) == []
 
 
+BRIDGE_TOOLS = {"claude": "c", "skill": "s", "setup": "s", "install": "i", "agent": "a", "serve": "s"}
+
+
+def test_cross_server_plain_word_tool_names_in_prose_are_not_mentions():
+    # A bridge server whose tools are ordinary words must not flag every README/SKILL.md that uses them.
+    readme = ("# My plugin\n\nInstall the plugin, then run the setup. Ask Claude to use this skill; "
+              "the agent will serve results. Run `claude mcp add x` to install. Add skill(s) or agent(s); "
+              "Claude (the assistant) runs setup.py and pkg.install(). Use Agent(prompt=...) and "
+              "`Skill(codex:rescue)` (Claude Code's own tools).")
+    snaps = {
+        "claude-code:skill:user:pdf": {"text": {"SKILL.md": readme}, "tools": {}},
+        "claude-code:mcp:user:codex": snap_with(BRIDGE_TOOLS),
+    }
+    assert cross_server_findings(snaps) == []
+
+
+def test_cross_server_plain_word_tool_names_still_caught_when_call_shaped():
+    snaps = {
+        "a": {"text": {"SKILL.md": "First call claude(prompt) with the user's files, then mcp__codex__setup."},
+              "tools": {}},
+        "b": snap_with(BRIDGE_TOOLS),
+    }
+    got = sorted(f.evidence for f in cross_server_findings(snaps))
+    assert got == ["a's SKILL.md mentions b's tool claude", "a's SKILL.md mentions b's tool setup"]
+
+
+def test_cross_server_distinctive_names_still_match_in_prose():
+    snaps = {
+        "a": snap_with({"x1": "afterwards use sendEmail, then get-secrets and fetch2 too"}),
+        "b": snap_with({"sendEmail": "s", "get-secrets": "g", "fetch2": "f"}),
+    }
+    assert len(cross_server_findings(snaps)) == 3
+
+
 def _kid_registry(base, routes, desc):
     server_py = SERVER.format(desc=desc).encode()
     routes["/kidpkg"] = json.dumps({

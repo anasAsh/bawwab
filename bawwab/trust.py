@@ -27,6 +27,9 @@ STOPLIST = {
     "execute", "info", "data", "file", "files", "search", "list", "read", "write", "get", "fetch", "run",
 }
 MIN_TOOL_NAME = 4
+# A tool name that is one ordinary word (claude, skill, setup, forecast) reads as prose in any README or
+# SKILL.md, so it only counts as a mention when it is shaped like a tool call or a qualified tool id.
+_PLAIN_WORD = re.compile(r"[A-Za-z][a-z]*|[A-Z]+")
 _KNOWN_PREFIXES = ("npm:", "pypi:", "git:", "remote:", "local:", "docker:")
 
 
@@ -207,8 +210,21 @@ def diff_since_trusted(name: str, store: Store, fetch_opts: FetchOpts | None = N
     return summary or f"no changes since trusted snapshot for {name}"
 
 
+def _mention_pattern(tool: str) -> re.Pattern[str]:
+    """How a mention of `tool` looks in text. Every name matches as a qualified id (mcp__server__tool).
+    A distinctive name (with _, -, digits or camelCase) also matches as a bare word; a plain word only
+    as a call, `tool(` (not `skill(s)`), since as a bare word it is ordinary prose. That call form keeps
+    the tool's exact case, so Claude Code's own `Agent(` / `Skill(` never count as a server's agent/skill."""
+    t = re.escape(tool)
+    qualified = rf"(?i:mcp__[\w-]+?__{t})(?![\w-])"
+    if _PLAIN_WORD.fullmatch(tool):
+        return re.compile(rf"{qualified}|(?<![\w.]){t}\((?!s\))")
+    return re.compile(rf"{qualified}|(?i:(?<!\w){t}(?!\w))")
+
+
 def cross_server_findings(snapshots: dict[str, dict]) -> list[Finding]:
-    """One high finding per (A, B, tool) where A's model-facing text mentions B's tool by name."""
+    """One high finding per (A, B, tool) where A's model-facing text mentions B's tool by name
+    (see _mention_pattern for what counts as a mention)."""
     out: list[Finding] = []
     names = sorted(snapshots)
     for a in names:
@@ -221,7 +237,7 @@ def cross_server_findings(snapshots: dict[str, dict]) -> list[Finding]:
             for tool in sorted(snapshots[b].get("tools", {})):
                 if len(tool) < MIN_TOOL_NAME or tool.lower() in STOPLIST or tool in a_tools:
                     continue
-                pat = re.compile(rf"(?<!\w){re.escape(tool)}(?!\w)", re.I)
+                pat = _mention_pattern(tool)
                 for label in sorted(a_texts):
                     if pat.search(a_texts[label]):
                         out.append(Finding(
