@@ -21,7 +21,7 @@ PY_TOKEN_LIMIT = 600_000  # estimated tokens; real code is ~4-6 bytes/token, so 
 _CHUNK = 1 << 16
 _CHECK_EVERY = 32  # progress callbacks between RSS reads (~3 us each)
 
-_PUNCT = b",;()[]{}.=+-*/<>!?:&|~^%@"
+_PUNCT = b",;()[]{}.=+-*/<>!?:&|~^%@\"'`"  # quotes too: `("" "" ...)` is one token per pair (review R1-M1)
 _WORDMAP = bytes(0x61 if (chr(i).isalnum() or chr(i) in "_$" or i >= 0x80) else 0x20 for i in range(256))
 
 _refused: OrderedDict[tuple, None] = OrderedDict()  # (len, hash) of texts refused; bounded LRU

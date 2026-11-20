@@ -41,9 +41,11 @@ class _CliBackend:
         env = child_env()
         with tempfile.TemporaryDirectory(prefix="bawwab-judge-") as cwd:
             try:
+                from bawwab.limits import child_argv
+
                 proc = subprocess.run(
-                    argv, input=user, capture_output=True, text=True, timeout=timeout_s,
-                    env=env, cwd=cwd, shell=False,
+                    child_argv(argv, env), input=user, capture_output=True, text=True, timeout=timeout_s,
+                    env=env, cwd=cwd, shell=False,  # child_argv: the judge keeps the original rlimit (R1-I1)
                 )
             except subprocess.TimeoutExpired as e:
                 raise TimeoutError("claude CLI timed out") from e

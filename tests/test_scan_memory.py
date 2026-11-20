@@ -422,3 +422,150 @@ def test_scan_target_blowup_is_bounded(tmp_path):
                                         cfg=Config(), judge=False))
     assert r.verdict == Verdict.MALICIOUS, r.findings
     assert peak < 400 * MB, peak
+
+
+# ------------------------------------------------------------------ round 2: sinks in degraded mode (R1-C1)
+
+_JUNK = "1 "  # no identifiers, no blob: neither the text rules nor the regex fallback see anything
+
+
+def _deg_js(v: int, n: int, u: int) -> str:
+    """Review R1-C1 deg1/deg3: padding calls spend the full budget on resolution, then a decoded value
+    reaches eval through a variable whose value is larger than the room left."""
+    return (f'var a = "{_JUNK * (v // 2)}";\n' + "f(a);\n" * n
+            + f'const u = atob("Y29uc29sZS5sb2coMSk=") || "{_JUNK * (u // 2)}";\neval(u);\n')
+
+
+def _deg_py(v: int, n: int, u: int) -> str:
+    return (f'import base64\na = "{_JUNK * (v // 2)}"\n' + "f(a)\n" * n
+            + f'u = base64.b64decode("cHJpbnQoMSk=") or "{_JUNK * (u // 2)}"\nexec(u)\n')
+
+
+def _scan_dir(tmp_path: Path, rel: str, text: str):
+    d = tmp_path / "pkg"
+    d.mkdir()
+    (d / "package.json").write_text('{"name": "x", "version": "1.0.0"}')
+    (d / rel).write_text(text)
+    return scan_target(Target("local", str(d), path=str(d)), store=Store(tmp_path / "t.db"), cfg=Config(), judge=False)
+
+
+def test_deg3_padding_and_indirection_is_malicious(tmp_path):
+    text = _deg_js(8_000, 2_800, 9_000)
+    assert 30_000 < len(text) < 40_000
+    r = _scan_dir(tmp_path, "index.js", text)
+    assert r.verdict == Verdict.MALICIOUS, r.findings
+    assert any(f.rule == "obfuscation.eval-decoded" for f in r.findings)
+
+
+def test_deg1_js_500kb_is_malicious(tmp_path):
+    r = _scan_dir(tmp_path, "index.js", _deg_js(200_000, 130, 300_000))
+    assert r.verdict == Verdict.MALICIOUS, r.findings
+
+
+def test_deg2_python_500kb_is_malicious(tmp_path):
+    r = _scan_dir(tmp_path, "main.py", _deg_py(200_000, 130, 300_000))
+    assert r.verdict == Verdict.MALICIOUS, r.findings
+
+
+def test_deg4_capped_middle_atob_is_malicious(tmp_path):
+    text = ("f(" * 6000 + "1" + ")" * 6000 + ";\n"
+            + 'eval("' + "x " * 1500 + '" + atob("Y29uc29sZS5sb2coMSk=") + "' + "x " * 1500 + '");\n')
+    r = _scan_dir(tmp_path, "index.js", text)
+    assert r.verdict == Verdict.MALICIOUS, r.findings
+
+
+def test_degraded_runs_the_regex_fallback(small_budget):
+    # `u` is never bound: the call rules see eval(u) only; the line-based fallback sees eval ... atob
+    text = "g(1);\n" * 200 + "eval(u); const q = atob(z);\n"
+    findings = run_static_rules([ScanFile("index.js", text)])
+    assert _degraded(findings)
+    assert any(f.rule == "obfuscation.eval-decoded" for f in findings), findings
+
+
+def test_sink_beyond_reserved_slice_is_med(monkeypatch, small_budget):
+    monkeypatch.setattr(code_rules, "SINK_RESERVE", 1_000)
+    text = f'var a = "{_JUNK * 4000}";\n' + "f(a);\n" * 20 + f'const u = "{_JUNK * 4000}";\neval(u);\n'
+    findings = run_static_rules([ScanFile("index.js", text)])
+    med = [f for f in _med_truncated(findings) if "sink call not fully analysed" in (f.evidence or "")]
+    assert med, findings
+    assert _verdict(findings) != Verdict.CLEAN
+
+
+def test_degraded_non_sink_stays_low(small_budget):
+    text = f'var a = "{_JUNK * 4000}";\n' + "f(a);\n" * 20
+    findings = run_static_rules([ScanFile("index.js", text)])
+    assert _degraded(findings) and not _med_truncated(findings)
+    assert _verdict(findings) == Verdict.CLEAN
+
+
+def test_sink_classification():
+    s = code_rules._is_sink
+    for callee in ("eval", "Function", "vm.runInNewContext", "child_process.execSync", "cp.spawn", "os.system",
+                   "subprocess.run", "subprocess.check_output", "exec", "compile", "__import__",
+                   "importlib.import_module", "pickle.loads", "marshal.loads"):
+        assert s(callee, "x", False), callee
+    assert s("require", "name", False) and not s("require", "'fs'", False)
+    assert s("setTimeout", "code", False) and not s("setTimeout", "() => 1", True)
+    for callee in ("fn.call", "obj.run", "JSON.parse", "console.log", "f"):
+        assert not s(callee, "x", False), callee
+
+
+# ------------------------------------------------------------------ round 2: children keep the original limit (R1-I1)
+
+_CHILD = """
+import json, os, sys
+sys.path.insert(0, {root!r})
+from bawwab import limits
+import resource
+orig = resource.getrlimit(resource.RLIMIT_AS)[0]
+limits.apply_memory_limit(1536 << 20)
+assert resource.getrlimit(resource.RLIMIT_AS)[0] == 1536 << 20
+import subprocess
+probe = [sys.executable, "-I", "-c", "import resource; print(resource.getrlimit(resource.RLIMIT_AS)[0])"]
+direct = int(subprocess.run(limits.child_argv(probe), capture_output=True, text=True).stdout)
+# the judge's claude child, through the real backend, with a fake `claude` on PATH
+d = sys.argv[1]
+fake = os.path.join(d, "claude")
+with open(fake, "w") as fh:
+    fh.write("#!" + sys.executable + " -I\\nimport json, resource\\n"
+             "print(json.dumps({{'structured_output': {{'limit': resource.getrlimit(resource.RLIMIT_AS)[0]}}}}))\\n")
+os.chmod(fake, 0o755)
+os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+from bawwab.scan.judge.backends import _CliBackend
+judged = json.loads(_CliBackend("m").complete("s", "u", {{}}, 30))["limit"]
+print(json.dumps([orig, direct, judged]))
+"""
+
+
+def test_children_keep_the_original_address_space_limit(tmp_path):
+    r = subprocess.run([sys.executable, "-I", "-c", _CHILD.format(root=str(ROOT)), str(tmp_path)],
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr[-3000:]
+    orig, direct, judged = json.loads(r.stdout.splitlines()[-1])
+    assert direct == orig and judged == orig, (orig, direct, judged)
+
+
+def test_child_argv_unchanged_without_a_limit_and_missing_exe_raises(monkeypatch):
+    from bawwab import limits
+
+    monkeypatch.setattr(limits, "_ORIGINAL", None)
+    assert limits.child_argv(["git", "status"]) == ["git", "status"]
+    monkeypatch.setattr(limits, "_ORIGINAL", (-1, -1))
+    with pytest.raises(FileNotFoundError):
+        limits.child_argv(["no-such-exe-bawwab"])
+
+
+def test_every_spawn_site_restores_the_limit():
+    for rel in ("bawwab/fetch/git.py", "bawwab/scan/judge/backends.py", "bawwab/inventory.py", "bawwab/cli.py"):
+        assert "child_argv(" in (ROOT / rel).read_text(), rel
+
+
+# ------------------------------------------------------------------ round 2 minors
+
+
+def test_token_estimate_counts_quotes():
+    """R1-M1: implicit string concatenation used to estimate as ~4 tokens."""
+    from bawwab.scan.rules import parsing
+
+    src = b'x = (' + b'"" ' * 100_000 + b')\n'
+    assert parsing.estimate_tokens(src) >= 100_000

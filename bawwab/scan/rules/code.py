@@ -225,6 +225,10 @@ SCAN_CALL_TEXT_BUDGET = 512_000_000  # per scan (run_static_rules), full and deg
 DEGRADED_CAP = 4096  # argument text kept per degraded call (head and tail)
 DEGRADED_CAP_MIN = 256  # once a file's degraded text passes DEGRADED_FILE_POOL
 DEGRADED_FILE_POOL = 32_000_000
+# Sink calls (eval, exec, shells, loaders...) stay fully analysed in degraded mode (fix round 2, R1-C1): their
+# text is kept uncapped and their arguments resolved from this reserve, beyond the full-text budget. A sink
+# the reserve cannot cover gives MED files.truncated "sink call not fully analysed".
+SINK_RESERVE = 32_000_000
 
 
 class _Spent(Exception):
@@ -236,7 +240,9 @@ class _FileBudget:
         self.full, self.hard = full, hard  # full-text allowance; everything kept (full + degraded)
         self.used = 0
         self.degraded_used = 0
+        self.sink_used = 0
         self.over = False
+        self.sink_incomplete = False
 
     def take(self, n: int) -> bool:
         """Full text (source or resolved values) of n bytes, if the file's budget allows."""
@@ -244,6 +250,17 @@ class _FileBudget:
             self.over = True
             return False
         self.used += n
+        return True
+
+    def take_sink(self, n: int) -> bool:
+        """Text for a sink call, from the full budget or else the reserved slice."""
+        if self.take(n):
+            return True
+        if self.sink_used + n > SINK_RESERVE or self.used + n > self.hard:
+            self.sink_incomplete = True
+            return False
+        self.used += n
+        self.sink_used += n
         return True
 
     def take_degraded(self, n: int) -> None:
@@ -310,9 +327,38 @@ def clear_caches() -> None:
 
 
 class _Calls(tuple):
-    """Parsed calls; `over` is True when the full-text budget ran out (some calls degraded)."""
+    """Parsed calls; `over` is True when the full-text budget ran out (some calls degraded);
+    `sink_incomplete` when a sink call could not be kept or resolved in full even from the reserve."""
 
     over = False
+    sink_incomplete = False
+
+
+# Sink callees (fix round 2): code or commands run from their arguments. Generic leaves (run, call, load)
+# count only with their module, so `fn.call(...)` in a bundle is not a sink.
+_SINK_LEAVES = {
+    "eval", "exec", "Function", "compile", "__import__", "import_module", "execSync", "execFile", "execFileSync",
+    "spawn", "spawnSync", "fork", "system", "popen", "Popen", "check_output", "check_call", "getoutput",
+    "getstatusoutput", "runInNewContext", "runInThisContext", "runInContext", "compileFunction",
+}
+_SINK_QUALIFIED_RE = re.compile(
+    r"(?:^|\.)(?:subprocess\.(?:run|call)|os\.(?:exec\w*|spawn\w*)|(?:pickle|cPickle|_pickle|marshal|dill)\.loads?"
+    r"|vm\.\w+|importlib\.\w+|runpy\.\w+)$"
+)
+
+
+def _is_sink(callee: str, first: str, first_is_function: bool) -> bool:
+    c = callee.strip()
+    if len(c) > 200:
+        return False
+    leaf = c.rsplit(".", 1)[-1]
+    if c in EVAL_FUNCS or leaf in _SINK_LEAVES or _SINK_QUALIFIED_RE.search(c):
+        return True
+    if leaf in ("setTimeout", "setInterval", "setImmediate"):
+        return bool(first) and not first_is_function  # a string of code, not a callback
+    if c in DYNAMIC_LOADERS or leaf in ("require", "import"):
+        return bool(first) and not _LITERAL_ARG_RE.match(first)
+    return False
 
 
 def _over(c) -> bool:
@@ -333,7 +379,7 @@ class _Resolver:
     def __init__(self, get, size, budget: _FileBudget, has_names: bool = True):
         self.get, self.size, self.budget, self.has_names = get, size, budget, has_names
 
-    def __call__(self, args: str) -> str:
+    def __call__(self, args: str, sink: bool = False) -> str:
         if not self.has_names:
             return args
         # findall is faster; its list is one str per identifier, so very long text is scanned lazily (M4)
@@ -341,19 +387,41 @@ class _Resolver:
         keys = [w for w in words if self.size(w) is not None]
         if not keys:
             return args
-        if not self.budget.take(sum(self.size(w) + 1 for w in keys)):
-            return args  # over budget: kept unresolved (degraded)
+        cost = sum(self.size(w) + 1 for w in keys)
+        if not (self.budget.take_sink(cost) if sink else self.budget.take(cost)):
+            return args  # over budget: kept unresolved (degraded; a sink sets sink_incomplete)
         return " ".join([args, *[self.get(w) for w in keys]])
 
 
-def _build_calls(raw: list[tuple[int, str, str, str, str, bool]], resolve: _Resolver) -> _Calls:
-    out = _Calls(
-        Call(line, callee, resolve(args), resolve(resolve(first)) if first else "", first, args_raw)
-        if full else Call(line, callee, args, first, first, args_raw)
-        for line, callee, args, first, args_raw, full in raw
-    )
+def _build_calls(raw: list[tuple[int, str, str, str, str, bool, bool]], resolve: _Resolver) -> _Calls:
+    """Sinks first: their resolution comes from the full budget and then the reserve, before padding calls
+    can spend the full budget (R1-C1). The output keeps the extraction order."""
+    built: list[Call | None] = [None] * len(raw)
+    for pass_sinks in (True, False):
+        for i, (line, callee, args, first, args_raw, full, sink) in enumerate(raw):
+            if sink != pass_sinks:
+                continue
+            if full:
+                built[i] = Call(line, callee, resolve(args, sink), resolve(resolve(first, sink), sink) if first else "",
+                                first, args_raw)
+            else:
+                built[i] = Call(line, callee, args, first, first, args_raw)
+    out = _Calls(built)
     out.over = resolve.budget.over
+    out.sink_incomplete = resolve.budget.sink_incomplete
     return out
+
+
+def _dotted(node) -> str:
+    """`a.b.c` for a Name/Attribute chain (no unparse: cheap and bounded), else ""."""
+    parts = []
+    while isinstance(node, ast.Attribute) and len(parts) < 20:
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return ""
 
 
 _PY_NL_RE = re.compile(rb"\r\n|\r|\n")  # the line split `ast` uses (not str.splitlines: R27 C3, review I1)
@@ -409,21 +477,27 @@ def _py_calls(text: str, budget: _FileBudget) -> _Calls | None:
             continue
         argn = [*n.args, *n.keywords]
         est = CALL_OVERHEAD + size_of(n.func) + 2 * sum(size_of(a) for a in argn) + (size_of(n.args[0]) if n.args else 0)
-        if budget.take(est):
+        a0 = n.args[0] if n.args else None
+        first_hint = (repr(a0.value) if isinstance(a0, ast.Constant) and isinstance(a0.value, str) else "x") if a0 else ""
+        sink = _is_sink(_dotted(n.func), first_hint, isinstance(a0, ast.Lambda))
+        if budget.take_sink(est) if sink else budget.take(est):
             parts = [unparse(a, size_of(a)) for a in n.args] + \
                 [f"{k.arg}={unparse(k.value, size_of(k.value))}" for k in n.keywords]
             first = unparse(n.args[0], size_of(n.args[0])) if n.args else ""
             joined = ", ".join(parts)
-            raw.append((n.lineno, unparse(n.func, size_of(n.func)), joined, first, joined, True))
+            raw.append((n.lineno, unparse(n.func, size_of(n.func)), joined, first, joined, True, sink))
             continue
         cap = budget.cap  # degraded: capped source text, unresolved
         callee = seg(*span(n.func), cap)
         joined = seg(span(argn[0])[0], max(span(a)[1] for a in argn), cap) if argn else ""
         first = seg(*span(n.args[0]), cap) if n.args else ""
         budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(joined) + len(first))
-        raw.append((n.lineno, callee, joined, first, joined, False))
+        raw.append((n.lineno, callee, joined, first, joined, False, sink))
     resolve = _Resolver(names.__getitem__, lambda w: len(names[w]) if w in names else None, budget, bool(names))
     return _build_calls(raw, resolve)
+
+
+_JS_FUNCTION_NODES = {"arrow_function", "function_expression", "function", "generator_function"}
 
 
 def _js_lang(rel: str) -> str:
@@ -461,11 +535,16 @@ def _js_calls(text: str, lang: str, budget: _FileBudget) -> _Calls:
             if fn is not None and args is not None:
                 named = next((c for c in args.named_children if c.type != "comment"), None)
                 first = (named.start_byte, named.end_byte) if named is not None else (0, 0)
-                found.append((n.start_point[0] + 1, (fn.start_byte, fn.end_byte), (args.start_byte, args.end_byte), first))
+                is_fn = named is not None and named.type in _JS_FUNCTION_NODES
+                found.append((n.start_point[0] + 1, (fn.start_byte, fn.end_byte), (args.start_byte, args.end_byte), first,
+                              is_fn))
     del stack
     raw = []
-    for line, fn, args, first in sorted(found):
-        if budget.take(CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]):
+    for line, fn, args, first, is_fn in sorted(found):
+        cost = CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]
+        head = capped(fn, 256) if fn[1] - fn[0] > 256 else txt(*fn)
+        sink = _is_sink(head, capped(first, 512), is_fn)
+        if budget.take_sink(cost) if sink else budget.take(cost):
             a, full = txt(*args), True
             callee, first_s = txt(*fn), txt(*first)
         else:  # degraded: capped text, unresolved; the call is still analysed
@@ -473,7 +552,7 @@ def _js_calls(text: str, lang: str, budget: _FileBudget) -> _Calls:
             a, full = capped(args, cap), False
             callee, first_s = capped(fn, cap), capped(first, cap)
             budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(a) + len(first_s))
-        raw.append((line, callee, a, first_s, a[1:-1] if a.startswith("(") and a.endswith(")") else a, full))
+        raw.append((line, callee, a, first_s, a[1:-1] if a.startswith("(") and a.endswith(")") else a, full, sink))
     del found
     resolve = _Resolver(lambda w: txt(*names[w]), lambda w: names[w][1] - names[w][0] if w in names else None, budget,
                         bool(names))
@@ -497,8 +576,6 @@ def _calls(rel: str, text: str) -> _Calls | None:
         return None
     except MemoryError:
         raise  # the code rule reports it per file (rules.error, MED)
-    except MemoryError:
-        raise
     except Exception:  # noqa: BLE001 - never let a hostile file crash the scan
         return None
     _charge_scan(key, budget.used)
@@ -1574,7 +1651,11 @@ def _budget_findings(f: ScanFile) -> list[Finding]:
     if parsing.refused(f.text):
         return [_finding("files.truncated", Severity.MED, f, None,
                          "too large to parse within the memory budget; regex rules only")]
-    if _over(_calls(f.rel, f.text)):
+    calls = _calls(f.rel, f.text)
+    if getattr(calls, "sink_incomplete", False):  # content a sink runs went unanalysed (fix round 2)
+        return [_finding("files.truncated", Severity.MED, f, None,
+                         "sink call not fully analysed: call-analysis memory budget exceeded")]
+    if _over(calls):
         return [_finding("files.analysis-degraded", Severity.LOW, f, None,
                          "call-analysis memory budget exceeded: some calls analysed unresolved, with capped "
                          "argument text")]
@@ -1636,15 +1717,26 @@ class CodeRules:
         out.extend(_budget_findings(f))  # never downgraded by the exemption: fail closed, whatever the file
         return out
 
+    def _calls_findings(self, f: ScanFile, calls) -> list[Finding]:
+        """The call rules, or the regex fallback for an unparsed file. A degraded file gets both: its
+        degraded calls are unresolved and capped, which the line-based fallback covers (fix round 2)."""
+        if calls is None:
+            return self._fallback(f)
+        found = self._ast(f, calls)
+        if _over(calls):
+            seen = {(x.rule, x.line) for x in found}
+            found += [x for x in self._fallback(f) if (x.rule, x.line) not in seen]
+        return found
+
     def _analyse(self, f: ScanFile, is_install: bool) -> list[Finding]:
         calls = _calls(f.rel, f.text)
-        found = self._fallback(f) if calls is None else self._ast(f, calls)
+        found = self._calls_findings(f, calls)
         return found + self._text(f, calls, is_install)
 
     def _strong(self, f: ScanFile) -> list[tuple[str, int]]:
         """Multi-signal behaviour with no context exemption at all (R27 floor)."""
         calls = _calls(f.rel, f.text)
-        found = self._fallback(f) if calls is None else self._ast(f, calls)
+        found = self._calls_findings(f, calls)
         out = [(x.rule, x.line or 1) for x in found if x.rule in STRONG_RULES]
         t, regexes = _code_info(f.rel, f.text)
         # Every credential hit except a regex literal counts, deny-listed or not (R29).

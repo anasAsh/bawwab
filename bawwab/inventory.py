@@ -198,8 +198,10 @@ def spawn_background(cwd: Path, full: bool = False) -> None:
     """Start `bawwab inventory --background` detached; full=True is init --scan / scan --all."""
     cmd = [sys.executable, "-m", "bawwab.cli"]  # this same code and environment: no PATH lookup (fix round 1 I2)
     try:
+        from bawwab.limits import child_argv
+
         subprocess.Popen(
-            [*cmd, "inventory", "--background", *(["--full"] if full else []), "--cwd", str(cwd)],
+            child_argv([*cmd, "inventory", "--background", *(["--full"] if full else []), "--cwd", str(cwd)]),
             start_new_session=True,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )

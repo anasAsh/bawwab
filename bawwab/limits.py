@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - non-POSIX
 
 DEFAULT_LIMIT = 3 << 30
 LIMIT = getattr(resource, "RLIMIT_AS", None)
+_ORIGINAL: tuple[int, int] | None = None  # (soft, hard) before apply_memory_limit lowered the soft limit
 
 
 def apply_memory_limit(limit: int | None = None) -> int | None:
@@ -35,12 +36,49 @@ def apply_memory_limit(limit: int | None = None) -> int | None:
         if limit == 0:
             return None
     limit = limit or DEFAULT_LIMIT
+    global _ORIGINAL
     try:
         soft, hard = resource.getrlimit(LIMIT)
         if hard != resource.RLIM_INFINITY:
             limit = min(limit, hard)
         if soft == resource.RLIM_INFINITY or soft > limit:
+            if _ORIGINAL is None:
+                _ORIGINAL = (soft, hard)
             resource.setrlimit(LIMIT, (limit, hard))
         return resource.getrlimit(LIMIT)[0]
     except (OSError, ValueError):
         return None
+
+
+def child_argv(argv: list[str], env: dict | None = None) -> list[str]:
+    """`argv` for a child process that must not inherit the scan's limit (review R1-I1): the judge's
+    `claude` (a Bun/JSC binary that reserves large regions), git, uv, a spawned bawwab. Unchanged unless
+    apply_memory_limit lowered it; otherwise a /bin/sh wrapper raises the soft limit back to its original
+    value (allowed: soft <= hard) and execs the program. No preexec_fn: scans run in threads in the MCP
+    server, where preexec_fn can deadlock. The executable is resolved here, so a missing one still raises
+    FileNotFoundError in the parent."""
+    import shutil
+
+    argv = [str(a) for a in argv]
+    if _ORIGINAL is None or resource is None:
+        return argv
+    exe = argv[0]
+    if not os.path.isabs(exe):
+        found = shutil.which(exe, path=(env or os.environ).get("PATH"))
+        if not found:
+            raise FileNotFoundError(exe)
+        exe = found
+    soft = _ORIGINAL[0]
+    value = "unlimited" if soft == resource.RLIM_INFINITY else str(max(soft // 1024, 1))
+    return ["/bin/sh", "-c", f'ulimit -S -v {value} 2>/dev/null; exec "$@"', "bawwab-child", exe, *argv[1:]]
+
+
+def limit_malloc_arenas(n: int = 2) -> None:
+    """Cap glibc's per-thread malloc arenas (review R1-M2): each reserves 64 MB of address space, which
+    RLIMIT_AS counts, so a threaded server would hit the limit at a few hundred MB of real memory."""
+    try:
+        import ctypes
+
+        ctypes.CDLL(None).mallopt(-8, n)  # M_ARENA_MAX
+    except (OSError, AttributeError, TypeError):  # pragma: no cover - not glibc
+        pass

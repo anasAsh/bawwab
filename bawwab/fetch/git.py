@@ -21,7 +21,10 @@ def _env(home: Path) -> dict[str, str]:
 
 def _run(cmd: list[str], timeout: float, home: Path) -> str:
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=home, env=_env(home))
+        from bawwab.limits import child_argv
+
+        env = _env(home)
+        r = subprocess.run(child_argv(cmd, env), capture_output=True, text=True, timeout=timeout, cwd=home, env=env)
     except subprocess.TimeoutExpired as e:
         raise FetchError("git timed out") from e
     except OSError as e:

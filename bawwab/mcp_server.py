@@ -135,8 +135,9 @@ async def explain_finding(id: str) -> CallToolResult:
 
 
 def main() -> None:
-    from bawwab.limits import apply_memory_limit
+    from bawwab.limits import apply_memory_limit, limit_malloc_arenas
 
+    limit_malloc_arenas()  # scans run in worker threads: per-thread arenas would spend the address space
     apply_memory_limit()  # scans run in this process: fail closed (MemoryError), not OOM
     mcp.run("stdio")
 

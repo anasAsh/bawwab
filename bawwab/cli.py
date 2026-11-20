@@ -383,7 +383,10 @@ def _setup(args) -> int:
         return 1
     rc = 0
     for root in roots:
-        r = subprocess.run([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", "--retry"])
+        from bawwab.limits import child_argv
+
+        # the setup runs `uv sync`: it must not inherit this process's scan memory limit
+        r = subprocess.run(child_argv([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", "--retry"]))
         rc = rc or r.returncode
     return rc
 

@@ -28,6 +28,9 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)  # "installed as a plugin" (lost-state check)
     monkeypatch.delenv("BAWWAB_CHILD", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    # cli.main lowers the process's address-space limit; in-process tests must not lower pytest's own (and
+    # then wrap every child argv). The limit itself is tested in subprocesses (test_scan_memory.py).
+    monkeypatch.setenv("BAWWAB_MEMORY_LIMIT_MB", "0")
     monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)  # the install marker is also written there
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)  # an extra project scope
     monkeypatch.delenv("BAWWAB_SESSION_ID", raising=False)  # the hook sets it from its input (lost-state check)
