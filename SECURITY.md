@@ -49,8 +49,7 @@ Bawwab and Claude's tool shell run as the same OS user, so bawwab cannot fully k
   in that file only). A script the gate can't read, over 1 MB or nested deeper is refused too;
 - git `!` aliases holding such a call, set on the command line: `git -c alias.X='!…'` and
   `git config [--global|--local|-f F] alias.X '!…'`;
-- writing such a call, in a form the gate recognises, into a file (Write/Edit, `tee`, heredocs, redirects, copying
-  a script).
+- writing such a call, in a form the gate recognises, into a file (Write/Edit, `tee`, heredocs, redirects).
 
 Every hit is a deny. Whether a deny is a plain refusal (no pending approval, no `bawwab approve` suggestion: the
 user runs the command themselves) or an approvable block is best-effort. Hits inside files the gate reads, in
@@ -58,7 +57,7 @@ command-line aliases and in writes are usually plain; direct calls and files it 
 approvable; some write and alias forms still get an approvable block, and a few direct calls can come out plain.
 
 It does **not** cover: a script changed earlier in the same command (a `git checkout`, `git pull`, `cp` or
-download before running it), multi-line argv lists, JS template literals and other interpolated strings, and
+download before running it), copies, moves, install and rsync of scripts are not checked (a copied script is still read when a covered runner runs it), multi-line argv lists, JS template literals and other interpolated strings, and
 imports in Python/Node code, aliases written into a git config file or set through `GIT_CONFIG_*`, git hooks and
 other config-borne commands, npm/yarn/pnpm/just/tox scripts, build tools, make includes computed at make time or
 matched by a glob, `make -I` include paths, `MAKEFILES=`, `make --eval`, `SHELL :=` in a makefile, process

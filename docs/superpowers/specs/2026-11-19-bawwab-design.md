@@ -253,8 +253,8 @@ scanning on its own.
     - writing a protected bawwab call in a form it recognises (a bawwab
       command word at a line start, after a shell separator, or at the start
       of a quoted command string or argv list) with Write/Edit/MultiEdit,
-      `tee`, a heredoc or a redirect, or by copying a script (shebang or
-      execute bit). An edit is judged on the calls it adds.
+      `tee`, a heredoc or a redirect. An edit is judged on the calls it
+      adds.
 
     Every hit is a deny. Which kind is best-effort, not exact:
     - **Usually a plain deny** (no pending approval, never suggests `bawwab
@@ -284,6 +284,9 @@ scanning on its own.
     - a script changed earlier in the same command, before it runs (a
       `git checkout`, `git pull`, `cp`, `curl -o` or archive extract): the gate
       checks the file as it is when it reads it;
+    - copies, moves, `install` and `rsync` of scripts are not checked (the
+      pre-filter doesn't route them); a copied script is still read when a
+      covered runner runs it;
     - Python/Node calls the content rule doesn't parse (an argv list split
       over lines, JS template literals and other interpolated strings), and
       imports;

@@ -353,6 +353,7 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   an approvable block, and a few direct calls can come out plain.
 
   It does **not** cover: a script changed earlier in the same command (`git checkout`/`pull` then run it),
+  copies, moves, install and rsync of scripts are not checked (a copied script is still read when a covered runner runs it),
   multi-line argv lists, JS template literals and other interpolated strings, and imports in Python/Node,
   aliases written into a git config file or set through `GIT_CONFIG_*`, git hooks, npm/just/tox scripts, build
   tools, make includes computed at make time or matched by a glob, `make -I` include paths, `MAKEFILES=`,
