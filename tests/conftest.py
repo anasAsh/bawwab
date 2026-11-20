@@ -48,6 +48,12 @@ def _isolated_env(tmp_path_factory, monkeypatch, request):
     import bawwab.scan.osv as osv
 
     osv.clear_cache()
+    if "real_docker" not in request.keywords:
+        # No test reaches a real Docker daemon: deep scans see "docker could not be run" (sandbox.unavailable).
+        def _no_docker(argv, stdin, timeout):
+            raise FileNotFoundError("docker disabled in tests")
+
+        monkeypatch.setattr("bawwab.sandbox.docker._run_cmd", _no_docker)
     if "real_osv" not in request.keywords:
         # No test reaches the real OSV API: registry scans see "no advisories" (Task 10c).
         monkeypatch.setattr(osv, "_post", lambda url, body, timeout: {})

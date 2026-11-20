@@ -342,8 +342,14 @@ def _judge_step(files: list[ScanFile], extra: list[ExtraText], static: list[Find
 def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "") -> list[Finding]:
     if ctx.sandbox is None:
         return [Finding("sandbox.unavailable", Severity.MED, "gate", "deep scan requested but no sandbox (Docker) is available")]
+    from bawwab.sandbox.docker import SandboxUnavailable
+
     try:
         found, tools = ctx.sandbox.run(f, SANDBOX_TIMEOUT_S)
+    except SandboxUnavailable as e:  # fail closed: deep mode without a sandbox run is never a pass
+        from bawwab.report import sanitise
+
+        return [Finding("sandbox.unavailable", Severity.MED, "gate", f"deep scan could not run: {sanitise(e, 200)}")]
     except Exception as e:  # noqa: BLE001 - fail closed
         return [Finding("sandbox.unavailable", Severity.MED, "gate", f"sandbox failed: {type(e).__name__}")]
     out = list(found)
@@ -466,6 +472,10 @@ def scan_target(
     cfg = cfg or load_config(Path.cwd())
     mode = mode or cfg.mode
     store = store or open_store()
+    if mode == Mode.DEEP and sandbox is None:
+        from bawwab.sandbox import default_runner
+
+        sandbox = default_runner()
     try:
         f = fetch_target(t, fetch_opts)
     except FetchError as e:
