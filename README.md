@@ -29,6 +29,10 @@ and blocks anything suspicious until you say yes.**
 ![agent](https://img.shields.io/badge/agent-Claude%20Code-d97757)
 ![tests](https://img.shields.io/badge/tests-1000%2B%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![report](https://img.shields.io/badge/report-top%20100%20scan-0b5cad)](https://anasash.github.io/bawwab/)
+
+**[See the Top-100 scan report →](https://anasash.github.io/bawwab/)** The 100 most popular MCP servers, skills and plugins,
+scanned by Bawwab's static rules, with hand-review notes on the flagged ones.
 
 </div>
 
