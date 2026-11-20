@@ -144,8 +144,9 @@ class BwrapRunner(Runner):
               "--tmpfs", "/run", "--tmpfs", str(spec.real_home)]
         ro: list[Path] = [spec.repo, *self._python_roots(spec.python)]
         uv = self.which("uv")
-        if uv:
-            ro += [Path(uv), Path(uv).resolve()]
+        for tool in ("uv", "uvx"):  # uvx: the mcp-scan baseline probe
+            if t := self.which(tool):
+                ro += [Path(t), Path(t).resolve()]
         ts = spec.real_home / ".cache" / "tree-sitter-language-pack"
         if ts.is_dir():
             ro.append(ts)

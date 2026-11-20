@@ -451,6 +451,7 @@ or labelled "Not yet reviewed".
 uv sync
 uv run pytest -q                                   # the test suite
 uv run python bench/run.py --markdown              # the benchmark (rewrites the README block)
+uv run python eval/run_eval.py --compare           # the effectiveness evaluation, in a bwrap/Docker sandbox
 python3 scripts/build_plugin.py /tmp/bawwab-plugin # build the runtime-only plugin tree
 claude --plugin-dir /tmp/bawwab-plugin             # try that tree in Claude Code without a marketplace
 ```

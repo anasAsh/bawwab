@@ -289,3 +289,21 @@ def test_real_bwrap_run_confirms_isolation(tmp_path):
         assert all(c["ok"] for c in meta["isolation"]["checks"].values()), meta
     finally:
         shutil.rmtree(wd, ignore_errors=True)
+
+
+@pytest.mark.parametrize("cut", ["ConnectError: [Errno 111] Connection refused", "ConnectErro…", "ConnectEr…",
+                                 "Conn…", "ProxyErr…"])
+def test_fetch_failed_kind_does_not_depend_on_path_length(cut):
+    """The evidence is cut to a fixed width, so a longer scratch path cuts more of the error name (seen when the
+    same run moved into the sandbox's longer scratch path)."""
+    reason = ("⛔ bawwab: SUSPICIOUS — /x/run/vendor/p@unknown  (standard scan)\n  MED   F7c43ae  —   "
+              f"GET https://pypi.org/pypi/%2Fx%2Frun%2Fvendor%2Fp/json failed: {cut}")
+    assert run_eval.reason_kind(reason) == "fetch-failed"
+
+
+def test_compare_ignores_temp_dir_suffixes(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    for d, suffix in ((a, "wom95h2y"), (b, "b0mmfvch")):
+        d.mkdir()
+        (d / "replicas.json").write_text(json.dumps({"x": [f"local:<scratch>/replicas-{suffix}/cross/weather"]}))
+    assert run_eval.compare_results(a, b) == []

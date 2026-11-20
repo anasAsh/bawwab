@@ -367,7 +367,10 @@ def reason_kind(text: str) -> str | None:
         return "quarantine"
     if "protected action" in t:
         return "protected"
-    if "fetch.failed" in t or "could not fetch" in t.lower() or "ConnectError" in t or "ProxyError" in t:
+    # the finding's evidence is cut to a fixed width, so how much of "ConnectError" survives depends on the length
+    # of the target path (the scratch dir): match the fetch line itself, not the error name
+    if ("fetch.failed" in t or "could not fetch" in t.lower() or "ConnectError" in t or "ProxyError" in t
+            or re.search(r"\bGET https?://\S+ failed: (?:Conn|Prox)", t)):
         return "fetch-failed"
     if "MALICIOUS" in t:
         return "malicious"
@@ -776,7 +779,8 @@ def comparable(d: Path) -> dict:
         out["replicas"] = strip(rep)
     if (summ := load("summary")) is not None:
         out["summary"] = summ
-    return json.loads(json.dumps(out))  # tuples -> lists, as they would come back from disk
+    # tuples -> lists, as they would come back from disk; mkdtemp suffixes (replicas-XXXXXXXX) don't count
+    return json.loads(re.sub(r"replicas-[A-Za-z0-9_]{8}", "replicas-*", json.dumps(out)))
 
 
 def compare_results(expected: Path | dict, got: Path | dict) -> list[str]:
