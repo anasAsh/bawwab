@@ -122,6 +122,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
     consumed: set[int] = set()
     objects = []
     stack = [root]
+    del root  # a visited node is freed once popped (no Python mirror of the whole tree)
     while stack:
         n = stack.pop()
         stack.extend(n.children)

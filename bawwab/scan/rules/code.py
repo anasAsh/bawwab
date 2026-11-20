@@ -7,6 +7,7 @@ import binascii
 import io
 import json
 import re
+import threading
 import tokenize
 import tomllib
 from collections import Counter
@@ -207,18 +208,130 @@ class Call:
     args_raw: str = ""  # all arguments' source text, unresolved
 
 
-def _resolve(args: str, names: dict[str, str]) -> str:
-    extra = [names[w] for w in set(re.findall(r"[A-Za-z_$][\w$]*", args)) if w in names]
-    return " ".join([args, *extra])
+_IDENT_RE = re.compile(r"[A-Za-z_$][\w$]*")
+
+# Memory budget for the text kept on parsed calls (argument source plus resolved variable values).
+# Nested calls repeat their arguments' source, and resolution appends a variable's whole value to every
+# call that names it: a bundle binds each module body to a name (`var require_x = __commonJS(...)`), so a
+# 15 MB bundle grew to gigabytes (@sveltejs/mcp 0.1.31 needed > 5 GB). The budget is charged before any
+# text is built. Over it, the remaining values are not resolved (or the remaining calls are not kept) and
+# the file gets files.truncated (MED): fail closed, never a clean result.
+CALL_OVERHEAD = 256  # bytes charged per call for the object itself
+CALL_TEXT_FACTOR = 8  # per file: CALL_TEXT_FACTOR x the file size + CALL_TEXT_FLOOR
+CALL_TEXT_FLOOR = 1_000_000
+SCAN_CALL_TEXT_BUDGET = 400_000_000  # per scan (run_static_rules), across files
 
 
-def _py_calls(text: str) -> list[Call] | None:
+class _TextBudget:
+    def __init__(self, n: int):
+        self.left = n
+        self.over = False
+
+    def take(self, n: int) -> bool:
+        if n > self.left:
+            self.over = True
+            return False
+        self.left -= n
+        return True
+
+
+class _ScanState(threading.local):
+    budget: _TextBudget | None = None
+
+    def __init__(self):
+        self.charged: dict[tuple, int] = {}  # (rel, text hash, size) -> bytes charged to the scan
+
+
+_SCAN = _ScanState()
+
+
+def _file_budget(size: int, key: tuple) -> _TextBudget:
+    n = CALL_TEXT_FACTOR * size + CALL_TEXT_FLOOR
+    scan = _SCAN.budget
+    if scan is None:
+        return _TextBudget(n)
+    return _TextBudget(min(n, max(scan.left + _SCAN.charged.get(key, 0), 0)))
+
+
+def _charge_scan(key: tuple, used: int) -> None:
+    """Charge a file's call text to the scan once (a cache eviction recomputes it, never double charges)."""
+    if _SCAN.budget is not None and key not in _SCAN.charged:
+        _SCAN.charged[key] = used
+        _SCAN.budget.left -= used
+
+
+def begin_scan() -> None:
+    """Start a scan's call-text budget; caches from an earlier scan are dropped (they hold its texts)."""
+    clear_caches()
+    _SCAN.budget = _TextBudget(SCAN_CALL_TEXT_BUDGET)
+    _SCAN.charged = {}
+
+
+def end_scan() -> None:
+    _SCAN.budget = None
+    _SCAN.charged = {}
+    clear_caches()
+
+
+def clear_caches() -> None:
+    """Drop every per-text cache in this module (they hold file texts and parsed calls)."""
+    for v in list(globals().values()):
+        if callable(getattr(v, "cache_clear", None)) and getattr(v, "__module__", None) == __name__:
+            v.cache_clear()
+
+
+class _Calls(tuple):
+    """Parsed calls; `over` is True when the call-text budget ran out (some calls unresolved or dropped)."""
+
+    over = False
+
+
+def _over(c) -> bool:
+    return bool(getattr(c, "over", False))
+
+
+class _Resolver:
+    """Variable resolution under a budget: `size` is known before a value's text is built."""
+
+    def __init__(self, get, size, budget: _TextBudget):
+        self.get, self.size, self.budget = get, size, budget
+
+    def __call__(self, args: str) -> str:
+        keys = [w for w in set(_IDENT_RE.findall(args)) if self.size(w) is not None]
+        if not keys:
+            return args
+        if not self.budget.take(sum(self.size(w) + 1 for w in keys)):
+            return args  # over budget: kept unresolved; the file is flagged
+        return " ".join([args, *[self.get(w) for w in keys]])
+
+
+def _build_calls(raw: list[tuple[int, str, str, str, str]], resolve: _Resolver) -> _Calls:
+    out = _Calls(
+        Call(line, callee, resolve(args), resolve(resolve(first)) if first else "", first, args_raw)
+        for line, callee, args, first, args_raw in raw
+    )
+    out.over = resolve.budget.over
+    return out
+
+
+def _py_calls(text: str, budget: _TextBudget) -> _Calls | None:
     try:
         tree = ast.parse(text)
+        lines = [0]
+        for ln in text.splitlines(keepends=True):
+            lines.append(lines[-1] + len(ln))
+
+        def size_of(n) -> int:  # source extent: charged before ast.unparse builds the text
+            try:
+                return max(lines[n.end_lineno - 1] + n.end_col_offset - lines[n.lineno - 1] - n.col_offset, 0) + 16
+            except (AttributeError, IndexError, TypeError):
+                return 1 << 40
+
         names: dict[str, str] = {}
         for n in ast.walk(tree):
             if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
-                names[n.targets[0].id] = ast.unparse(n.value)
+                if budget.take(size_of(n.value)):
+                    names[n.targets[0].id] = ast.unparse(n.value)
             elif isinstance(n, ast.ImportFrom) and n.module:
                 for a in n.names:
                     names[a.asname or a.name] = f"{n.module}.{a.name}"
@@ -226,14 +339,20 @@ def _py_calls(text: str) -> list[Call] | None:
                 for a in n.names:
                     if a.asname:
                         names[a.asname] = a.name
-        calls = []
+        raw = []
         for n in ast.walk(tree):
             if isinstance(n, ast.Call):
+                cost = CALL_OVERHEAD + size_of(n.func) + 2 * sum(size_of(a) for a in [*n.args, *n.keywords])
+                if n.args:
+                    cost += size_of(n.args[0])
+                if not budget.take(cost):
+                    break  # over budget: the remaining calls are not kept; the file is flagged
                 parts = [ast.unparse(a) for a in n.args] + [f"{k.arg}={ast.unparse(k.value)}" for k in n.keywords]
-                raw = ast.unparse(n.args[0]) if n.args else ""
-                first = _resolve(_resolve(raw, names), names) if raw else ""
-                calls.append(Call(n.lineno, ast.unparse(n.func), _resolve(", ".join(parts), names), first, raw, ", ".join(parts)))
-        return calls
+                first = ast.unparse(n.args[0]) if n.args else ""
+                joined = ", ".join(parts)
+                raw.append((n.lineno, ast.unparse(n.func), joined, first, joined))
+        resolve = _Resolver(names.__getitem__, lambda w: len(names[w]) if w in names else None, budget)
+        return _build_calls(raw, resolve)
     except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None  # hostile or unparseable: caller falls back to regex
 
@@ -244,49 +363,57 @@ def _js_lang(rel: str) -> str:
     return "typescript" if rel.endswith(TS_EXT) else "javascript"
 
 
-def _js_calls(text: str, lang: str) -> list[Call]:
+def _js_calls(text: str, lang: str, budget: _TextBudget) -> _Calls:
     parser = get_parser(lang)
     src = text.encode()
-    root = parser.parse(src).root_node
 
-    def txt(n) -> str:
-        return src[n.start_byte : n.end_byte].decode("utf-8", "replace")
+    def txt(a: int, b: int) -> str:
+        return src[a:b].decode("utf-8", "replace")
 
-    names: dict[str, str] = {}
+    # Byte spans only while walking: no text is built until the budget allows it.
+    names: dict[str, tuple[int, int]] = {}
     found = []
-    stack = [root]
+    stack = [parser.parse(src).root_node]
     while stack:
         n = stack.pop()
         stack.extend(n.children)
         if n.type == "variable_declarator":
             name, val = n.child_by_field_name("name"), n.child_by_field_name("value")
             if name is not None and val is not None and name.type == "identifier":
-                names[txt(name)] = txt(val)
+                names[txt(name.start_byte, name.end_byte)] = (val.start_byte, val.end_byte)
         elif n.type in ("call_expression", "new_expression"):
             fn = n.child_by_field_name("function" if n.type == "call_expression" else "constructor")
             args = n.child_by_field_name("arguments")
             if fn is not None and args is not None:
-                named = [c for c in args.named_children if c.type != "comment"]
-                found.append((n.start_point[0] + 1, txt(fn), txt(args), txt(named[0]) if named else ""))
-    return [
-        Call(line, callee, _resolve(args, names), _resolve(_resolve(first, names), names) if first else "", first,
-             args[1:-1] if args.startswith("(") and args.endswith(")") else args)
-        for line, callee, args, first in sorted(found)
-    ]
+                named = next((c for c in args.named_children if c.type != "comment"), None)
+                first = (named.start_byte, named.end_byte) if named is not None else (0, 0)
+                found.append((n.start_point[0] + 1, (fn.start_byte, fn.end_byte), (args.start_byte, args.end_byte), first))
+    del stack
+    raw = []
+    for line, fn, args, first in sorted(found):
+        if not budget.take(CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]):
+            break  # over budget: the remaining calls are not kept; the file is flagged
+        a = txt(*args)
+        raw.append((line, txt(*fn), a, txt(*first), a[1:-1] if a.startswith("(") and a.endswith(")") else a))
+    del found
+    resolve = _Resolver(lambda w: txt(*names[w]), lambda w: names[w][1] - names[w][0] if w in names else None, budget)
+    return _build_calls(raw, resolve)
 
 
 @lru_cache(maxsize=512)
-def _calls(rel: str, text: str) -> tuple[Call, ...] | None:
-    """Parsed calls, or None when the file is not (parseably) Python/JS/TS."""
+def _calls(rel: str, text: str) -> _Calls | None:
+    """Parsed calls, or None when the file is not (parseably) Python/JS/TS. `.over`: budget ran out."""
+    if not rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        return None
+    key = (rel, hash(text), len(text))
+    budget = _file_budget(len(text.encode()) if not text.isascii() else len(text), key)
+    start = budget.left
     try:
-        if rel.endswith(PY_EXT):
-            c = _py_calls(text)
-            return tuple(c) if c is not None else None
-        if rel.endswith(JS_EXT + TS_EXT):
-            return tuple(_js_calls(text, _js_lang(rel)))
+        return _py_calls(text, budget) if rel.endswith(PY_EXT) else _js_calls(text, _js_lang(rel), budget)
     except Exception:  # noqa: BLE001 - never let a hostile file crash the scan
         return None
-    return None
+    finally:
+        _charge_scan(key, start - budget.left)
 
 
 # ---------------------------------------------------------------- patterns
@@ -743,8 +870,9 @@ def _code_info(rel: str, text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
     try:
         if rel.endswith(JS_EXT + TS_EXT):
             src = text.encode()
-            root = get_parser(_js_lang(rel)).parse(src).root_node
-            comments, regexes, stack = [], [], [root]
+            # No reference to the root: a visited node (and the child list py-tree-sitter caches on it) is
+            # freed once popped, instead of mirroring the whole tree in Python objects (~2.4x the tree).
+            comments, regexes, stack = [], [], [get_parser(_js_lang(rel)).parse(src).root_node]
             while stack:
                 n = stack.pop()
                 if n.type in ("comment", "html_comment"):
@@ -754,11 +882,14 @@ def _code_info(rel: str, text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
                 else:
                     stack.extend(n.children)
             blanked = _blank_bytes(src, comments).decode("utf-8", "replace")
-
-            def char(b: int) -> int:
-                return len(src[:b].decode("utf-8", "replace"))
-
-            return blanked, tuple((char(a), char(b)) for a, b in regexes)
+            if src.isascii():
+                return blanked, tuple(regexes)
+            # Byte -> character offsets in one pass (decoding the prefix per literal was quadratic).
+            chars, prev, at = 0, 0, {}
+            for b in sorted({x for span in regexes for x in span}):
+                chars += len(src[prev:b].decode("utf-8", "replace"))
+                prev, at[b] = b, chars
+            return blanked, tuple((at[a], at[b]) for a, b in regexes)
         if rel.endswith(PY_EXT):
             # Offsets from the same line split tokenize uses: "\n" only. str.splitlines() also
             # splits on \x0b \x0c \x1c-\x1e \x85     and would misplace spans (R27 C3).
@@ -1373,6 +1504,8 @@ class CodeRules:
                     for x in found if x.rule != "exfil.combo"
                 ]
             out.extend(_floor(f, found, self._strong(f)))
+            if _over(_calls(f.rel, f.text)):  # not every call was kept or resolved: fail closed, whatever the file
+                out.append(_finding("files.truncated", Severity.MED, f, None, "call-analysis memory budget exceeded"))
         return out
 
     def _analyse(self, f: ScanFile, is_install: bool) -> list[Finding]:
@@ -2000,12 +2133,11 @@ def _function_spans(rel: str, text: str) -> list[tuple[int, int]] | None:
                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
             ]
         elif rel.endswith(JS_EXT + TS_EXT):
-            root = get_parser(_js_lang(rel)).parse(text.encode()).root_node
             kinds = {
                 "function_declaration", "function_expression", "function", "arrow_function",
                 "method_definition", "generator_function", "generator_function_declaration",
             }
-            spans, stack = [], [root]
+            spans, stack = [], [get_parser(_js_lang(rel)).parse(text.encode()).root_node]  # no root ref (see _code_info)
             while stack:
                 n = stack.pop()
                 if n.type in kinds:

@@ -184,8 +184,12 @@ def _binary_unscanned(n: int) -> list[Finding]:
     )]
 
 
+MAX_TOTAL_TEXT_BYTES = 128_000_000  # per scan: text held in memory and parsed (extraction allows 500 MB)
+
+
 def load_files(
-    root: Path, max_file_bytes: int = 1_000_000, max_files: int = 5000, max_text_bytes: int = 16_000_000
+    root: Path, max_file_bytes: int = 1_000_000, max_files: int = 5000, max_text_bytes: int = 16_000_000,
+    max_total_bytes: int = MAX_TOTAL_TEXT_BYTES,
 ) -> tuple[list[ScanFile], list[Finding]]:
     """Read text files under root. Never follows symlinks; skips binaries.
 
@@ -195,6 +199,8 @@ def load_files(
     `files.truncated` (med), as do source files with NUL bytes and the file cap. Files with a
     binary magic (executables, archives, images) are aggregated into one low finding, unless a
     manifest, hook config or install script names them as something to run (then `files.truncated`).
+    The scan holds at most max_total_bytes of text: past it, `files.truncated` (med) and the remaining
+    files are not scanned (a memory budget, fail closed).
     """
     root = Path(root)
     files: list[ScanFile] = []
@@ -205,6 +211,16 @@ def load_files(
     # (rel, evidence, kind): kind "exec" (plausible executable), "forged" (executable magic with an
     # implausible header), "media" (counted as binary when left alone) or "quiet" (small media).
     pending: list[tuple[str, str, str]] = []
+    total = 0
+
+    def over_total(rel: str, n: int) -> bool:
+        nonlocal total
+        if total + n > max_total_bytes:
+            findings.append(_truncated(
+                f"text budget of {max_total_bytes} bytes reached at {rel}; remaining files not scanned", rel))
+            return True
+        total += n
+        return False
 
     def finish() -> tuple[list[ScanFile], list[Finding]]:
         launchers = [f for f in files if _is_launcher(f.rel)]
@@ -248,6 +264,8 @@ def load_files(
                         findings.append(_truncated(f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", rel))
                     elif size <= max_text_bytes:
                         # Big bundled text: scanned in full (R40).
+                        if over_total(rel, size):
+                            return finish()
                         data = path.read_bytes()
                         if b"\x00" in data:  # review M6: NUL anywhere, not only in the head
                             findings.append(_truncated(f"{rel} is source with NUL bytes; not scanned", rel))
@@ -261,6 +279,8 @@ def load_files(
                             tail = fh.read(max_file_bytes)
                         if b"\x00" in part or b"\x00" in tail:
                             findings.append(_truncated(f"{rel} is {size} bytes with NUL bytes; not scanned", rel))
+                        elif over_total(rel, len(part) + len(tail)):
+                            return finish()
                         else:
                             text = part.decode("utf-8", errors="replace") + "\n" + tail.decode("utf-8", errors="replace")
                             files.append(ScanFile(rel, text))
@@ -281,5 +301,7 @@ def load_files(
                 else:  # small images/archives stay silent unless a launcher runs them
                     pending.append((rel, f"{rel} contains NUL bytes; not scanned", "quiet"))
                 continue
+            if over_total(rel, len(data)):
+                return finish()
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
     return finish()
