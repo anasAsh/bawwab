@@ -59,7 +59,7 @@ def test_scan_job_has_no_secrets_and_no_stored_token(wf):
     checkout = next(s for s in _steps(wf, "scan") if "actions/checkout@" in (s.get("uses") or ""))
     assert checkout["with"]["ref"] == "${{ env.SOURCE_REF }}"
     assert checkout["with"]["persist-credentials"] is False
-    assert wf["env"]["SOURCE_REF"] == "feat/bawwab"
+    assert wf["env"]["SOURCE_REF"] == "main"
 
 
 def test_scan_job_steps(wf):
