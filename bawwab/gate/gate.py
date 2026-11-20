@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bawwab.clicmd import cmd
 from bawwab.config import load_config
-from bawwab.gate.detect import HookInput, Protected, Targets, detect_install
+from bawwab.gate.detect import HookInput, Protected, Targets, detect_install, install_dir
 from bawwab.gate.pin import pin_changes
 from bawwab.gate.prefilter import prefilter
 from bawwab.report import format_report, sanitise
@@ -81,19 +81,34 @@ def _safe_dest(root: Path, rel: str) -> Path:
     return cur
 
 
+def _kind_segment(src: Path) -> Path | None:
+    """For a path inside Claude's commands or agents dir: that path from the kind dir down (commands/x.md,
+    agents/ns). The scanned copy keeps it, so the text rules see a command/agent document (Task 15 I1)."""
+    hit = install_dir(str(src))
+    if hit is None or hit[0] not in ("commands", "agents"):
+        return None
+    return Path(hit[0], os.path.relpath(src, hit[1]))
+
+
 def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Callable[[], None]]:
-    """A scannable copy: the target dir with overlaid new content, or a lone file in a temp dir."""
+    """A scannable copy: the target dir with overlaid new content, or a lone file in a temp dir. Inside Claude's
+    commands or agents dir the copy keeps the path from that dir down (<tmp>/t/commands/x.md)."""
     src = Path(t.path) if t.kind == "local" and t.path else None
     if src is None or (not overlay and not src.is_file()):
         return t, lambda: None
     tmp = Path(tempfile.mkdtemp(prefix="bawwab-gate-"))
     try:
-        dst = tmp / (src.name or "target")
+        keep = _kind_segment(src)
+        if keep is not None:
+            top = tmp / "t"
+            dst = top / keep if src.is_dir() or overlay else top / keep.parent
+        else:
+            top = dst = tmp / (src.name or "target")
         if overlay:
             if src.is_dir():
                 shutil.copytree(src, dst, symlinks=True)
             else:
-                dst.mkdir()
+                dst.mkdir(parents=True)
             for fpath, content in overlay.items():
                 rel = os.path.relpath(fpath, src)
                 out = _safe_dest(dst, rel)
@@ -102,13 +117,13 @@ def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Cal
                 _safe_dest(dst, rel)  # re-check after creating parents
                 out.write_text(content)
         else:
-            dst.mkdir()
+            dst.mkdir(parents=True)
             shutil.copy2(src, dst / src.name, follow_symlinks=False)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     name = t.name or str(src)
-    return Target("local", t.raw, name=name, path=str(dst)), lambda: shutil.rmtree(tmp, ignore_errors=True)
+    return Target("local", t.raw, name=name, path=str(top)), lambda: shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _label(r: ScanReport) -> str:

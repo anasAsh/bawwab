@@ -7,434 +7,17 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 47.1,
+        "ms": 26.4,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 26.5,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 40.4,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-diff",
-    "family": "git",
-    "title": "git diff --stat",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 43.9,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.8,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 25.7,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-log",
-    "family": "git",
-    "title": "git log --oneline",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 25.2,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 41.4,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 43.0,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-commit-heredoc",
-    "family": "git",
-    "title": "git commit with a heredoc message (Claude Code's usual form)",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 25.1,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 42.6,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.8,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-commit-mentions-install",
-    "family": "git",
-    "title": "commit message that mentions `claude mcp add` and `npm install`",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 281.1,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 43.5,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 25.5,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-branch",
-    "family": "git",
-    "title": "git checkout -b",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 24.0,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 23.3,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 23.1,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-pull-make-test",
-    "family": "git",
-    "title": "git pull && make test",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 25.1,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 47.8,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.8,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "git-stash",
-    "family": "git",
-    "title": "git stash list / pop",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 24.9,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.0,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 24.3,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "pytest",
-    "family": "tests",
-    "title": "uv run pytest -q",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 24.1,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 41.9,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 24.9,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "pytest-k",
-    "family": "tests",
-    "title": "python -m pytest -k with a filter",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 44.4,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 37.9,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.4,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "npm-test",
-    "family": "tests",
-    "title": "npm test",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 25.1,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 23.2,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.1,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "npm-run-build",
-    "family": "tests",
-    "title": "npm run build",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 42.0,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 42.6,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 23.9,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "make-lint",
-    "family": "tests",
-    "title": "make lint",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 24.4,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 44.2,
-      "reason": "",
-      "exit": 0
-    },
-    "probe": {
-      "decision": "none",
-      "kind": null,
-      "ms": 43.8,
-      "reason": "",
-      "exit": 0
-    },
-    "denies": 0,
-    "notices": [],
-    "by_design": null
-  },
-  {
-    "id": "edit-permissions",
-    "family": "settings",
-    "title": "Edit .claude/settings.json: allow another command",
-    "gate": [
-      {
-        "decision": "none",
-        "kind": null,
-        "ms": 228.3,
-        "reason": "",
-        "exit": 0
-      }
-    ],
-    "effect": [
-      "tool"
-    ],
-    "post": {
-      "decision": "none",
-      "kind": null,
-      "ms": 37.6,
+      "ms": 25.1,
       "reason": "",
       "exit": 0
     },
@@ -450,6 +33,472 @@
     "by_design": null
   },
   {
+    "id": "git-diff",
+    "family": "git",
+    "title": "git diff --stat",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 61.2,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 78.5,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 65.0,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-log",
+    "family": "git",
+    "title": "git log --oneline",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 29.4,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 31.8,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 40.8,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-commit-heredoc",
+    "family": "git",
+    "title": "git commit with a heredoc message (Claude Code's usual form)",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 43.4,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 45.7,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 45.0,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-commit-mentions-install",
+    "family": "git",
+    "title": "commit message that mentions `claude mcp add` and `npm install`",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 413.5,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 65.8,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 57.9,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-commit-mentions-install-fixture",
+    "family": "git",
+    "title": "the same commit in a repo that keeps a malware sample as a test fixture (open FP, Task 15 I4)",
+    "gate": [
+      {
+        "decision": "deny",
+        "kind": "suspicious",
+        "ms": 260.9,
+        "reason": "\u26d4 bawwab: SUSPICIOUS \u2014 <scratch>/run/proj@local  (standard scan)\n  MED   Fc90269  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\n  LOW   F8cc1ba  tests/fixtures/sample_malware.js:13 npmrc: grab(\".npmrc\"),\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve LSZY\nDeep scan first:  ! <repo>/bin/bawwab scan --deep python3 server.py\nExplain a finding:  ! <repo>/bin/bawwab explain Fc90269",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 46.6,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 46.9,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 1,
+    "notices": [
+      "gate:deny:suspicious"
+    ],
+    "by_design": null
+  },
+  {
+    "id": "git-branch",
+    "family": "git",
+    "title": "git checkout -b",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 45.7,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 25.8,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 47.7,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-pull-make-test",
+    "family": "git",
+    "title": "git pull && make test",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 44.6,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 40.9,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 24.2,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "git-stash",
+    "family": "git",
+    "title": "git stash list / pop",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 42.9,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 41.6,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 41.4,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "pytest",
+    "family": "tests",
+    "title": "uv run pytest -q",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 23.4,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 41.3,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 41.6,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "pytest-k",
+    "family": "tests",
+    "title": "python -m pytest -k with a filter",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 25.8,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 25.7,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 27.1,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "npm-test",
+    "family": "tests",
+    "title": "npm test",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 27.4,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 26.6,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 26.7,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "npm-run-build",
+    "family": "tests",
+    "title": "npm run build",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 51.1,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 33.1,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 27.3,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "make-lint",
+    "family": "tests",
+    "title": "make lint",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 27.8,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 27.4,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 46.6,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
+    "id": "edit-permissions",
+    "family": "settings",
+    "title": "Edit .claude/settings.json: allow another command",
+    "gate": [
+      {
+        "decision": "none",
+        "kind": null,
+        "ms": 274.4,
+        "reason": "",
+        "exit": 0
+      }
+    ],
+    "blocked_fetch_failed": false,
+    "effect": [
+      "tool"
+    ],
+    "post": {
+      "decision": "none",
+      "kind": null,
+      "ms": 77.5,
+      "reason": "",
+      "exit": 0
+    },
+    "probe": {
+      "decision": "none",
+      "kind": null,
+      "ms": 75.2,
+      "reason": "",
+      "exit": 0
+    },
+    "denies": 0,
+    "notices": [],
+    "by_design": null
+  },
+  {
     "id": "write-local-permissions",
     "family": "settings",
     "title": "Write .claude/settings.local.json with permissions only",
@@ -457,25 +506,26 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 241.1,
+        "ms": 220.7,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 273.7,
+      "ms": 407.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 41.5,
+      "ms": 76.0,
       "reason": "",
       "exit": 0
     },
@@ -491,25 +541,26 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 243.5,
+        "ms": 286.1,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 41.7,
+      "ms": 65.2,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 46.2,
+      "ms": 57.2,
       "reason": "",
       "exit": 0
     },
@@ -525,26 +576,27 @@
       {
         "decision": "deny",
         "kind": "protected",
-        "ms": 248.4,
-        "reason": "\u26d4 bawwab: blocked a protected action \u2014 hooks changed in settings.json\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve XTOE",
+        "ms": 252.4,
+        "reason": "\u26d4 bawwab: blocked a protected action \u2014 hooks changed in settings.json\nBlocked pending your approval. To allow:  ! <repo>/bin/bawwab approve 4F5K",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "block",
       "kind": "quarantine",
-      "ms": 442.9,
-      "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\": {\"command\": \"ruff \u2026\n    keep it:  ! <repo>/bin/bawwab approve E6JV   ",
+      "ms": 276.4,
+      "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\":\u2026\n    keep it:  ! <repo>/bin/baw",
       "exit": 0
     },
     "probe": {
       "decision": "deny",
       "kind": "quarantine",
-      "ms": 254.8,
-      "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\": {\"command\": \"ruff \u2026\n    keep it:  ! <repo>/bin/bawwab approve E6JV   ",
+      "ms": 230.9,
+      "reason": "\u26d4 bawwab: quarantine \u2014 these items were added or changed in Claude's configuration and were not accepted (not scanned clean, not approved). Every tool except Read, Grep, Glob, LS, TodoWrite and NotebookRead is blocked until the user decides. Tell the user; only they can run these commands.\n\u2022 PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) \u2014 SUSPICIOUS\n    [med] effects.hook: PostToolUse hook `ruff format --quiet .` (<scratch>/run/proj/.claude/settings.json) was added or changed outside a scanned install: {\"event\": \"PostToolUse\", \"hook\":\u2026\n    keep it:  ! <repo>/bin/baw",
       "exit": 0
     },
     "denies": 3,
@@ -563,23 +615,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 221.1,
+        "ms": 233.2,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 46.7,
+      "ms": 43.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 45.6,
+      "ms": 23.6,
       "reason": "",
       "exit": 0
     },
@@ -595,23 +648,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 233.0,
+        "ms": 243.0,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 45.0,
+      "ms": 64.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 24.8,
+      "ms": 69.0,
       "reason": "",
       "exit": 0
     },
@@ -627,23 +681,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 44.3,
+        "ms": 58.5,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 40.4,
+      "ms": 24.6,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 26.5,
+      "ms": 26.6,
       "reason": "",
       "exit": 0
     },
@@ -659,23 +714,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 47.4,
+        "ms": 47.5,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 38.1,
+      "ms": 21.9,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 27.0,
+      "ms": 42.1,
       "reason": "",
       "exit": 0
     },
@@ -691,23 +747,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 25.7,
+        "ms": 27.0,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 20.8,
+      "ms": 24.9,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 44.8,
+      "ms": 41.4,
       "reason": "",
       "exit": 0
     },
@@ -723,23 +780,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 46.8,
+        "ms": 26.2,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 21.6,
+      "ms": 21.2,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 28.6,
+      "ms": 29.4,
       "reason": "",
       "exit": 0
     },
@@ -755,25 +813,26 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 204.0,
+        "ms": 357.8,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 46.9,
+      "ms": 73.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 45.5,
+      "ms": 61.8,
       "reason": "",
       "exit": 0
     },
@@ -789,25 +848,26 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 243.3,
+        "ms": 222.0,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 47.9,
+      "ms": 41.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 44.8,
+      "ms": 29.3,
       "reason": "",
       "exit": 0
     },
@@ -823,25 +883,26 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 247.4,
+        "ms": 250.0,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [
       "tool"
     ],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 47.2,
+      "ms": 35.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.8,
+      "ms": 31.3,
       "reason": "",
       "exit": 0
     },
@@ -857,23 +918,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 26.6,
+        "ms": 37.6,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.1,
+      "ms": 33.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 24.5,
+      "ms": 28.4,
       "reason": "",
       "exit": 0
     },
@@ -889,23 +951,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 45.5,
+        "ms": 37.8,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 42.9,
+      "ms": 39.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 44.5,
+      "ms": 31.1,
       "reason": "",
       "exit": 0
     },
@@ -921,23 +984,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 220.0,
+        "ms": 263.9,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 39.8,
+      "ms": 32.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.1,
+      "ms": 34.7,
       "reason": "",
       "exit": 0
     },
@@ -953,23 +1017,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 26.0,
+        "ms": 28.9,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 24.2,
+      "ms": 38.9,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 44.9,
+      "ms": 30.7,
       "reason": "",
       "exit": 0
     },
@@ -985,23 +1050,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 219.2,
+        "ms": 230.9,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 37.8,
+      "ms": 40.0,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 42.8,
+      "ms": 40.5,
       "reason": "",
       "exit": 0
     },
@@ -1017,23 +1083,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 242.8,
+        "ms": 446.7,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 44.2,
+      "ms": 52.0,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 26.1,
+      "ms": 82.8,
       "reason": "",
       "exit": 0
     },
@@ -1049,23 +1116,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 26.2,
+        "ms": 54.4,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.2,
+      "ms": 50.8,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.8,
+      "ms": 57.8,
       "reason": "",
       "exit": 0
     },
@@ -1081,23 +1149,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 26.3,
+        "ms": 41.8,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 21.7,
+      "ms": 48.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.9,
+      "ms": 51.8,
       "reason": "",
       "exit": 0
     },
@@ -1113,23 +1182,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 216.8,
+        "ms": 417.9,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 48.1,
+      "ms": 55.1,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 47.4,
+      "ms": 77.5,
       "reason": "",
       "exit": 0
     },
@@ -1145,23 +1215,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 43.7,
+        "ms": 85.8,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 25.4,
+      "ms": 84.4,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 25.0,
+      "ms": 59.7,
       "reason": "",
       "exit": 0
     },
@@ -1177,23 +1248,24 @@
       {
         "decision": "none",
         "kind": null,
-        "ms": 25.4,
+        "ms": 86.1,
         "reason": "",
         "exit": 0
       }
     ],
+    "blocked_fetch_failed": false,
     "effect": [],
     "post": {
       "decision": "none",
       "kind": null,
-      "ms": 26.0,
+      "ms": 81.7,
       "reason": "",
       "exit": 0
     },
     "probe": {
       "decision": "none",
       "kind": null,
-      "ms": 45.9,
+      "ms": 55.7,
       "reason": "",
       "exit": 0
     },

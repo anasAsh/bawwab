@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent.parent
 EVAL = ROOT / "eval"
@@ -91,6 +92,22 @@ def check_safe(env: dict, work: Path) -> None:
         if k in env and k not in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
                                   "BAWWAB_HOME", "BAWWAB_VENV", "BAWWAB_FAKE_JUDGE"):
             raise Unsafe(f"{k} is still set")
+
+
+def resolve_workdir(path: str) -> Path:
+    """A fresh temp dir this run creates inside --workdir, which is all it ever deletes. The workdir itself must be
+    empty or missing, and may not be (or contain) the real home or this repo."""
+    p = Path(path).expanduser().resolve()
+    for protected in (REAL_HOME, ROOT):
+        if p == protected or _inside(protected, p):
+            raise Unsafe(f"--workdir {p} is or contains {protected}")
+    for f in FORBIDDEN:
+        if _inside(p, f):
+            raise Unsafe(f"--workdir {p} is inside {f}")
+    if p.exists() and (not p.is_dir() or any(p.iterdir())):
+        raise Unsafe(f"--workdir {p} exists and is not empty")
+    p.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="bawwab-eval-", dir=p))
 
 
 class Sandbox:
@@ -408,7 +425,7 @@ def run_entry(sb: Sandbox, e: dict) -> dict:
     if setup.get("effect"):
         sb.apply(sb.subst(setup["effect"], extra))
         # an effect made by the user before the session: accept it as the baseline, as `init --skip` would
-        sb.hook("post", sb.post_input(sb.pre("Bash", command="true")))
+        rec["setup_baseline"] = sb.hook("post", sb.post_input(sb.pre("Bash", command="true"))).summary()
     gates = []
     last = None
     for c in e["calls"]:
@@ -418,6 +435,8 @@ def run_entry(sb: Sandbox, e: dict) -> dict:
     blocked = any(g["decision"] == "deny" for g in gates)
     rec["gate"] = gates
     rec["blocked_before"] = blocked
+    # a deny only because the target couldn't be fetched (offline here) is not a detection: reported apart
+    rec["blocked_fetch_failed"] = blocked and all(g["kind"] == "fetch-failed" for g in gates if g["decision"] == "deny")
     # The effect is written whatever the gate said, to measure the effect check on its own ("caught after"
     # counts only toward entries the gate let through; the independent number is reported separately).
     rec["effect"] = sb.apply(sb.subst(e.get("effect") or [], extra), last)
@@ -700,16 +719,18 @@ def summarise(attacks: list[dict], normal: list[dict]) -> dict:
     fam: dict[str, dict] = {}
     for a in attacks:
         f = fam.setdefault(a["family"], {"n": 0, "blocked_before": 0, "caught_after_of_passed": 0, "passed_gate": 0,
-                                         "missed": 0, "effect_check_alone": 0, "residual_missed": 0})
+                                         "missed": 0, "effect_check_alone": 0, "residual_missed": 0,
+                                         "blocked_fetch_failed": 0})
         f["n"] += 1
         f["blocked_before"] += a["blocked_before"]
+        f["blocked_fetch_failed"] += a.get("blocked_fetch_failed", False)
         f["effect_check_alone"] += a["caught_after"]
         if not a["blocked_before"]:
             f["passed_gate"] += 1
             f["caught_after_of_passed"] += a["caught_after"]
         if a["outcome"] == "missed":
             f["missed"] += 1
-            f["residual_missed"] += bool(a.get("residual"))
+            f["residual_missed"] += a.get("expected") == "missed"  # documented misses only (not "parked" notes)
     misses = [{"id": a["id"], "family": a["family"], "outcome": a["outcome"], "expected": a["expected"],
                "residual": a.get("residual")} for a in attacks if a["outcome"] == "missed" or not a["as_expected"]]
     fp = {"tasks": len(normal), "tasks_with_deny": sum(1 for n in normal if n["denies"]),
@@ -723,14 +744,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--only", default="replicas,attacks,normal,latency,baseline")
     ap.add_argument("--ids", default="", help="comma-separated entry ids (attacks/normal) to run")
-    ap.add_argument("--workdir", help="scratch dir (default: a new /var/tmp/bawwab-eval-* dir)")
+    ap.add_argument("--workdir", help="an empty or new dir; the run makes (and removes) its own temp dir inside it "
+                                      "(default: a new /var/tmp/bawwab-eval-* dir)")
     ap.add_argument("--keep", action="store_true", help="keep the scratch dir")
     ap.add_argument("--out", default=str(RESULTS), help="where to write the results JSON")
     ap.add_argument("--no-write", action="store_true")
     a = ap.parse_args(argv)
     parts = set(a.only.split(","))
     ids = {x for x in a.ids.split(",") if x}
-    work = Path(a.workdir) if a.workdir else Path(tempfile.mkdtemp(prefix="bawwab-eval-", dir="/var/tmp"))
+    try:
+        work = resolve_workdir(a.workdir) if a.workdir else Path(tempfile.mkdtemp(prefix="bawwab-eval-",
+                                                                                     dir="/var/tmp"))
+    except Unsafe as e:
+        print(f"run_eval: refused: {e}", file=sys.stderr)
+        return 2
     sb = Sandbox(work.resolve())
     results: dict = {}
     try:
@@ -761,14 +788,18 @@ def main(argv: list[str] | None = None) -> int:
         results["meta"] = {"method": "hook replay (no live Claude, no container)", "python": sys.version.split()[0],
                            "when": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     finally:
-        if not a.keep:
+        if not a.keep:  # only the dir this run created (never the --workdir itself)
             shutil.rmtree(work, ignore_errors=True)
     if not a.no_write:
         out = Path(a.out)
         out.mkdir(parents=True, exist_ok=True)
         def dump(obj) -> str:  # no machine-specific paths in the committed results
             text = json.dumps(obj, indent=2, default=str)
-            return text.replace(str(sb.work), "<scratch>").replace(str(ROOT), "<repo>").replace(str(REAL_HOME), "~")
+            # the scratch dir's parent too: a reason cut short mid-path ("…/bawwab-ev…") keeps only that prefix
+            for real, shown in ((str(sb.work), "<scratch>"), (str(sb.work.parent), "<workdir>"), (str(ROOT), "<repo>"),
+                                (str(REAL_HOME), "~")):
+                text = text.replace(real, shown).replace(quote(real, safe=""), quote(shown, safe=""))
+            return text
 
         for k in ("replicas", "attacks", "normal", "latency", "baseline", "summary"):
             if k in results:

@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from bawwab.agents import CATEGORIES, EffectItem, InstalledItem
+from bawwab.envkeys import loader_keys
 from bawwab.agents import claude_code_watch as watch
 from bawwab.fetch.target import target_from_command, target_from_url
 from bawwab.gate.detect import _read_json
@@ -257,6 +258,10 @@ def _servers_items(scope_ident: str, scope: str, data: object, file: Path, prefi
     out = []
     for name, spec in _servers(data).items():
         t = _server_target(spec, base) if isinstance(spec, dict) else None
+        if isinstance(spec, dict) and loader_keys(spec.get("env")):
+            # its env loads code (or switches the package index) that scanning the server would not see: never
+            # accepted by a scan, only by an explicit approval (the hash covers env, so a later env change too)
+            t = None
         out.append(EffectItem(f"{_P}mcp:{scope_ident}:{name}", "servers", spec, scope,
                               f"MCP server {name} ({src})", t, str(file), (*prefix, name)))
     return out

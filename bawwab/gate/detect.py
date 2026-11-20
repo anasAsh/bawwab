@@ -23,6 +23,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bawwab.envkeys import loader_key
 from bawwab.gate.prefilter import bash_install_like, bawwab_exe_file, context as _prefilter_context
 from bawwab.paths import bawwab_home, claude_home, claude_json
 from bawwab.types import Target
@@ -70,16 +71,6 @@ _SENSITIVE = (
     ".claude.json", ".mcp.json", ".claude/settings", ".claude/skills", ".claude/commands", ".claude/agents",
     ".claude/plugins",
 )
-# Environment variables that make an interpreter load extra code, or that switch the package index.
-_CODE_ENV = {
-    "NODE_OPTIONS", "NODE_PATH", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH",
-    "BASH_ENV", "ENV", "PERL5OPT", "PERL5LIB", "RUBYOPT", "RUBYLIB", "JAVA_TOOL_OPTIONS",
-}
-_INDEX_ENV = {
-    "NPM_CONFIG_REGISTRY", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_INDEX", "UV_DEFAULT_INDEX", "UV_FIND_LINKS",
-    "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_FIND_LINKS", "NPM_CONFIG_USERCONFIG", "PIP_CONFIG_FILE",
-    "UV_CONFIG_FILE",
-}
 _EXEC_SETTINGS = ("statusLine", "apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper", "env")
 _PROTECTED_KEYS = ("hooks", "disableAllHooks", "extraKnownMarketplaces", "enableAllProjectMcpServers")
 _CLAUDE_SUBCMD = re.compile(
@@ -358,9 +349,10 @@ def _read_json(p: Path) -> object:
 
 def _env_checks(env: dict[str, str], name: str, acc: _Acc) -> None:
     for k in env:
-        if k in _CODE_ENV or k.startswith("DYLD_"):
+        kind = loader_key(k)  # bawwab/envkeys.py: the list the effect check uses too
+        if kind == "code":
             acc.protect(f"server env loads code: {k} ({name})")
-        elif k.upper() in _INDEX_ENV or k.upper().startswith("UV_INDEX"):
+        elif kind == "index":
             acc.protect(f"custom package index: {k} ({name})")
 
 
