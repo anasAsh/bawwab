@@ -118,10 +118,16 @@ def _label(r: ScanReport) -> str:
 
 def _user_only_block(reasons: list[str]) -> str:
     shown = sanitise("; ".join(reasons), 400)
-    return (f"⛔ bawwab: refused — {shown}.\n"
-            "This would run bawwab's user-only command (or bawwab could not check that it doesn't). Bawwab "
-            "doesn't let Claude run that, and there is nothing to approve: the user must run it themselves, "
-            "in their own terminal, if they want it.")
+    writes = [r for r in reasons if r.startswith(("writes ", "in text written to a file"))]
+    lines = [f"⛔ bawwab: refused — {shown}."]
+    if writes:
+        lines.append("This writes bawwab's user-only command into a file. Bawwab doesn't let Claude do that, and "
+                     "there is nothing to approve: the user must run that command themselves; Claude shouldn't "
+                     "write it into files.")
+    if len(writes) < len(reasons):
+        lines.append("This would run bawwab's user-only command. Bawwab doesn't let Claude run that, and there is "
+                     "nothing to approve: the user must run it themselves, in their own terminal, if they want it.")
+    return "\n".join(lines)
 
 
 def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | None, str]:

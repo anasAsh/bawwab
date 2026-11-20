@@ -111,6 +111,7 @@ class _Acc:
         self.root = ""  # the top-level command text (the raw backstop skips nested text that is part of it)
         self.prose = 0  # >0 while scanning heredoc bodies only as a fail-safe (text that may be prose, R55)
         self.plain: list[str] = []  # R57: user-only reasons (a plain deny)
+        self.write_texts: list[tuple[str, str]] = []  # ("body"|"word", text) a segment only writes to a file
         self.script_depth = 0  # files being analysed around this text (R56)
         self.script_files = 0  # files read in this call
         self.script_bytes = 0  # bytes of file text read in this call
@@ -2069,6 +2070,12 @@ def _make_files(args: list[str], cwd: str) -> tuple[str, list[str], dict[str, st
     return d, [found or os.path.join(d, "Makefile")], mvars
 
 
+def _read_failure(reason: str) -> bool:
+    """The gate couldn't check a file (unreadable, too large, nested too deep): an approvable block."""
+    return reason.startswith(("script could not be read", "scripts too large", "script nesting too deep",
+                              "shell nesting too deep", "command too complex"))
+
+
 def _keeps(reason: str) -> bool:
     """Reasons a file's own analysis passes up: those that protect bawwab, not the install gate's."""
     return reason.startswith(("script", "makefile", "shell nesting too deep")) or \
@@ -2092,21 +2099,21 @@ def _file_text(p: str, changes: _Changes, acc: _Acc) -> str | None:
     if p in changes.text:
         disk = _read_text(p)
         if disk is None:
-            acc.user_only(f"script could not be read: {name}")
+            acc.protect(f"script could not be read: {name}")
             return None
         return changes.text[p] + "\n" + disk
     if os.path.exists(p) and not os.path.isfile(p):
         return None  # a device or fifo (/dev/null, /dev/stdin): nothing on disk to read
     text = _read_text(p)
     if text is None:
-        acc.user_only(f"script could not be read: {name}")
+        acc.protect(f"script could not be read: {name}")
         return None
     if text == "" and not os.path.exists(p):
         return None  # nothing there to run, and nothing earlier in the command created it
     acc.script_files += 1
     acc.script_bytes += len(text)
     if acc.script_files > _SCRIPT_FILES or acc.script_bytes > _SCRIPT_TOTAL:
-        acc.user_only("scripts too large to analyse")
+        acc.protect("scripts too large to analyse")
         return None
     return text
 
@@ -2130,7 +2137,7 @@ def _sub_bash(text: str, cwd: str, acc: _Acc, depth: int, where: str = "a file i
     """Analyse a file's (or a git alias's) shell text with the structured pass; only bawwab's own protections
     pass up, as plain denies (R57)."""
     if acc.script_depth >= _SCRIPT_DEPTH:
-        acc.user_only("script nesting too deep")
+        acc.protect("script nesting too deep")
         return
     sub = _Acc()
     sub.scanned = sub.file_scanned = acc.file_scanned  # never the main pass's: a skip there would drop targets
@@ -2148,10 +2155,15 @@ def _sub_bash(text: str, cwd: str, acc: _Acc, depth: int, where: str = "a file i
         acc.budget = sub.budget
         acc.script_files, acc.script_bytes = sub.script_files, sub.script_bytes
         for r in sub.protected:
-            if _keeps(r):
+            if _read_failure(r):
+                acc.protect(r)  # fail closed, but approvable: nothing protected was found (R57 round 2)
+            elif _keeps(r):
                 acc.user_only(f"in {where}: {r}")
         for r in sub.plain:
             acc.user_only(r if r.startswith("in ") else f"in {where}: {r}")
+
+
+_GIT_CONFIG_VALUE_OPTS = {"-f", "--file", "--blob", "--type", "--comment", "--default", "--value"}
 
 
 def _git_aliases(args: list[str], cwd: str, acc: _Acc, depth: int) -> None:
@@ -2173,7 +2185,15 @@ def _git_aliases(args: list[str], cwd: str, acc: _Acc, depth: int) -> None:
             continue
         elif not a.startswith("-"):
             if a == "config":
-                rest = [x for x in args[i + 1:] if not x.startswith("-")]
+                rest, j, cargs = [], 0, args[i + 1:]
+                while j < len(cargs):  # option values aren't the key (git config -f .git/config alias.y …)
+                    x = cargs[j]
+                    if x in _GIT_CONFIG_VALUE_OPTS:
+                        j += 2
+                        continue
+                    if not x.startswith("-"):
+                        rest.append(x)
+                    j += 1
                 if rest[:1] in (["set"], ["add"]):
                     rest = rest[1:]
                 if len(rest) >= 2 and rest[0].lower().startswith("alias."):
@@ -2211,11 +2231,11 @@ def _run_file(words: list[str], cwd: str, acc: _Acc, depth: int, changes: _Chang
                 acc.user_only("makefile runs a protected bawwab command")
             for w in inc:
                 if "$" in w or _has_glob(w):
-                    acc.user_only(f"makefile include could not be read: {w}")
-                elif len(seen) + len(queue) < _SCRIPT_FILES:
-                    queue.append(_abspath(w, mdir))
+                    continue  # computed at make time (-include $(OBJS:.o=.d)): a documented residual (R57)
+                if len(seen) + len(queue) < _SCRIPT_FILES:
+                    queue.append(_abspath(w, mdir))  # read when it exists; missing is skipped, as make does
                 else:
-                    acc.user_only("scripts too large to analyse")
+                    acc.protect("scripts too large to analyse")
         if recipes:
             _sub_bash("\n".join(recipes), mdir, acc, depth)
         return
@@ -2374,10 +2394,16 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
                 changes.text[p] = changes.text.get(p, "") + "\n" + known
         up_words, prev_words = (prev_words if seg.piped else []), words
         exe0 = os.path.basename(words[0]) if words else ""
+        if (redirs or exe0 == "tee") and exe0 not in _SHELLS and exe0 != "eval" and \
+                not _INTERPRETER.fullmatch(exe0):  # text this segment writes and doesn't run (R57 round 2)
+            acc.write_texts += [("body", bodies[k]) for t in seg.inputs
+                                if (k := heredoc_index(t)) is not None and k not in open_from]
+            if redirs and exe0 in ("echo", "printf"):
+                acc.write_texts += [("word", a) for a in words[1:]]
         if redirs or exe0 == "tee":  # R55: writing a script that runs bawwab, or a copy of a bawwab executable
             texts = (stdin_text, _literal_output(words), _literal_output(up_words) if exe0 == "tee" else "")
             if any(t and _execs_bawwab(t) for t in texts):
-                acc.protect("writes a script that runs bawwab")
+                acc.user_only("writes a script that runs bawwab")
             srcs = words[1:] if redirs else [a for a in up_words[1:]]
             if any(not a.startswith("-") and _exe_file(_abspath(a, cwd), exec_only=True)
                    for a in srcs[:_MAX_RESOLVE]):
@@ -2658,7 +2684,7 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
     except _Unevaluable:
         new = ""  # an edit that doesn't apply changes nothing
     if "bawwab" in new and _execs_bawwab(new):  # R55: a script that runs bawwab under another name
-        acc.protect("writes a script that runs bawwab")
+        acc.user_only("writes a script that runs bawwab")
     old = _read_text(p)
     if old is None:
         old = ""  # unreadable or too large: every protected line counts as new
@@ -2789,6 +2815,39 @@ def _whole_command_checks(cmd: str, acc: _Acc) -> None:
         acc.protect("bawwab environment override")
 
 
+_APPROVAL = "bawwab approval via tool call"
+_WRITE_REASONS = ("writes a protected bawwab command", "writes a script that runs bawwab")
+
+
+def _write_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
+    """R57 round 2: when R55's approval reason comes only from text a redirect, tee or heredoc writes to a file
+    (`echo 'bawwab approve "$1"' > x.sh`), it is a plain deny like the write rule's: the command is analysed
+    again with that text blanked, and if the reason goes away it was the written text."""
+    if _APPROVAL not in acc.protected or not acc.write_texts or not any(r in acc.plain for r in _WRITE_REASONS):
+        return
+    blanked = cmd
+    for kind, t in sorted(set(acc.write_texts), key=lambda x: -len(x[1])):
+        if not t.strip():
+            continue
+        if kind == "body":
+            blanked = blanked.replace(t, re.sub(r"[^\n]", "", t))
+        else:
+            for q in ("'", '"'):
+                blanked = blanked.replace(q + t + q, "'x'")
+    if blanked == cmd:
+        return
+    again = _Acc(4 * len(blanked) + 1_000_000)
+    again.root = blanked
+    try:
+        _whole_command_checks(blanked, again)
+        _bash(blanked, cwd, again)
+    except _TooComplex:
+        return
+    if _APPROVAL not in again.protected:
+        acc.protected.remove(_APPROVAL)
+        acc.user_only(f"in text written to a file: {_APPROVAL}")
+
+
 def detect_install(inp: HookInput) -> Targets | Protected | None:
     _RESOLVED.clear()  # files may have changed since the last call
     _TEXTS.clear()
@@ -2803,6 +2862,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
             try:
                 _whole_command_checks(cmd, acc)
                 _bash(cmd, inp.cwd, acc)
+                _write_text_only(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")
     elif inp.tool_name in ("Write", "Edit", "MultiEdit"):

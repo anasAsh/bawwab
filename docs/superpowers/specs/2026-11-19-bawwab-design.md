@@ -237,24 +237,34 @@ scanning on its own.
     - direct and wrapper invocations it recognises (R55 above);
     - scripts it reads: a file named on the command line and run by
       `sh|bash|dash|zsh|ksh <file>`, `sh < file`, `cat file | sh`, `. <file>`,
-      `source <file>`, a path command word (`./file`), `make` (its makefiles
-      and literal includes), or `python|node|perl|ruby… <file>` (that file
-      only). The gate reads the file as it is at check time (at most 1 MB;
-      never run), fills in the call's positional arguments, and follows nested
-      script calls three files deep. Unreadable, too large, or nested deeper:
-      refused;
-    - a git shell alias holding a protected call: `git -c alias.X='!…'` and
-      `git config [--global] alias.X '!…'`;
+      `source <file>`, a path command word (`./file`), or `make` (its
+      makefiles and the literal includes that exist; includes computed at make
+      time are skipped). The gate reads the file as it is at check time (at
+      most 1 MB; never run), fills in the call's positional arguments, and
+      follows nested script calls three files deep. A file run by
+      `python|node|perl|ruby… <file>` is checked by the write rule's content
+      rule, so only literal single-line calls in that file are caught;
+    - a git shell alias holding a protected call, set on the command line:
+      `git -c alias.X='!…'` and `git config [--global|--local|-f F] alias.X
+      '!…'` (option values such as `-f`/`--type`/`--blob`/`--comment` are
+      skipped);
     - writing a protected bawwab call in a form it recognises (a bawwab
       command word at a line start, after a shell separator, or at the start
       of a quoted command string or argv list) with Write/Edit/MultiEdit,
       `tee`, a heredoc or a redirect, or by copying a script (shebang or
       execute bit). An edit is judged on the calls it adds.
 
-    A hit inside a file the gate reads, in a git alias, or in a write is a
-    plain deny ("the user must run it themselves"): it creates no pending
-    approval and never suggests `bawwab approve`. Install-gate approvals and
-    direct invocations keep their protected-action block.
+    The split is exact:
+    - **Plain deny** (no pending approval, never suggests `bawwab approve`;
+      "the user must run it themselves", or for a write "the user must run
+      that command themselves; Claude shouldn't write it into files"): a
+      protected call found inside a file the gate reads, in a command-line git
+      alias, or in a write; and an R55 hit whose only match is the text a
+      redirect, `tee` or heredoc writes (the command is checked again with
+      that text blanked).
+    - **Approvable block** (pending approval, as before): direct and wrapper
+      invocations; install-gate blocks; and a file the gate could not check
+      (unreadable, over 1 MB, nested more than three files deep).
   - **Not covered (R57).** Once Claude can run a program it writes, static
     inspection can't keep the approve command from the same OS user. These
     routes are not refused, and an agent instructed to bypass bawwab (for
@@ -265,8 +275,15 @@ scanning on its own.
     - npm, yarn, pnpm, just and tox scripts, and other build tools;
     - process substitution, `$(cat f)` as a script or `eval` text, here-strings
       of a file, `BASH_ENV`/`ENV`;
-    - a script changed after the gate read it (a `git checkout`, `git pull`,
-      `curl -o` or archive extract earlier in the same command);
+    - a script changed earlier in the same command, before it runs (a
+      `git checkout`, `git pull`, `cp`, `curl -o` or archive extract): the gate
+      checks the file as it is when it reads it;
+    - Python/Node calls the content rule doesn't parse (an argv list split
+      over lines, a template literal), and imports;
+    - git aliases written into a git config file (an `[alias]` section) or set
+      through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`;
+    - make includes computed at make time (`-include $(OBJS:.o=.d)`,
+      `include $(wildcard *.mk)`);
     - compiled programs, interpreters reading code from the network,
       runtime-computed paths, scripts run by a bare name on PATH;
     - write forms the rule doesn't parse (an argv list split over lines, a

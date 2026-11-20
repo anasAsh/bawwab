@@ -237,7 +237,7 @@ def test_makefile_variables_and_includes(w):
     _w(w / "M6", "include $(wildcard *.mk)\n")
     assert _deny("make -f M4 ok", w)
     assert _deny("make -f M5", w)
-    assert "include could not be read" in _reason("make -f M6", w)
+    assert _none("make -f M6", w)  # R57 round 2: an include computed at make time is skipped (residual)
 
 
 # ------------------------------------------------------------------ fail closed
@@ -485,7 +485,7 @@ def test_r57_user_only_hits_are_plain_denies(w, tool, ti, cmd):
     d = out["hookSpecificOutput"]
     assert d["permissionDecision"] == "deny"
     text = d["permissionDecisionReason"]
-    assert "user-only command" in text and "must run it themselves" in text, text
+    assert "user-only command" in text and "themselves" in text and "nothing to approve" in text, text
     assert "approve " not in text.replace("bawwab approval", "") and "pending" not in text.lower(), text
     assert len(_pending(w)) == before
 
@@ -519,3 +519,104 @@ def test_r57_git_alias_with_a_protected_call_is_refused(w, cmd):
 ])
 def test_r57_ordinary_git_aliases_pass(w, cmd):
     assert _none(cmd, w), (cmd, _reason(cmd, w))
+
+
+# ------------------------------------------------------------------ R57 fix round 2
+
+
+def _kind(out) -> str:
+    """PLAIN (no pending row, no "To allow") or APPROVABLE, as the reviewer's harness labels a deny."""
+    d = out["hookSpecificOutput"]
+    assert d["permissionDecision"] == "deny"
+    return "APPROVABLE" if "To allow" in d["permissionDecisionReason"] else "PLAIN"
+
+
+@pytest.mark.parametrize("cmd", [
+    "git config -f .git/config alias.y '!bawwab approve HABZ --force'",
+    "git config --file .git/config alias.y '!bawwab approve HABZ --force'",
+    "git config --file=.git/config alias.y '!bawwab approve HABZ --force'",
+    "git config --type string alias.y '!bawwab approve HABZ --force'",
+    "git config --comment hi alias.y '!bawwab reject HABZ'",
+    "git config --blob HEAD:x alias.y '!bawwab approve HABZ'",
+    "git config --global --default x alias.y '!bawwab approve HABZ'",
+])
+def test_r2_git_config_option_values_are_skipped(w, cmd):
+    assert _deny(cmd, w), cmd
+
+
+def test_r2_git_config_reading_an_alias_passes(w):
+    assert _none("git config -f .git/config --get alias.y", w)
+    assert _none("git config --type bool core.bare", w)
+
+
+AUTOTOOLS_MK = """CC = cc
+OBJS = main.o util.o
+DEPDIR = .deps
+all: prog
+prog: $(OBJS)
+\t$(CC) -o $@ $(OBJS)
+%.o: %.c
+\t$(CC) -MMD -c $< -o $@
+test: prog
+\t./prog --selftest
+-include $(OBJS:.o=.d)
+include $(wildcard *.mk)
+sinclude ./$(DEPDIR)/main.Po
+-include missing-literal.mk
+"""
+
+
+def test_r2_c_autotools_makefile_with_dynamic_includes_passes(tmp_path):
+    _w(tmp_path / "Makefile", AUTOTOOLS_MK)
+    for cmd in ("make", "make all", "make test", "make check"):
+        assert _none(cmd, tmp_path), (cmd, _reason(cmd, tmp_path))
+
+
+def test_r2_literal_include_is_still_read(w):
+    _w(w / "evil.mk", "x:\n\tbawwab approve HABZ\n")
+    _w(w / "M9", "-include evil.mk\n")
+    assert _deny("make -f M9 x", w)
+    assert _kind(_out("Bash", {"command": "make -f M9 x"}, w)) == "PLAIN"
+
+
+def test_r2_read_failures_are_approvable_again(w):
+    _w(w / "big.sh", "echo x\n" * 200_000)
+    assert _kind(_out("Bash", {"command": "sh big.sh"}, w)) == "APPROVABLE"
+    for i in range(1, 5):
+        _w(w / f"d{i}.sh", f"sh d{i + 1}.sh\n" if i < 4 else "echo done\n")
+    assert _kind(_out("Bash", {"command": "sh d1.sh"}, w)) == "APPROVABLE"
+
+
+def test_r2_protected_lines_in_read_scripts_stay_plain(w):
+    assert _kind(_out("Bash", {"command": "sh scripts/noshebang.sh HABZ"}, w)) == "PLAIN"
+
+
+@pytest.mark.parametrize("cmd", [
+    "echo 'bawwab approve \"$1\"' > /tmp/x.sh",
+    "cat > /tmp/x.sh <<'EOF'\nbawwab approve \"$1\" --force\nEOF",
+    "tee /tmp/x.sh <<'EOF'\nbawwab reject \"$1\"\nEOF",
+    "printf 'bawwab approve \"$1\"' > a.sh && sh a.sh HABZ",
+    "printf '#!/bin/sh\\nexec bawwab \"$@\"\\n' > /tmp/bw",
+])
+def test_r2_write_text_only_hits_are_plain(w, cmd):
+    before = len(_pending(w))
+    out = _out("Bash", {"command": cmd}, w)
+    assert _kind(out) == "PLAIN", out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert len(_pending(w)) == before
+
+
+@pytest.mark.parametrize("cmd", [
+    "bawwab approve HABZ",
+    "sh -c 'bawwab approve HABZ'",
+    "echo 'bawwab approve \"$1\"' > /tmp/x.sh; bawwab approve HABZ",
+    "cat <<'EOF' | sh\nbawwab approve HABZ\nEOF",
+    "sh <<'EOF'\nbawwab approve HABZ\nEOF",
+])
+def test_r2_direct_invocations_stay_approvable(w, cmd):
+    assert _kind(_out("Bash", {"command": cmd}, w)) == "APPROVABLE", cmd
+
+
+def test_r2_write_deny_text_says_not_to_write_it(w):
+    out = _out("Write", {"file_path": str(w / "a.sh"), "content": APPROVE_1}, w)
+    text = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "the user must run that command themselves" in text and "shouldn't write it into files" in text, text

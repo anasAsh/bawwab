@@ -41,21 +41,29 @@ Bawwab and Claude's tool shell run as the same OS user, so bawwab cannot fully k
 
 - direct and wrapper invocations it recognises: under bawwab's name, through a renamed symlink or copy of its
   launcher or console script, through `python -m bawwab` or `python -c` code that imports bawwab, and shell writes
-  to its store, plugin data dir or venv;
-- scripts it reads: a file named on the command line and run by `sh`/`bash`/`dash`/`zsh`/`ksh`, `.`/`source`,
-  `./file`, `make` (its makefiles and literal includes) or `python`/`node`/… (that file only), read as it is when
-  the gate checks it, three nested files deep;
-- git `!` aliases holding such a call (`git -c alias.X='!…'`, `git config alias.X '!…'`);
+  to its store, plugin data dir or venv. These are a block the user can approve;
+- calls inside scripts it reads: a file named on the command line and run by `sh`/`bash`/`dash`/`zsh`/`ksh`,
+  `.`/`source`, `./file` or `make` (its makefiles and the literal includes that exist), checked as it is when the
+  gate reads it, three nested files deep; and in a file run by `python`/`node`/…, calls in a form the gate
+  recognises (literal single-line calls in that file only). A script the gate can't read, over 1 MB or nested
+  deeper is a block the user can approve; a protected call found inside is a plain refusal;
+- git `!` aliases holding such a call, set on the command line: `git -c alias.X='!…'` and
+  `git config [--global|--local|-f F] alias.X '!…'`. A plain refusal;
 - writing such a call, in a form the gate recognises, into a file (Write/Edit, `tee`, heredocs, redirects, copying
-  a script).
+  a script). A plain refusal, including when the only match is the text being written.
 
-It does **not** cover: interpreter imports, git hooks and other config-borne commands, npm/yarn/pnpm/just/tox
-scripts, build tools, process substitution, `$(cat f)` and `eval`, `BASH_ENV`, a script changed after the gate read
-it, compiled programs, runtime-computed paths, or any program Claude writes and then runs. An agent instructed to
-bypass bawwab (for example by prompt injection) could approve through those routes, or by forging bawwab's state
-directly. Isolating bawwab's state from Claude (a separate OS user or a sandbox) is the only full answer today;
-user-presence approval through a channel the model can't drive is planned for v1.1. Reports of a route the list
-above says is refused are in scope; the routes it says are not covered are known limitations.
+A plain refusal creates no pending approval and never suggests `bawwab approve`: the user runs the command
+themselves.
+
+It does **not** cover: a script changed earlier in the same command (a `git checkout`, `git pull`, `cp` or
+download before running it), multi-line argv lists and imports in Python/Node code, aliases written into a git
+config file or set through `GIT_CONFIG_*`, git hooks and other config-borne commands, npm/yarn/pnpm/just/tox
+scripts, build tools, make includes computed at make time, process substitution, `$(cat f)` and `eval`,
+`BASH_ENV`, compiled programs, runtime-computed paths, or any program Claude writes and then runs. An agent
+instructed to bypass bawwab (for example by prompt injection) could approve through those routes, or by forging
+bawwab's state directly. Isolating bawwab's state from Claude (a separate OS user or a sandbox) is the only full
+answer today; user-presence approval through a channel the model can't drive is planned for v1.1. Reports of a
+route the list above says is refused are in scope; the routes it says are not covered are known limitations.
 
 ## Bypass Hall of Fame
 
