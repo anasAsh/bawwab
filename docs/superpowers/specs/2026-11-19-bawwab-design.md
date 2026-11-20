@@ -392,6 +392,25 @@ The user picks how Bawwab treats a verdict that isn't clean. The level is
 - `/bawwab-run` (plugin command) shows what is on hold, helps decide, then
   offers a full scan. The `bawwab` skill is no longer in the slash menu.
 
+### 1e. Known false positive: editing Bawwab with Bawwab on (user decision 2026-11-21: keep)
+
+In Bawwab's own checkout, a `python3 - <<'EOF'` script that rewrites
+Bawwab's source is refused twice:
+- `from bawwab` inside a Python string matches the interpreter rule
+  (`_BAWWAB_CODE`): the rule can't tell code from data;
+- the heredoc fail-safe reads the body as shell, `Path("bawwab/effects.py")`
+  splits into the command word `bawwab/effects.py`, and that file resolves
+  as a bawwab executable (it imports bawwab).
+
+Every fix found would stop refusing something refused today (bawwab run
+through `importlib`/`exec`/`runpy` strings, or a renamed bawwab in a
+misread heredoc), so the gate stays as is.
+`tests/test_heredoc_python_fp.py` holds the false positive as strict
+xfails, plus the true positives any future fix must keep refusing.
+Workaround: edit Bawwab's source with Edit/Write, and disable the plugin
+while developing it (writing approve/reject commands into files is refused
+by design, R56).
+
 ### 2. Fetch (download only)
 
 npm and PyPI via registry HTTP APIs + safe archive extraction; git via
