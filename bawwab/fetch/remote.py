@@ -62,6 +62,10 @@ async def _transport(url: str, kind: str):
         yield streams[0], streams[1]
 
 
+def _method_not_found(e: BaseException) -> bool:
+    return getattr(e, "code", None) == -32601
+
+
 async def _session_dump(url: str, kind: str) -> tuple[str, list[ToolInfo]]:
     from mcp import ClientSession
 
@@ -70,22 +74,25 @@ async def _session_dump(url: str, kind: str) -> tuple[str, list[ToolInfo]]:
             init = await session.initialize()
             info = getattr(init, "server_info", None) or getattr(init, "serverInfo", None)  # mcp 2.x / 1.x
             version = getattr(info, "version", None) or "unversioned"
+            caps = getattr(init, "capabilities", None)
             tools: list[ToolInfo] = []
-            try:
-                for t in (await session.list_tools()).tools:
-                    tools.append(ToolInfo(t.name, t.description or "", getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)))
-            except Exception:
-                pass
-            try:
-                for p in (await session.list_prompts()).prompts:
-                    tools.append(ToolInfo(f"prompt:{p.name}", p.description or ""))
-            except Exception:
-                pass
-            try:
-                for r in (await session.list_resources()).resources:
-                    tools.append(ToolInfo(f"resource:{r.name}", r.description or "", {"uri": str(r.uri)}))
-            except Exception:
-                pass
+            # list_tools must work: a server that errors only for the scanner must not read as clean
+            for t in (await session.list_tools()).tools:
+                tools.append(ToolInfo(t.name, t.description or "", getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)))
+            if caps is None or getattr(caps, "prompts", None):
+                try:
+                    for p in (await session.list_prompts()).prompts:
+                        tools.append(ToolInfo(f"prompt:{p.name}", p.description or ""))
+                except Exception as e:  # noqa: BLE001
+                    if not _method_not_found(e):
+                        raise
+            if caps is None or getattr(caps, "resources", None):
+                try:
+                    for r in (await session.list_resources()).resources:
+                        tools.append(ToolInfo(f"resource:{r.name}", r.description or "", {"uri": str(r.uri)}))
+                except Exception as e:  # noqa: BLE001
+                    if not _method_not_found(e):
+                        raise
             return str(version), tools
 
 
