@@ -913,3 +913,63 @@ def test_r31_static_step_lowers_prepare_only_for_npm_registry(tmp_path, spec, ex
     f = Fetched(parse_target(spec), "1", tmp_path, "h", "mcp", PackageMeta("x"), [], [], lambda: None)
     _, _, findings = _static_step(f)
     assert [x.severity for x in findings if x.rule == "install-script"] == [expected]
+
+
+# ---------------------------------------------------------------- display assets vs execution positions
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00"
+
+
+def _rules(findings):
+    return [(f.rule, f.severity) for f in findings]
+
+
+@pytest.mark.parametrize("key", ["logo", "icon", "image", "screenshot", "banner"])
+def test_png_named_by_descriptive_field_is_low_aggregate_only(tmp_path, key):
+    root = _write(tmp_path, {
+        ".codex-plugin/plugin.json": '{"name": "x", "interface": {"%s": "./assets/app-icon.png"}}' % key,
+        "assets/app-icon.png": PNG,
+    })
+    _, findings = load_files(root)
+    assert _rules(findings) == [("files.binary-unscanned", Severity.LOW)]
+
+
+def test_png_named_by_bare_logo_path_is_low_aggregate_only(tmp_path):
+    root = _write(tmp_path, {
+        ".antigravity-plugin/plugin.json": '{"logo": "assets/antigravity-logo.png"}',
+        "assets/antigravity-logo.png": PNG,
+    })
+    _, findings = load_files(root)
+    assert _rules(findings) == [("files.binary-unscanned", Severity.LOW)]
+
+
+def test_png_named_as_hook_command_is_still_med(tmp_path):
+    root = _write(tmp_path, {
+        "hooks/hooks.json": '{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "./assets/a.png"}]}]}}',
+        "assets/a.png": PNG,
+    })
+    _, findings = load_files(root)
+    assert ("files.truncated", Severity.MED) in _rules(findings)
+
+
+def test_png_named_as_mcp_server_command_is_still_med(tmp_path):
+    root = _write(tmp_path, {
+        "plugin.json": '{"logo": "assets/a.png", "mcpServers": {"s": {"command": "./assets/a.png"}}}',
+        "assets/a.png": PNG,
+    })
+    _, findings = load_files(root)
+    assert ("files.truncated", Severity.MED) in _rules(findings)
+
+
+def test_elf_named_by_descriptive_field_is_still_med(tmp_path):
+    root = _write(tmp_path, {
+        "plugin.json": '{"logo": "assets/a.png"}',
+        "assets/a.png": b"PK\x03\x04\x00\x00" + b"\x00" * 20,
+    })
+    _, findings = load_files(root)
+    assert ("files.truncated", Severity.MED) in _rules(findings)
+
+
+def test_nul_bearing_js_is_still_med(tmp_path):
+    root = _write(tmp_path, {"plugin.json": '{"logo": "assets/a.js"}', "assets/a.js": b"var a;\x00\x00\n"})
+    _, findings = load_files(root)
+    assert ("files.truncated", Severity.MED) in _rules(findings)
