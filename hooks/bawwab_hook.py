@@ -126,8 +126,12 @@ def _boot_dir() -> str:
 
 
 def _venv_dir() -> str:
-    v = os.environ.get("BAWWAB_VENV")  # a dev checkout's own venv (tests); absolute only
-    return v if v and os.path.isabs(v) else os.path.join(_boot_dir(), "venv")
+    """<boot dir>/venv. BAWWAB_VENV (absolute) is a dev/test knob, honoured only outside a plugin install (no
+    CLAUDE_PLUGIN_DATA): it never overrides the plugin data dir (fix round 3, M11)."""
+    v = os.environ.get("BAWWAB_VENV")
+    if v and os.path.isabs(v) and not os.environ.get("CLAUDE_PLUGIN_DATA"):
+        return v
+    return os.path.join(_boot_dir(), "venv")
 
 
 def _child_env() -> dict:
@@ -138,21 +142,43 @@ def _child_env() -> dict:
     return env
 
 
-# ------------------------------------------------------------------ first-run bootstrap (fix round 2, I4)
+# ------------------------------------------------------------------ first-run bootstrap (fix rounds 2-3)
 # The first `uv run` downloads bawwab's dependencies, which can take longer than any hook timeout. So the venv
 # is synced by a detached `bootstrap` process, which writes <boot dir>/bootstrap-complete (this root and its
-# uv.lock) when done. Until then: installs (and an active quarantine) are denied, other calls pass, and
-# SessionStart says setup is running; the SessionStart work (and its first-run question) runs at the end of the
-# bootstrap and is shown on the next prompt.
+# uv.lock) when done. Until then:
+# - before bawwab is initialised (effect check inactive anyway): installs and an active quarantine are denied,
+#   other calls pass;
+# - once initialised: any call the effect check would have looked at (config changed, or can't tell) is denied
+#   too, so a failing or blocked setup never turns the effect check off (I5).
+# SessionStart says setup is running; the SessionStart work runs at the end of the bootstrap, and the next prompt
+# shows a fixed notice chosen by a message id (never text read back from a file, M9).
 
-BOOT_DONE, BOOT_LOCK = "bootstrap-complete", "bootstrap.lock"
+BOOT_DONE, BOOT_LOCK, BOOT_FAILED = "bootstrap-complete", "bootstrap.lock", "bootstrap-failed"
+BOOT_SPAWNED, BOOT_FAILED_TOLD = "bootstrap.spawned", "bootstrap-failed.told"
 BOOT_PENDING, BOOT_CONTEXT = "pending-sessionstart.json", "pending-context.txt"
-BOOT_STALE_S, BOOT_SYNC_S, BOOT_INVENTORY_S = 2400, 1800, 300
+BOOT_STALE_S, BOOT_SYNC_S, BOOT_INVENTORY_S, BOOT_RESPAWN_S = 1800, 1800, 300, 60
 SETUP_DENY = ("bawwab is still setting up (installing its own dependencies in the background), so it can't check "
-              "this install yet. Retry in a minute.")
+              "this yet. Retry in a minute; if this persists, the user can run `! bawwab effects --retry` or check "
+              "their network.")
+SETUP_FAILED_DENY = ("bawwab setup failed: it could not install its own dependencies, so it can't check this. "
+                     "The user should run `! bawwab effects --retry` or check their network.")
 SETUP_CONTEXT = ("Bawwab (a security scanner for MCP servers, skills and plugins) is still setting up: it is "
                  "installing its own dependencies in the background, which takes about a minute. Install commands "
                  "are held until then. Its first-run question follows on a later prompt once setup finishes.")
+SETUP_FAILED_CONTEXT = ("Bawwab (a security scanner for MCP servers, skills and plugins) setup failed: it could not "
+                        "install its own dependencies (offline, or the package index is unreachable). Until it "
+                        "succeeds, install commands are held. Tell the user: check the network, or run "
+                        "`! bawwab effects --retry`. Setup is retried automatically.")
+# Fixed notices the bootstrap can leave for the next prompt, by id (M9).
+BOOT_NOTICES = {
+    "first-run": ("Bawwab (a security scanner for MCP servers, skills and plugins) has finished setting up, and it "
+                  "has not scanned this machine yet. Before anything else, ask the user whether to run a full scan "
+                  "now.\n- Yes: run `bawwab init --scan` yourself.\n- Skip: the user must run `! bawwab init "
+                  "--skip` (this trusts everything installed now without scanning; you cannot run it)."),
+    "lost": ("bawwab's state was lost, so tool calls are blocked (fail closed). Tell the user to run "
+             "`! bawwab init --scan` (a full scan: nothing is trusted without scanning)."),
+}
+_SID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 
 
 def _boot_token() -> str:
@@ -167,100 +193,232 @@ def _boot_token() -> str:
     return h.hexdigest()
 
 
+def _read(path: str) -> str | None:
+    try:
+        with open(path) as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def _bootstrapped() -> bool:
-    try:
-        with open(os.path.join(_boot_dir(), BOOT_DONE)) as f:
-            return f.read().strip() == _boot_token()
-    except OSError:
-        return False
-
-
-def _lock_fresh(path: str) -> bool:
-    import time
-
-    try:
-        pid_s, ts_s = open(path).read().split()
-        if time.time() - float(ts_s) > BOOT_STALE_S:
-            return False
-        os.kill(int(pid_s), 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except (OSError, ValueError):
-        return os.path.exists(path)  # unreadable or another user's process: assume it runs
+    return (_read(os.path.join(_boot_dir(), BOOT_DONE)) or "").strip() == _boot_token()
 
 
 def _write(path: str, text: str) -> None:
+    """Atomic: a reader sees the old file or the new one, never a partial write."""
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         f.write(text)
     os.replace(tmp, path)
 
 
+def _lock_live(content: str | None) -> bool:
+    """A lock counts only for a live bootstrap: a sane, recent timestamp, a pid we can signal, and (where /proc
+    exists) that pid running this hook's `bootstrap`. Anything else is stale (fix round 3, I5)."""
+    import time
+
+    try:
+        pid_s, ts_s = (content or "").split()
+        pid, ts = int(pid_s), float(ts_s)
+    except ValueError:
+        return False
+    now = time.time()
+    if pid <= 0 or ts > now + 5 or now - ts > BOOT_STALE_S:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (PermissionError, ProcessLookupError, OSError):
+        return False
+    cmdline = f"/proc/{pid}/cmdline"
+    if os.path.isdir("/proc/self"):
+        raw = _read(cmdline)
+        if raw is None:
+            return False
+        argv = raw.split("\0")
+        return any(x.endswith("bawwab_hook.py") for x in argv) and "bootstrap" in argv
+    return True
+
+
+def _take_lock(path: str) -> bool:
+    """O_CREAT|O_EXCL; a stale lock is moved aside atomically first (and put back if it changed meanwhile)."""
+    import time
+
+    for _ in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            seen = _read(path)
+            if _lock_live(seen):
+                return False
+            aside = f"{path}.stale.{os.getpid()}"
+            try:
+                os.rename(path, aside)
+            except OSError:
+                continue
+            if _read(aside) != seen:  # another process's fresh lock: put it back, give up
+                try:
+                    os.link(aside, path)
+                except OSError:
+                    pass
+                os.unlink(aside)
+                return False
+            os.unlink(aside)
+            continue
+        except OSError:
+            return False
+        with os.fdopen(fd, "w") as f:
+            f.write(f"{os.getpid()} {time.time()}")
+        return True
+    return False
+
+
+def _respawn_allowed(d: str) -> bool:
+    """At most one bootstrap start per BOOT_RESPAWN_S, recorded in a marker file."""
+    import time
+
+    try:
+        last = float((_read(os.path.join(d, BOOT_SPAWNED)) or "0").strip() or 0)
+    except ValueError:
+        last = 0.0
+    now = time.time()
+    if 0 <= now - last < BOOT_RESPAWN_S:
+        return False
+    _write(os.path.join(d, BOOT_SPAWNED), str(now))
+    return True
+
+
+def _pending_input(raw: str) -> str:
+    """The SessionStart input the bootstrap replays, rebuilt from checked fields only (M9)."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = {}
+    out: dict = {"hook_event_name": "SessionStart"}
+    if isinstance(data, dict):
+        sid, cwd = data.get("session_id"), data.get("cwd")
+        if isinstance(sid, str) and 0 < len(sid) <= 100 and set(sid) <= _SID_CHARS:
+            out["session_id"] = sid
+        if isinstance(cwd, str) and os.path.isabs(cwd) and os.path.isdir(cwd) and "\n" not in cwd:
+            out["cwd"] = cwd
+    return json.dumps(out)
+
+
 def _start_bootstrap(pending: str | None = None) -> None:
-    """Start the detached bootstrap unless one is running. Never raises."""
+    """Start the detached bootstrap unless one is running or one started under a minute ago. Never raises."""
     import subprocess
 
     try:
         d = _boot_dir()
         os.makedirs(d, mode=0o700, exist_ok=True)
         if pending is not None:
-            _write(os.path.join(d, BOOT_PENDING), pending)
-        if _lock_fresh(os.path.join(d, BOOT_LOCK)):
+            _write(os.path.join(d, BOOT_PENDING), _pending_input(pending))
+        if _lock_live(_read(os.path.join(d, BOOT_LOCK))) or not _respawn_allowed(d):
             return
         subprocess.Popen([sys.executable, os.path.realpath(__file__), "bootstrap"], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:  # noqa: BLE001 - a failed start is retried by the next hook
+    except Exception:  # noqa: BLE001 - a failed start is retried by a later hook
         pass
+
+
+def _notice_id(ctx: object) -> str | None:
+    """Which fixed notice the SessionStart output calls for. The output's text itself is never kept."""
+    if not isinstance(ctx, str):
+        return None
+    if "state was lost" in ctx:
+        return "lost"
+    if "has not scanned this machine yet" in ctx:
+        return "first-run"
+    return None
 
 
 def bootstrap() -> int:
     """The detached first-run setup: sync the venv, run the SessionStart work, mark it complete."""
     import subprocess
-    import time
 
     d = _boot_dir()
     lock = os.path.join(d, BOOT_LOCK)
     try:
         os.makedirs(d, mode=0o700, exist_ok=True)
-        if os.path.exists(lock) and not _lock_fresh(lock):
-            os.unlink(lock)
-        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        if not _take_lock(lock):
+            return 0  # another bootstrap runs
     except OSError:
-        return 0  # another bootstrap runs
+        return 0
     try:
-        with os.fdopen(fd, "w") as f:
-            f.write(f"{os.getpid()} {time.time()}")
         token = _boot_token()
-        r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen", "--quiet"], env=_child_env(),
-                           stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_SYNC_S)
-        if r.returncode != 0:
+        try:
+            r = subprocess.run(["uv", "sync", "--project", PLUGIN_ROOT, "--frozen", "--quiet"], env=_child_env(),
+                               stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_SYNC_S)
+            ok = r.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if not ok:
+            _write(os.path.join(d, BOOT_FAILED), "sync-failed")
             return 0
         pending = os.path.join(d, BOOT_PENDING)
-        if os.path.exists(pending):
-            raw = open(pending).read()
-            try:
-                _note_session(json.loads(raw))
-            except ValueError:
-                _note_session(None)
+        raw = _read(pending)
+        if raw is not None:
+            raw = _pending_input(raw)
+            _note_session(json.loads(raw))
             try:
                 out = subprocess.run(_bawwab_cmd("inventory"), input=raw, capture_output=True, text=True,
                                      timeout=BOOT_INVENTORY_S, env=_child_env()).stdout.strip()
-                ctx = json.loads(out).get("hookSpecificOutput", {}).get("additionalContext") if out else None
-                if isinstance(ctx, str) and ctx:
-                    _write(os.path.join(d, BOOT_CONTEXT), ctx)
+                nid = _notice_id(json.loads(out).get("hookSpecificOutput", {}).get("additionalContext")) \
+                    if out else None
+                if nid:
+                    _write(os.path.join(d, BOOT_CONTEXT), nid)
             except Exception:  # noqa: BLE001 - SessionStart work is retried next session
                 pass
-            os.unlink(pending)
+            if _read(pending) is not None and _pending_input(_read(pending) or "") == raw:
+                try:
+                    os.unlink(pending)  # only the input we replayed, not a newer one
+                except OSError:
+                    pass
+        for name in (BOOT_FAILED, BOOT_FAILED_TOLD):
+            try:
+                os.unlink(os.path.join(d, name))
+            except OSError:
+                pass
         _write(os.path.join(d, BOOT_DONE), token)
     except Exception:  # noqa: BLE001
         pass
     finally:
         try:
-            os.unlink(lock)
+            if _read(lock) is not None and (_read(lock) or "").split()[:1] == [str(os.getpid())]:
+                os.unlink(lock)
         except OSError:
             pass
     return 0
+
+
+def _setup_failed() -> bool:
+    return os.path.exists(os.path.join(_boot_dir(), BOOT_FAILED))
+
+
+def _setup_deny() -> str:
+    return SETUP_FAILED_DENY if _setup_failed() else SETUP_DENY
+
+
+def _initialised() -> bool:
+    """bawwab has been initialised (install marker, effect-check state, or state-created). Any doubt: True."""
+    try:
+        fp = _load_fingerprint()
+        home = os.path.expanduser("~")
+        return bool(fp.initialised(home, _bawwab_home()) or fp.data_marker(home, fp.STATE_CREATED))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _take_failure_notice() -> str | None:
+    """SETUP_FAILED_CONTEXT, once per failure."""
+    d = _boot_dir()
+    if not _setup_failed() or os.path.exists(os.path.join(d, BOOT_FAILED_TOLD)):
+        return None
+    try:
+        _write(os.path.join(d, BOOT_FAILED_TOLD), "1")
+    except OSError:
+        pass
+    return SETUP_FAILED_CONTEXT
 
 
 def _run_child(sub: str, raw: str) -> tuple[str | None, str | None]:
@@ -321,10 +479,12 @@ def gate() -> int:
     blocked = data.get("tool_name") not in READ_ONLY_TOOLS and _quarantine_flag()
     if not (install_like or changed or blocked):
         return 0
-    if not _bootstrapped():  # first run or upgrade: setup runs detached; installs wait, others pass
+    if not _bootstrapped():  # first run or upgrade: setup runs detached
         _start_bootstrap()
-        if install_like or blocked:
-            print(_deny(SETUP_DENY))
+        # installs and a quarantine always wait; once initialised, so does anything the effect check would
+        # have looked at (I5): a failing or blocked setup never switches the effect check off
+        if install_like or blocked or (changed and _initialised()):
+            print(_deny(_setup_deny()))
         return 0
     try:
         # a broken bawwab never blocks an ordinary call; it does block installs and an active quarantine
@@ -351,8 +511,10 @@ def post() -> int:
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0
-    if not _bootstrapped():  # the next gate call checks the change once setup is done
+    if not _bootstrapped():  # setup runs detached; a change is never let through unchecked once initialised
         _start_bootstrap()
+        if _initialised():
+            print(json.dumps({"decision": "block", "reason": _setup_deny()}))
         return 0
     try:
         out, err = _run_child("post", raw)
@@ -371,14 +533,15 @@ def _context_json(event: str, text: str) -> str:
 
 
 def _take_boot_context() -> str | None:
-    """The SessionStart text (first-run question) the bootstrap produced, once."""
+    """The fixed notice the bootstrap left for the next prompt, once. The file holds a message id only; an
+    unknown id (or any planted text) shows nothing (M9)."""
     path = os.path.join(_boot_dir(), BOOT_CONTEXT)
+    nid = (_read(path) or "").strip()
     try:
-        text = open(path).read()
         os.unlink(path)
-        return text or None
     except OSError:
-        return None
+        pass
+    return BOOT_NOTICES.get(nid)
 
 
 def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
@@ -395,9 +558,12 @@ def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
         _note_session(None)
     event = "SessionStart" if sub == "inventory" else "UserPromptSubmit"
     if not _bootstrapped():
+        told = _take_failure_notice()
         if sub == "inventory":
             _start_bootstrap(raw)
-            print(_context_json(event, SETUP_CONTEXT))
+            print(_context_json(event, told or SETUP_CONTEXT))
+        elif told:
+            print(_context_json(event, told))
         return 0
     extra = _take_boot_context() if sub == "notify" else None
     out = None
@@ -454,7 +620,7 @@ def main(argv: list[str]) -> int:
     if argv[1:2] == ["notify"]:
         if _flag_present():
             return _passthrough("notify", 30)
-        if os.path.exists(os.path.join(_boot_dir(), BOOT_CONTEXT)):
+        if os.path.exists(os.path.join(_boot_dir(), BOOT_CONTEXT)) or _setup_failed():
             return _passthrough("notify", 30, run=False)
         return 0
     if argv[1:2] == ["bootstrap"]:

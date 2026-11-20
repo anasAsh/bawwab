@@ -80,6 +80,29 @@ def _is_code(rel: str) -> bool:
     return not _is_doc(rel) and _base(rel) not in LOCKFILES and not _is_data(rel)
 
 
+def _custom_index(raw: str) -> tuple[int, str] | None:
+    """(position, url) of the first non-PyPI package source in an install command or an index variable."""
+    from urllib.parse import urlsplit
+
+    def foreign(url: str) -> bool:
+        try:
+            return urlsplit(url).hostname not in PYPI_HOSTS
+        except ValueError:
+            return True
+
+    for m in PIP_CMD_RE.finditer(raw):
+        seg = raw[m.end():m.end() + 400]
+        end = _SEGMENT_END_RE.search(seg)
+        seg = seg[:end.start()] if end else seg
+        for u in PIP_URL_RE.finditer(seg):
+            if foreign(u.group(1)):
+                return m.start(), u.group(1)
+    for m in INDEX_ENV_RE.finditer(raw):
+        if foreign(m.group(1)):
+            return m.start(), m.group(1)
+    return None
+
+
 def _line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
 
@@ -276,12 +299,17 @@ RUN_RE = re.compile(r"\b(sh|bash|zsh|chmod)\b")
 URL_IMPORT_RE = re.compile(r"^\(?\s*['\"`]https?://")
 
 PIPE_SHELL_RE = re.compile(r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b")
-# `pip install` / `uv pip install` from an index other than PyPI, in a shell line or an argv list (fix round 2).
+# Installing Python packages from somewhere other than PyPI (fix rounds 2-3): any URL on a `pip install`,
+# `uv pip install` or `uv add` command (an index, find-links or a direct wheel/sdist/git requirement), or an
+# index set through PIP_*/UV_* variables. Shell lines and argv lists alike.
 _ARGSEP = r"""['"]?(?:\s*,\s*|\s+)['"]?"""
-PIP_INDEX_RE = re.compile(
-    rf"(?:\bpip3?|\buv{_ARGSEP}pip){_ARGSEP}install\b[^\n]{{0,300}}?(?:--index-url|--extra-index-url|(?<![\w-])-i)"
-    rf"(?:{_ARGSEP}|=)['\"]?(https?://[^\s'\",\])]+)"
+PIP_CMD_RE = re.compile(rf"(?:(?:\bpip3?|\buv{_ARGSEP}pip){_ARGSEP}install|\buv{_ARGSEP}add)\b")
+PIP_URL_RE = re.compile(r"""(?:git\+)?(https?://[^\s'",\])]+)""")
+INDEX_ENV_RE = re.compile(
+    r"\b(?:PIP_INDEX_URL|PIP_EXTRA_INDEX_URL|PIP_FIND_LINKS|UV_INDEX_URL|UV_EXTRA_INDEX_URL|UV_DEFAULT_INDEX"
+    r"|UV_INDEX|UV_FIND_LINKS)\b['\"]?\s*(?:=|:|\]\s*=)\s*['\"]?(?:[\w.-]+=)?(https?://[^\s'\",\])]+)"
 )
+_SEGMENT_END_RE = re.compile(r"(?<![\\,(\[])\n|\s#|;|&&|\|\|")
 PYPI_HOSTS = {"pypi.org", "files.pythonhosted.org"}
 # Fallback for shell scripts and anything that did not parse.
 FB_EVAL_DECODED_RE = re.compile(
@@ -1324,17 +1352,10 @@ class CodeRules:
         if m:
             sev = Severity.CRITICAL if is_install else Severity.HIGH
             out.append(_finding("remote-code.pipe-shell", sev, f, _line_of(raw, m.start())))
-        for m in PIP_INDEX_RE.finditer(raw):
-            from urllib.parse import urlsplit
-
-            try:
-                host = urlsplit(m.group(1)).hostname
-            except ValueError:
-                host = None
-            if host not in PYPI_HOSTS:
-                out.append(_finding("install.custom-index", Severity.MED, f, _line_of(raw, m.start()),
-                                    f"installs Python packages from {m.group(1)[:120]}"))
-                break
+        hit = _custom_index(raw)
+        if hit:
+            out.append(_finding("install.custom-index", Severity.MED, f, _line_of(raw, hit[0]),
+                                f"installs Python packages from {hit[1][:120]}"))
         if not f.rel.endswith(".min.js"):
             m = next((m for m in BLOB_RE.finditer(raw) if not m.group(1).isdigit() and not _image_b64(m.group(1))), None)
             if m:
