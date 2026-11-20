@@ -116,6 +116,14 @@ def _label(r: ScanReport) -> str:
     return sanitise(f"{t.name or t.url or t.path or t.raw}@{r.resolved_version}", 200)
 
 
+def _user_only_block(reasons: list[str]) -> str:
+    shown = sanitise("; ".join(reasons), 400)
+    return (f"⛔ bawwab: refused — {shown}.\n"
+            "This would run bawwab's user-only command (or bawwab could not check that it doesn't). Bawwab "
+            "doesn't let Claude run that, and there is nothing to approve: the user must run it themselves, "
+            "in their own terminal, if they want it.")
+
+
 def _protected_block(inp: HookInput, reason: str, store: Store) -> tuple[str | None, str]:
     """(deny text or None when approved, key)."""
     key = protected_key(inp, reason)
@@ -152,7 +160,11 @@ def _scan_all(inp: HookInput, det: Targets, scan: Callable[..., ScanReport], sto
 
 def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanReport],
             store: Store) -> tuple[dict | None, list[str]]:
-    protected = [det.reason] if isinstance(det, Protected) else list(det.protected)
+    if isinstance(det, Protected):
+        approvable = det.reason if det.approvable is None else det.approvable
+        protected = [approvable] if approvable else []
+    else:
+        protected = list(det.protected)
     results = _scan_all(inp, det, scan, store, protected) if isinstance(det, Targets) else []
     blocks: list[str] = []
     keys: list[str] = []
@@ -161,6 +173,8 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         keys.append(key)
         if text:
             blocks.append(text)
+    if det.plain:  # R57: a plain deny; no pending approval, and no `bawwab approve` to suggest
+        blocks.append(_user_only_block(det.plain))
     for _, r in results:
         keys.append(r.key)
         if store.is_rejected(r.key):

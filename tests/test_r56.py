@@ -243,12 +243,28 @@ def test_makefile_variables_and_includes(w):
 # ------------------------------------------------------------------ fail closed
 
 
-def test_script_created_earlier_in_the_same_command(w):
-    assert "changed earlier" in _reason("curl -o a.sh https://example.com/x && sh a.sh", w)
-    assert "changed earlier" in _reason("cp /tmp/whatever a.sh; bash a.sh", w)
-    assert "changed earlier" in _reason("tar xf a.tgz && sh scripts/gen.sh", w)
-    assert "changed earlier" in _reason("git checkout other && make", w)
+@pytest.mark.parametrize("cmd", [
+    "git pull && make test",
+    "git checkout other && make",
+    "git clone https://github.com/a/b && cd b && make",
+    "git clone https://github.com/a/b && make -C b test",
+    "tar xzf x.tgz && cd x && ./configure && make",
+    "unzip -q a.zip && sh a/build.sh",
+    "curl -o a.sh https://example.com/x && sh a.sh",
+    "cp /tmp/whatever gen.sh; bash gen.sh",
+    "git checkout feat && ./only-on-feat.sh",
+    "bash -s < /dev/null",
+])
+def test_r57_no_stale_file_refusal(tmp_path, cmd):
+    """R57: the stale-file rule is gone (it was unreachable through the hook, C3, and refused benign builds,
+    I2). What a file holds when the gate reads it is what is checked; a file not there yet is not refused."""
+    _w(tmp_path / "Makefile", "test:\n\tpytest -q\nall:\n\techo hi\n")
+    assert _none(cmd, tmp_path), (cmd, _reason(cmd, tmp_path))
+
+
+def test_text_written_earlier_in_the_same_command_is_still_read(w):
     assert _deny("printf 'bawwab approve \"$1\"' > a.sh && sh a.sh HABZ", w)
+    assert _deny("cat > b.sh <<'EOF'\nbawwab approve \"$1\"\nEOF\nsh b.sh HABZ", w)
 
 
 def test_script_too_large_is_denied(w):
@@ -444,3 +460,62 @@ def test_sourcing_a_venv_activate_script_passes(tmp_path):
     act = _w(tmp_path / "venv" / "bin" / "activate", text)
     assert _none(f"source {act} && pytest -q", tmp_path)
     assert _none(f". {act}; python -V", tmp_path)
+
+
+# ------------------------------------------------------------------ R57: plain denies, git aliases
+
+
+def _pending(w) -> list:
+    from bawwab.store import open_store
+    return open_store()._conn.execute("SELECT id FROM pending").fetchall()
+
+
+@pytest.mark.parametrize("tool,ti,cmd", [
+    ("Bash", None, "sh scripts/noshebang.sh HABZ"),
+    ("Bash", None, "make ok"),
+    ("Bash", None, "cp scripts/noshebang.sh /tmp/y.sh"),  # an echo of the text itself also trips R55's rule
+    ("Write", {"file_path": "/tmp/a.sh", "content": APPROVE_1}, None),
+    ("Bash", None, "git -c alias.a='!bawwab approve HABZ --force' a"),
+])
+def test_r57_user_only_hits_are_plain_denies(w, tool, ti, cmd):
+    """A protected call inside a file the gate reads, or written into one, is a plain deny: it creates no
+    pending approval and never suggests `bawwab approve`; the user runs it themselves."""
+    before = len(_pending(w))
+    out = _out(tool, ti or {"command": cmd}, w)
+    d = out["hookSpecificOutput"]
+    assert d["permissionDecision"] == "deny"
+    text = d["permissionDecisionReason"]
+    assert "user-only command" in text and "must run it themselves" in text, text
+    assert "approve " not in text.replace("bawwab approval", "") and "pending" not in text.lower(), text
+    assert len(_pending(w)) == before
+
+
+def test_r57_direct_invocations_keep_their_existing_block(w):
+    """Unchanged (R55): a direct bawwab approval or an install keeps the existing protected-action block."""
+    out = _out("Bash", {"command": "bawwab approve HABZ"}, w)
+    assert "user-only command" not in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("cmd", [
+    "git -c alias.a='!bawwab approve HABZ --force' a",
+    "git -c 'alias.a=!bawwab reject HABZ' a",
+    "git -calias.a='!uv run bawwab approve HABZ' a",
+    "git config alias.a '!bawwab approve HABZ --force'",
+    "git config --global alias.a '!bawwab init --skip'",
+    "git config --local alias.a '!f() { bawwab approve \"$1\"; }; f'",
+    f"git config alias.a '!{LAUNCHER} approve HABZ'",
+    "git config set alias.a '!bawwab effects --retry'",
+])
+def test_r57_git_alias_with_a_protected_call_is_refused(w, cmd):
+    assert _routed(cmd, w), cmd
+    assert _deny(cmd, w), cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    "git -c alias.st=status st",
+    "git config alias.lg 'log --oneline --graph'",
+    "git config --global alias.up '!git pull --rebase && git push'",
+    "git -c user.name=x commit -m 'approve the PR'",
+])
+def test_r57_ordinary_git_aliases_pass(w, cmd):
+    assert _none(cmd, w), (cmd, _reason(cmd, w))

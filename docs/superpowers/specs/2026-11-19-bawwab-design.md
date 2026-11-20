@@ -230,38 +230,54 @@ scanning on its own.
     executable (`ln`, `cp`, `install`, `mv`, `rsync`, `cat … >`) is
     protected; so are shell writes to bawwab's home, its XDG state dir, its
     plugin data dir (`plugins/data/bawwab*`) and its venv.
-  - **Protected actions inside files (Task 13b, R56).** When a command runs a
-    file as code (`sh|bash|dash|zsh|ksh <file>`, `sh < file`, `cat file | sh`,
-    `. <file>`, `source <file>`, a path command word such as `./file`, a
-    `python|node|perl|ruby… <file>` script, or `make [-f F] [-C D]` reading
-    its makefiles and literal includes), the gate reads the file (never runs
-    it; at most 1 MB) and applies the same protected-action check to its
-    lines: shell text through the structured pass with the call's positional
-    arguments filled in (`bawwab approve "$1"` run as `sh a.sh ID` reads as
-    `bawwab approve ID`), make recipes with simple variables expanded, other
-    code through the content rule below. Nested script calls are followed
-    three files deep; deeper is refused. A file that can't be read, is too
-    large, or was changed earlier in the same command (a redirect, `tee`,
-    `cp`/`mv`, `curl -o`, an archive extract, a `git checkout`/`pull`…) is
-    refused. Writing a protected bawwab invocation (a bawwab command word:
-    its name, the launcher or a console-script path, `python -m bawwab`, a
-    path resolving to a bawwab executable; followed by `approve`, `reject`,
-    `init --skip` or `effects --retry`; or code importing bawwab that names
-    one) into any file is refused, whatever its name or shebang: Write, Edit,
-    MultiEdit, redirects, `tee`, heredocs, `cp`/`mv`/`install` of a file. An
-    edit is judged on the invocations it adds, so editing elsewhere in a doc
-    that already shows `bawwab approve <id>` passes; prose without a bawwab
-    command word always passes. Whole-line comments in a file the gate reads
-    are skipped.
-  - **Residual (R55, R56).** A same-user agent that deliberately engineers
-    around this (a wrapper whose path is computed at run time, code that
-    opens bawwab's SQLite store without naming it, forging the data-dir
-    markers or the store's rows) can still approve or reset state. So can
-    indirect execution the gate can't see: compiled programs, interpreters
-    reading code from the network (`bash <(curl …)`), runtime-computed paths
-    (`sh "$f"`), a script found on PATH by a bare name, task runners other than
-    make (npm scripts, just, tox…), and a file changed by a program the gate
-    doesn't model before it runs. The CLI does not
+  - **What the approval guarantee covers (R56, narrowed by R57).** The gate
+    refuses Claude-run calls of bawwab's user-only commands (`approve`,
+    `reject`, `init --skip`, `effects --retry`) in these forms, and only
+    these:
+    - direct and wrapper invocations it recognises (R55 above);
+    - scripts it reads: a file named on the command line and run by
+      `sh|bash|dash|zsh|ksh <file>`, `sh < file`, `cat file | sh`, `. <file>`,
+      `source <file>`, a path command word (`./file`), `make` (its makefiles
+      and literal includes), or `python|node|perl|ruby… <file>` (that file
+      only). The gate reads the file as it is at check time (at most 1 MB;
+      never run), fills in the call's positional arguments, and follows nested
+      script calls three files deep. Unreadable, too large, or nested deeper:
+      refused;
+    - a git shell alias holding a protected call: `git -c alias.X='!…'` and
+      `git config [--global] alias.X '!…'`;
+    - writing a protected bawwab call in a form it recognises (a bawwab
+      command word at a line start, after a shell separator, or at the start
+      of a quoted command string or argv list) with Write/Edit/MultiEdit,
+      `tee`, a heredoc or a redirect, or by copying a script (shebang or
+      execute bit). An edit is judged on the calls it adds.
+
+    A hit inside a file the gate reads, in a git alias, or in a write is a
+    plain deny ("the user must run it themselves"): it creates no pending
+    approval and never suggests `bawwab approve`. Install-gate approvals and
+    direct invocations keep their protected-action block.
+  - **Not covered (R57).** Once Claude can run a program it writes, static
+    inspection can't keep the approve command from the same OS user. These
+    routes are not refused, and an agent instructed to bypass bawwab (for
+    example by prompt injection) could approve through them:
+    - interpreter imports (a script that imports a module that calls bawwab);
+    - git hooks and other config-borne commands (`core.hooksPath`,
+      `core.pager`, …), beyond the `!` aliases above;
+    - npm, yarn, pnpm, just and tox scripts, and other build tools;
+    - process substitution, `$(cat f)` as a script or `eval` text, here-strings
+      of a file, `BASH_ENV`/`ENV`;
+    - a script changed after the gate read it (a `git checkout`, `git pull`,
+      `curl -o` or archive extract earlier in the same command);
+    - compiled programs, interpreters reading code from the network,
+      runtime-computed paths, scripts run by a bare name on PATH;
+    - write forms the rule doesn't parse (an argv list split over lines, a
+      template literal, inline backticks, obfuscation);
+    - any program Claude writes and then runs.
+
+    A same-user agent can also forge bawwab's state directly (code that opens
+    its SQLite store without naming it, the data-dir markers). User-presence
+    approval through a channel the model can't drive (Claude Code's own
+    permission prompt, or a model-blind channel) is planned for v1.1.
+  - The CLI does not
     refuse under Claude's tool shell: Claude Code sets `CLAUDECODE=1` in its
     own process, so the user's `!` shell is not shown to lack it (not
     verified either way; for the smoke test).

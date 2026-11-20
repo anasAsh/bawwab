@@ -44,11 +44,17 @@ class Targets:
     overlays: dict[Target, dict[str, str]] = field(default_factory=dict)
     # Protected reasons found in the same call; each needs its own approval.
     protected: list[str] = field(default_factory=list)
+    # R57: user-only reasons: a plain deny, never a pending approval (see Protected.plain).
+    plain: list[str] = field(default_factory=list)
 
 
 @dataclass
 class Protected:
-    reason: str
+    reason: str  # every reason, "; "-joined
+    # R57: the reasons that are a plain deny ("the user must run it themselves"), with no pending approval: a
+    # protected bawwab call inside a file the gate reads or a git alias, or written into a file.
+    plain: list[str] = field(default_factory=list)
+    approvable: str | None = None  # the reasons that get a pending approval; None: all of `reason`
 
 
 INSTALL_DIRS = ("skills", "commands", "agents", "plugins")
@@ -104,6 +110,7 @@ class _Acc:
         self.scanned: set[tuple[str, str]] = set()  # (text, cwd) already run through _bash
         self.root = ""  # the top-level command text (the raw backstop skips nested text that is part of it)
         self.prose = 0  # >0 while scanning heredoc bodies only as a fail-safe (text that may be prose, R55)
+        self.plain: list[str] = []  # R57: user-only reasons (a plain deny)
         self.script_depth = 0  # files being analysed around this text (R56)
         self.script_files = 0  # files read in this call
         self.script_bytes = 0  # bytes of file text read in this call
@@ -125,11 +132,17 @@ class _Acc:
         if reason not in self.protected:
             self.protected.append(reason)
 
+    def user_only(self, reason: str) -> None:
+        """R57: a plain deny, not a protected action the user could approve."""
+        if reason not in self.plain:
+            self.plain.append(reason)
+
     def result(self) -> Targets | Protected | None:
         if self.targets:
-            return Targets(self.targets, self.pinnable, self.overlays, self.protected)
-        if self.protected:
-            return Protected("; ".join(self.protected))
+            return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain)
+        if self.protected or self.plain:
+            return Protected("; ".join(self.protected + self.plain), list(self.plain),
+                             "; ".join(self.protected) if self.plain else None)
         return None
 
 
@@ -1162,7 +1175,7 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
     if any(_copies_bawwab(exe, src, dest, cwd) for src in srcs):
         acc.protect("copies or links a bawwab executable")
     if exe in ("cp", "mv", "install", "rsync") and _copies_protected(srcs, dest, cwd):
-        acc.protect("writes a protected bawwab command")
+        acc.user_only("writes a protected bawwab command")
     removes_src = exe == "mv" or (exe == "rsync" and any(
         a.startswith(("--remove-source-files", "--remove-sent-files")) for a in args))
     if removes_src:
@@ -1784,11 +1797,13 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
 # (a) When a segment runs a file as code (a shell or `.`/`source` on a file, a path command word, make, or a
 # python/node/... script), the file is read (never run) and checked: shell text goes through the same
 # structured pass (with the call's positional arguments filled in), other code through the content rule
-# below. Unreadable, too large, or changed earlier in the same command: refused. Nested calls are followed to
-# _SCRIPT_DEPTH files deep; deeper: refused.
-# (b) A write (Write/Edit/MultiEdit, a redirect, tee, a heredoc, cp/mv/install of a file) is refused when its
+# below. The file is read as it is at check time (R57: a change earlier in the same command is a documented
+# residual). Unreadable or too large: refused. Nested calls are followed to _SCRIPT_DEPTH files deep; deeper:
+# refused.
+# (b) A write (Write/Edit/MultiEdit, a redirect, tee, a heredoc, cp/mv/install of a script) is refused when its
 # result holds a protected bawwab invocation that wasn't there before: a bawwab command word followed by
 # approve/reject/init --skip/effects --retry. Prose without a bawwab command word passes.
+# R57: every refusal here is a plain deny (_Acc.user_only): no pending approval, the user runs it themselves.
 
 _SCRIPT_MAX = 1 << 20  # bytes of one file the gate reads; larger: refused
 _SCRIPT_DEPTH = 3  # nested script files followed; deeper: refused
@@ -2061,97 +2076,37 @@ def _keeps(reason: str) -> bool:
 
 
 class _Changes:
-    """Files a command may have changed before a later segment runs one (R56): known text for heredoc /
-    echo redirects, otherwise paths and directory trees whose content the gate can't know."""
+    """Text a command writes to a file before a later segment runs it (a heredoc or echo/printf redirect): read
+    with the file. R57: a file changed some other way (git checkout, curl -o, an archive) is not refused; what
+    the gate reads when it checks is what it checks (a documented residual)."""
 
     def __init__(self) -> None:
         self.text: dict[str, str] = {}
-        self.paths: set[str] = set()
-        self.trees: list[str] = []
-
-    def unknown(self, p: str) -> bool:
-        return p in self.paths or any(_under(p, t) for t in self.trees)
-
-    def note(self, exe: str, args: list[str], cwd: str) -> None:
-        pos = [a for a in args if not a.startswith("-")]
-        flags = [a for a in args if a.startswith("-") and not a.startswith("--")]
-
-        def value(*names: str) -> list[str]:
-            return [_abspath(args[j + 1], cwd) for j, a in enumerate(args[:-1]) if a in names]
-        if exe == "tee":
-            self.paths.update(_abspath(a, cwd) for a in pos)
-        elif exe in ("cp", "mv", "ln", "install", "rsync"):
-            tdir = value("-t", "--target-directory") + \
-                [_abspath(a.split("=", 1)[1], cwd) for a in args if a.startswith("--target-directory=")]
-            dests = tdir or ([_abspath(pos[-1], cwd)] if len(pos) >= 2 else [])
-            self.paths.update(dests)
-            self.trees += dests  # dest/<src> when dest is a dir, or a copied tree
-        elif exe == "curl":
-            self.paths.update(value("-o", "--output"))
-            self.trees += value("--output-dir")
-            if any(a in ("--remote-name", "--remote-name-all") or "O" in a[1:] for a in flags + args
-                   if a.startswith("-")):
-                self.trees.append(cwd)
-        elif exe == "wget":
-            out = value("-O", "--output-document")
-            self.paths.update(out)
-            self.trees += value("-P", "--directory-prefix") or ([] if out else [cwd])
-        elif exe == "dd":
-            self.paths.update(_abspath(a[3:], cwd) for a in args if a.startswith("of="))
-        elif exe in ("tar", "bsdtar"):
-            first = args[0] if args else ""
-            if any(a in ("--extract", "--get") or "x" in a[1:] for a in flags) or \
-                    (first and not first.startswith("-") and "x" in first):
-                self.trees += value("-C", "--directory") or [cwd]
-        elif exe in ("unzip", "7z", "unrar"):
-            self.trees += value("-d") or [cwd]
-        elif exe == "patch":
-            self.trees += value("-d", "--directory") or [cwd]
-        elif exe == "git":
-            d, rest = cwd, list(args)
-            while len(rest) >= 2 and rest[0] in ("-C", "--git-dir", "--work-tree", "-c"):
-                if rest[0] == "-C":
-                    d = _abspath(rest[1], d)
-                rest = rest[2:]
-            sub = next((a for a in rest if not a.startswith("-")), "")
-            if sub in _GIT_TREE_CHANGERS:
-                self.trees.append(d)
-                if sub == "clone":
-                    self.trees += [_abspath(a, d) for a in rest[1:] if not a.startswith("-")]
-        elif exe in ("sed", "gsed", "perl") and any(a.startswith(("-i", "--in-place")) or
-                                                     (exe != "perl" and "i" in a[1:]) for a in flags):
-            self.paths.update(_abspath(a, cwd) for a in pos)
-
-
-_GIT_TREE_CHANGERS = {"checkout", "switch", "pull", "merge", "rebase", "reset", "restore", "stash", "am", "apply",
-                      "cherry-pick", "revert", "clone", "worktree", "mv", "rm", "submodule", "read-tree",
-                      "checkout-index", "bisect"}
 
 
 def _file_text(p: str, changes: _Changes, acc: _Acc) -> str | None:
     """A file a segment runs, for analysis: the text written to it earlier in this command and/or its
-    content on disk. None when nothing is to be checked (missing, and not created by this command);
-    refused (acc.protect) when unreadable, too large, or changed earlier with content the gate can't know."""
+    content on disk. None when nothing is to be checked (missing, or a device such as /dev/null); a plain
+    deny (acc.user_only) when unreadable or too large."""
     name = os.path.basename(p) or p
     if p in changes.text:
         disk = _read_text(p)
         if disk is None:
-            acc.protect(f"script could not be read: {name}")
+            acc.user_only(f"script could not be read: {name}")
             return None
         return changes.text[p] + "\n" + disk
-    if changes.unknown(p):
-        acc.protect(f"script changed earlier in this command: {name}")
-        return None
+    if os.path.exists(p) and not os.path.isfile(p):
+        return None  # a device or fifo (/dev/null, /dev/stdin): nothing on disk to read
     text = _read_text(p)
     if text is None:
-        acc.protect(f"script could not be read: {name}")
+        acc.user_only(f"script could not be read: {name}")
         return None
     if text == "" and not os.path.exists(p):
         return None  # nothing there to run, and nothing earlier in the command created it
     acc.script_files += 1
     acc.script_bytes += len(text)
     if acc.script_files > _SCRIPT_FILES or acc.script_bytes > _SCRIPT_TOTAL:
-        acc.protect("scripts too large to analyse")
+        acc.user_only("scripts too large to analyse")
         return None
     return text
 
@@ -2171,10 +2126,11 @@ def _not_a_script(p: str) -> bool:
         return False  # unreadable: _file_text refuses it
 
 
-def _sub_bash(text: str, cwd: str, acc: _Acc, depth: int) -> None:
-    """Analyse a file's shell text with the structured pass; only bawwab's own protections pass up."""
+def _sub_bash(text: str, cwd: str, acc: _Acc, depth: int, where: str = "a file it runs") -> None:
+    """Analyse a file's (or a git alias's) shell text with the structured pass; only bawwab's own protections
+    pass up, as plain denies (R57)."""
     if acc.script_depth >= _SCRIPT_DEPTH:
-        acc.protect("script nesting too deep")
+        acc.user_only("script nesting too deep")
         return
     sub = _Acc()
     sub.scanned = sub.file_scanned = acc.file_scanned  # never the main pass's: a skip there would drop targets
@@ -2193,7 +2149,41 @@ def _sub_bash(text: str, cwd: str, acc: _Acc, depth: int) -> None:
         acc.script_files, acc.script_bytes = sub.script_files, sub.script_bytes
         for r in sub.protected:
             if _keeps(r):
-                acc.protect(r)
+                acc.user_only(f"in {where}: {r}")
+        for r in sub.plain:
+            acc.user_only(r if r.startswith("in ") else f"in {where}: {r}")
+
+
+def _git_aliases(args: list[str], cwd: str, acc: _Acc, depth: int) -> None:
+    """R57: a git shell alias (`git -c alias.X='!…'`, `git config [--global] alias.X '!…'`) is shell text git
+    runs; one holding a protected bawwab call is a plain deny. Other config-borne commands (core.pager, hooks
+    …) are a documented residual."""
+    values: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "-c" and i + 1 < len(args):
+            values.append(args[i + 1])
+            i += 2
+            continue
+        if a.startswith("-c") and len(a) > 2:
+            values.append(a[2:])
+        elif a in ("-C", "--git-dir", "--work-tree", "--namespace", "--exec-path") and i + 1 < len(args):
+            i += 2
+            continue
+        elif not a.startswith("-"):
+            if a == "config":
+                rest = [x for x in args[i + 1:] if not x.startswith("-")]
+                if rest[:1] in (["set"], ["add"]):
+                    rest = rest[1:]
+                if len(rest) >= 2 and rest[0].lower().startswith("alias."):
+                    values.append(rest[0] + "=" + " ".join(rest[1:]))
+            break
+        i += 1
+    for v in values:
+        key, _, val = v.partition("=")
+        if key.lower().startswith("alias.") and val.lstrip().startswith("!"):
+            _sub_bash(val.lstrip()[1:], cwd, acc, depth, "a git alias")
 
 
 def _run_file(words: list[str], cwd: str, acc: _Acc, depth: int, changes: _Changes) -> None:
@@ -2218,21 +2208,21 @@ def _run_file(words: list[str], cwd: str, acc: _Acc, depth: int, changes: _Chang
             r, other, inc = _make_parse(text, mvars)
             recipes += r
             if _protected_lines("\n".join(other), mdir):
-                acc.protect("makefile runs a protected bawwab command")
+                acc.user_only("makefile runs a protected bawwab command")
             for w in inc:
                 if "$" in w or _has_glob(w):
-                    acc.protect(f"makefile include could not be read: {w}")
+                    acc.user_only(f"makefile include could not be read: {w}")
                 elif len(seen) + len(queue) < _SCRIPT_FILES:
                     queue.append(_abspath(w, mdir))
                 else:
-                    acc.protect("scripts too large to analyse")
+                    acc.user_only("scripts too large to analyse")
         if recipes:
             _sub_bash("\n".join(recipes), mdir, acc, depth)
         return
     if "$" in word or "`" in word or "\0" in word:
         return  # a runtime-computed path: a documented residual
     p = _abspath(word, cwd)
-    if kind == "path" and p not in changes.text and not changes.unknown(p) and _not_a_script(p):
+    if kind == "path" and p not in changes.text and _not_a_script(p):
         return
     text = _file_text(p, changes, acc)
     if text is None:
@@ -2251,7 +2241,7 @@ def _run_file(words: list[str], cwd: str, acc: _Acc, depth: int, changes: _Chang
             kind = "sh"  # no shebang: the shell runs it as a script (ENOEXEC)
     if kind == "code":
         if _protected_lines(text, cwd):
-            acc.protect(f"script runs a protected bawwab command: {os.path.basename(p)}")
+            acc.user_only(f"script runs a protected bawwab command: {os.path.basename(p)}")
         return
     for reading in _positional(_COMMENT_LINE.sub("", text), argv):
         _sub_bash(reading, cwd, acc, depth)
@@ -2344,7 +2334,7 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
     full = cmd
     cmd, bodies, open_from = extracted
     written: dict[str, str] = {}  # file path -> heredoc body written to it earlier in this command
-    changes = _Changes()  # files changed earlier in this command (R56: a later segment may run one)
+    changes = _Changes()  # text written to files earlier in this command (a later segment may run one)
     _TEXTS.append(full)
     pipeline = ""  # text of the segments piped into the current one
     prev_words: list[str] = []  # prefix-stripped words of the previous segment
@@ -2382,8 +2372,6 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             if heredoc_in or (words and os.path.basename(words[0]) in ("echo", "printf") and not seg.inputs):
                 known = stdin_text if heredoc_in else _literal_output(words)
                 changes.text[p] = changes.text.get(p, "") + "\n" + known
-            else:
-                changes.paths.add(p)
         up_words, prev_words = (prev_words if seg.piped else []), words
         exe0 = os.path.basename(words[0]) if words else ""
         if redirs or exe0 == "tee":  # R55: writing a script that runs bawwab, or a copy of a bawwab executable
@@ -2400,11 +2388,13 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             texts += tuple(_read_text(_abspath(a, cwd)) or "" for a in cat[1:_MAX_RESOLVE]
                            if not a.startswith("-") and _script_file(_abspath(a, cwd)))
             if any(t and _new_protected(t, "", cwd) for t in texts):
-                acc.protect("writes a protected bawwab command")
+                acc.user_only("writes a protected bawwab command")
         if not words:
             continue
         # R56 (a): a file this segment runs as code; a shell's stdin from a file (sh < f, cat f | sh)
         _run_file(words, cwd, acc, depth, changes)
+        if exe0 == "git":
+            _git_aliases(words[1:], cwd, acc, depth)
         if exe0 == "find":  # find -exec sh a.sh {} \;
             for j, a in enumerate(words):
                 if a in _FIND_EXEC:
@@ -2418,7 +2408,6 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
                 feeds += [a for a in up_words[1:] if not a.startswith("-")]
             for f in dict.fromkeys(feeds):
                 _run_file([exe0, f], cwd, acc, depth, changes)
-        changes.note(exe0, words[1:], cwd)
         if _bawwab_decision(words, _bawwab_vars(cmd) if words[0].startswith("$") else frozenset(), cwd,
                             tail=not acc.prose):
             acc.protect("bawwab approval via tool call")
@@ -2674,7 +2663,7 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
     if old is None:
         old = ""  # unreadable or too large: every protected line counts as new
     if _new_protected(new, old, inp.cwd or "/"):  # R56 (b): any file, shebang or not
-        acc.protect("writes a protected bawwab command")
+        acc.user_only("writes a protected bawwab command")
     for c in cands:
         kind = _config_kind(c)
         if kind:

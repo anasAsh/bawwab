@@ -267,7 +267,7 @@ def _runs_file(s: str, cwd: str, depth: int = 0, seen: set[str] | None = None) -
             continue
         text = _read(p)
         if text is None or (not text and not os.path.exists(p)):
-            return True  # unreadable, or missing (may be created earlier in the command): detection decides
+            return True  # unreadable, or missing (may be written earlier in the command): detection decides
         if "\0" in text[:8192]:
             continue  # a compiled program
         u = _expand_vars(_unquote(text))
