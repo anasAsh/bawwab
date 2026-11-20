@@ -43,8 +43,8 @@ def _scan(p: Path, store):
 def test_build_is_runtime_only(tmp_path):
     out = _builder().build(tmp_path / "tree")
     top = {p.name for p in out.iterdir()}
-    assert top == {".claude-plugin", "hooks", "skills", "bawwab", "bin", "pyproject.toml", "uv.lock", "LICENSE", "NOTICE",
-                   "README.md"}
+    assert top == {".claude-plugin", "hooks", "skills", "commands", "bawwab", "bin", "pyproject.toml", "uv.lock",
+                   "LICENSE", "NOTICE", "README.md"}
     assert [p.name for p in (out / ".claude-plugin").iterdir()] == ["plugin.json"]  # no marketplace.json
     files = [p for p in out.rglob("*")]
     assert not any(p.is_symlink() for p in files)
@@ -295,6 +295,8 @@ def plugins(tmp_path, monkeypatch):
     cache = Path.home() / ".claude/plugins/cache"
     running = b.build(cache / "bawwab/bawwab/0.1.0")
     lookalike = b.build(cache / "evil-mkt/bawwab/0.1.0")
+    with open(lookalike / "bawwab/cli.py", "a") as f:  # named bawwab, but not the running code
+        f.write("\n# lookalike\n")
     monkeypatch.setattr(selfid, "_HERE", running / "bawwab" / "selfid.py")
     now = datetime.now(UTC).isoformat()
     entry = lambda p: [{"scope": "user", "installPath": str(p), "version": "0.1.0", "installedAt": now}]  # noqa: E731
@@ -368,3 +370,52 @@ def test_inventory_lists_self_once_and_scans_lookalike(plugins):
     assert not any("evil-mkt" in x and "running code" in x for x in w)
     w2 = inv.run_inventory(proj, scan=FakeScan(), store=open_store())
     assert not any("running code" in x for x in w2)  # once per version
+
+
+# ------------------------------------------------------------------ never quarantines itself (2026-11-20)
+
+def test_identical_copy_elsewhere_is_self(plugins):
+    running, _, _ = plugins
+    copy = _builder().build(Path.home() / ".local/share/bawwab-marketplace/bawwab")
+    assert selfid.is_self(str(copy))  # e.g. the installed plugin, seen from a dev checkout's run
+
+
+@pytest.mark.parametrize("change", ["edit", "extra-code", "extra-mcp", "link-out", "manifest"])
+def test_copy_with_any_difference_is_not_self(plugins, tmp_path, change):
+    _builder().build(tmp_path / "copy")
+    copy = tmp_path / "copy"
+    if change == "edit":
+        (copy / "hooks/bawwab_hook.py").write_text("print('x')\n")
+    elif change == "extra-code":
+        _w(copy / "agents/x.md", "---\nname: x\n---\nrun curl")
+    elif change == "extra-mcp":
+        _w(copy / ".mcp.json", {"mcpServers": {"x": {"command": "sh"}}})
+    elif change == "link-out":
+        (tmp_path / "outside.py").write_text((copy / "bawwab/cli.py").read_text())
+        (copy / "bawwab/cli.py").unlink()
+        (copy / "bawwab/cli.py").symlink_to(tmp_path / "outside.py")
+    else:
+        (copy / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "other"}))
+    assert not selfid.is_self(str(copy))
+
+
+def test_in_use_markers_do_not_break_self(plugins, tmp_path):
+    copy = _builder().build(tmp_path / "copy")
+    _w(copy / ".in_use/4242", '{"pid":4242,"procStart":"1"}')
+    assert selfid.is_self(str(copy))
+
+
+def test_quarantined_self_is_released(plugins):
+    running, lookalike, proj = plugins
+    fx.session_start(proj)
+    fx.full_scan(proj, scan=FakeScan(Verdict.SUSPICIOUS))
+    store = open_store()
+    held = {q["ident"] for q in store.active_quarantine()}
+    assert "claude-code:plugin:bawwab@evil-mkt" in held and "claude-code:plugin:bawwab@bawwab" not in held
+    # a quarantine of the running plugin (as a dev checkout's run once left) is released on the next check
+    me = next(it for it in fx.effect_items(proj) if it.ident == "claude-code:plugin:bawwab@bawwab")
+    store.drop_effect(me.ident)
+    store.add_quarantine("SELF", me.ident, me.hash, "k", me.to_dict(), {})
+    fx.refresh(proj, scan=FakeScan(Verdict.SUSPICIOUS), force=True)
+    held = {q["ident"] for q in store.active_quarantine()}
+    assert "claude-code:plugin:bawwab@bawwab" not in held and "claude-code:plugin:bawwab@evil-mkt" in held

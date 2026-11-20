@@ -426,6 +426,11 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
     new_ids: list[str] = []
     for it in _toggles_last(items):
         row = accepted.get(it.ident)
+        held = active.get((it.ident, it.hash))
+        if held is not None and it.category == "plugins" and it.target is not None and is_self(it.target.path):
+            store.set_quarantine(held["qrow"], status="resolved")  # bawwab never holds itself (e.g. a dev run did)
+            store.audit("effects.self_released", id=held["id"], ident=it.ident)
+            del active[(it.ident, it.hash)]
         if (row and row["hash"] == it.hash) or (it.ident, it.hash) in active:
             continue
         ok, r = _evaluate(it, scan, cfg, store, current)
