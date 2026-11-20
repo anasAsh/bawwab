@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;sha256-7w586Q56jzzYt9qKXvRQQv68YlYiTxipLMWFKQxnOOs=&#x27;; img-src &#x27;self&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta name="referrer" content="no-referrer">
+<title>Method - Bawwab: Top 100 scan</title>
+<style>:root{--bg:#fbfbf8;--fg:#1b1d21;--muted:#5b616b;--line:#d9dbd6;--card:#ffffff;--accent:#0b5cad;
+--ok:#1d6b3a;--ok-bg:#e3f3e8;--warn:#7a4a00;--warn-bg:#fdf1d8;--bad:#9b1c1c;--bad-bg:#fbe4e4;
+--nv:#3d4451;--nv-bg:#e8eaee;--code:#f1f2ee;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e9ea;--muted:#a3a8b1;--line:#30343a;
+--card:#1a1d21;--accent:#7cb7ff;--ok:#8fdcaa;--ok-bg:#163222;--warn:#ffd08a;--warn-bg:#3a2b10;
+--bad:#ffaaaa;--bad-bg:#401818;--nv:#c9ced6;--nv-bg:#2a2e35;--code:#1f2328}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:8px;background:var(--card);padding:6px 10px;z-index:9}
+header.site,main,footer.site{max-width:1080px;margin:0 auto;padding:0 16px}
+header.site{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header.site .brand{font-weight:700;font-size:1.1rem;text-decoration:none;color:var(--fg)}
+header.site nav a{margin-right:16px}
+footer.site{color:var(--muted);font-size:.875rem;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--line);margin-top:40px}
+h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h2{font-size:1.25rem;margin:32px 0 8px}
+.lede{color:var(--muted);margin-top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8rem;line-height:1.1}.stat span{color:var(--muted);font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.85rem;font-weight:600;white-space:nowrap}
+.b-clean{color:var(--ok);background:var(--ok-bg)}.b-suspicious{color:var(--warn);background:var(--warn-bg)}
+.b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
+.b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
+.b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
+pre.ev{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;margin:6px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.loc{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.review{border-left:4px solid var(--line);padding:4px 10px;margin-top:8px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin:12px 0}
+.filters label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted)}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:10rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{font:inherit;font-weight:600;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+th[aria-sort=ascending] button::after{content:" \25B2"}th[aria-sort=descending] button::after{content:" \25BC"}
+td.num,th.num{text-align:right}tbody tr:hover{background:var(--code)}
+.note{background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px}
+details summary{cursor:pointer;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{display:inline-block;font-size:.78rem;line-height:1.4;padding:1px 8px;border:1px solid var(--line);border-radius:4px;color:var(--fg);text-decoration:none;background:var(--code);overflow-wrap:anywhere}
+.tag:hover{border-color:var(--accent)}.tag-k{color:var(--muted);font-weight:600}
+@media (max-width:640px){.hide-sm{display:none}h1{font-size:1.4rem}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site"><a class="brand" href="index.html">Bawwab: Top 100 scan</a>
+<nav aria-label="Main"><a href="index.html">Overview</a><a href="targets.html">All 100</a><a href="method.html">Method</a><a href="index.html#disputes">Disputes</a></nav></header>
+<main id="main">
+<h1>Method: how the Top 100 were chosen and scanned</h1>
+<p>This page records every choice behind the list in <code>report/targets.json</code> and the results built from it. The numbers in brackets are constants in <code>report/collect.py</code>; change them there and here together.</p>
+<h2>The 100</h2>
+<ul>
+<li><strong>50 MCP servers, 30 skills and 20 plugins.</strong> The split is a fixed editorial choice, not derived from data: MCP servers are the most installed of the three and the most varied in code.</li>
+<li>Every entry is <strong>pinned</strong>: npm and PyPI packages to the exact latest version at collection time, skills and plugins to a 40-character git commit SHA. The scan is of that pin, not of &quot;latest&quot;.</li>
+<li>Each entry records the popularity metric, its value, the date it was collected and the API URL it came from.</li>
+<li>Collection uses read-only API calls only (npm registry and downloads API, pypistats, the public top-pypi-packages dataset, and the GitHub REST API through <code>gh api</code> with GET). Nothing is starred, forked, installed or run. Responses are cached in <code>report/.cache/collect/</code> so a rerun gives the same list; <code>--refresh</code> pulls fresh data.</li>
+</ul>
+<h2>MCP servers (50)</h2>
+<ul>
+<li><strong>Metric: weekly downloads.</strong> npm packages use the npm downloads API (<code>last-week</code>); PyPI packages use pypistats <code>recent</code> (<code>last_week</code>). npm and PyPI numbers are ranked together on one scale. Both count CI and mirror traffic, so they measure reach, not distinct users.</li>
+<li><strong>npm candidates</strong> come from the npm search API, four pages of 250 results for each of the queries <code>mcp</code>, <code>mcp server</code>, <code>model context protocol</code>, <code>keywords:mcp-server</code>, <code>keywords:mcp</code> and <code>keywords:modelcontextprotocol</code>. npm search is relevance-ranked and can miss very popular packages, so the Task 10c top-20 MCP names are added to the candidate pool as seeds. Seeds are ranked by downloads like everything else; they do not get a place for free.</li>
+<li><strong>PyPI candidates</strong> are the names containing <code>mcp</code> in the top 15,000 PyPI projects by 30-day downloads (hugovk/top-pypi-packages), first 60 [PYPI_POOL].</li>
+<li><strong>What counts as an MCP server.</strong> A package is kept when it is something a user runs as a server in an MCP client:</li>
+<li>its name contains <code>mcp</code>, or its description leads with &quot;MCP server&quot; (so a general tool with an MCP sub-command, such as a build system or a vector database, is not counted);</li>
+<li>its description does not mark it as a library, SDK, framework, adapter, client, template, generator, evaluation or test tool, or mock;</li>
+<li>for npm, its latest version ships an executable (<code>bin</code>); a package with no executable is a library;</li>
+<li>it is not a platform-specific binary of another package (for example <code>@azure/mcp-linux-x64</code>);</li>
+<li>it is not on the hand-written exclusion list in <code>NOT_A_SERVER</code> (AI clients, SDKs, frameworks, installers, inspectors; each with its reason). The top 160 accepted npm candidates [NPM_POOL] are checked against the downloads API. <code>targets.json</code> lists the popular packages that were excluded and why under <code>excluded</code>.</li>
+<li><strong>Official servers always included.</strong> Every server in <code>modelcontextprotocol/servers/src</code> is included whatever its rank, then the rest of the 50 are filled by downloads.</li>
+<li><strong>Dedupe</strong> is by registry and name. An npm and a PyPI package with the same name are different packages and can both appear.</li>
+<li>Remote-only (hosted URL) servers are out of scope: a static scan needs code to read.</li>
+</ul>
+<h2>Skills (30)</h2>
+<ul>
+<li><strong>Metric: GitHub stars of the repository that hosts the skill.</strong> No registry counts skill installs, so stars are the best public proxy. Every skill in a repository shares that repository&#x27;s star count.</li>
+<li><strong>Anthropic&#x27;s <code>anthropics/skills</code></strong> is included in full (all published skill folders, templates skipped).</li>
+<li><strong>Other repositories</strong> come from GitHub repository search sorted by stars for <code>topic:agent-skills</code>, <code>topic:claude-skills</code>, <code>topic:claude-code-skills</code>, <code>topic:skills claude</code>, <code>claude skills</code> and <code>agent skills</code> (in name and description). The 40 most-starred [SKILL_REPO_POOL] are inspected; a repository counts if its tree at the pinned commit contains a <code>SKILL.md</code>.</li>
+<li><strong>At most 2 skills per repository</strong> [SKILL_PER_REPO], so one publisher cannot fill the list. Within a repository skills in a top-level <code>skills/</code> folder come first, then shallower paths, then alphabetical.</li>
+<li>Skipped folders: templates, tests, fixtures, examples, translated copies under <code>docs/</code> or <code>i18n/</code>, and anything under a hidden folder such as <code>.claude/</code> or <code>.agents/</code> (a repository&#x27;s own development helpers, not skills published for users).</li>
+<li>A skill folder that is part of a selected plugin is not counted again as a skill.</li>
+<li>Each skill is pinned to the repository&#x27;s default-branch commit at collection time.</li>
+</ul>
+<h2>Plugins (20)</h2>
+<ul>
+<li><strong>Metric: GitHub stars of the repository that hosts the plugin&#x27;s code</strong> (the marketplace entry&#x27;s source repository, which is the marketplace repository itself for relative sources).</li>
+<li><strong>Marketplaces read:</strong> the official Anthropic directory <code>anthropics/claude-plugins-official</code>, plus the 40 most-starred repositories [PLUGIN_REPO_POOL] found by GitHub search for <code>topic:claude-code-plugin</code>, <code>topic:claude-plugins</code>, <code>topic:claude-code-plugins</code>, <code>claude code plugin marketplace</code> and <code>claude plugins</code> that have a <code>.claude-plugin/marketplace.json</code>.</li>
+<li><strong>Pinning:</strong> a marketplace entry that pins a <code>sha</code> is scanned at that commit. Otherwise the source repository&#x27;s <code>ref</code> (or default branch) is resolved to a commit at collection time. Entries whose source cannot be fetched statically (a local command, or a non-GitHub URL) are skipped and listed in <code>excluded</code>.</li>
+<li><strong>At most 2 plugins per hosting repository</strong> [PLUGIN_PER_REPO]. Plugins that share a repository (and so a star count) are taken in the marketplace&#x27;s own listing order; the official directory lists alphabetically, so its two in-repository picks are simply the first two names.</li>
+<li>When the same plugin is listed in several marketplaces it is scanned once (dedupe by repository and path); the official directory wins the tie so the page can say it is officially listed.</li>
+</ul>
+<h2>Scanning</h2>
+<ul>
+<li><code>report/scan.py</code> (run through <code>report/run_scan.sh</code>) scans each pinned target with Bawwab&#x27;s static rules only: <code>scan_target(..., judge=False)</code>. There is <strong>no AI review</strong> and <strong>no sandbox run</strong>.</li>
+<li>npm and PyPI packages are downloaded with Bawwab&#x27;s own fetchers and read as files; nothing is installed or executed. GitHub targets are fetched at the pinned commit with hooks off, no submodules and the file/ext git protocols disabled; the <code>.git</code> folder is removed and the folder is scanned as local files.</li>
+<li>Trust is switched off (<code>trusted: []</code>): official packages get no free pass.</li>
+<li>Each target runs in its own process with a 600-second limit. A timeout, crash or fetch failure is recorded as <strong>not verified</strong>, never as clean.</li>
+<li>Results record the Bawwab commit (and whether the working tree had uncommitted changes), the rule set version and the scan time of every target.</li>
+</ul>
+<h2>Review before publishing</h2>
+<ul>
+<li>Every target whose verdict is not clean is checked by a person before the site is published. Each counted finding (severity medium or above) gets a status in <code>report/review.json</code>: <code>confirmed</code>, <code>false-positive</code> (shown as &quot;Known false alarm&quot;) or <code>expected-behaviour</code>, with a note.</li>
+<li><code>report/needs_review.py</code> writes the worklist (<code>report/out/needs-review.md</code>) with each open finding and the local copy of the downloaded files. It never writes reviews.</li>
+<li><code>report/build_site.py</code> refuses to build while any such finding lacks a review entry.</li>
+<li>A review entry names one finding by its key, or every finding of a rule (optionally limited to files matching a glob, where <code>*</code> stays inside one folder and <code>**/</code> spans folders) on that target. Target ids include a hash of the pinned spec, so a re-pin to a new version orphans the old review and forces a fresh look.</li>
+<li>Low-severity notes are shown as informational and do not need review: they do not change the verdict.</li>
+<li>&quot;Suspicious&quot; is worded &quot;Not malicious, needs a look&quot;: static rules see patterns, not intent.</li>
+</ul>
+<h2>Categories</h2>
+<ul>
+<li>Each finding is tagged with the OWASP LLM Top 10, OWASP Agentic Top 10, MITRE ATLAS and CWE ids its rule maps to, from <code>bawwab/scan/rules/data/taxonomy.json</code> (versions and retrieval dates are listed there and on the overview). Coverage-note rules are untagged on purpose.</li>
+</ul>
+<h2>Limits</h2>
+<ul>
+<li>Popularity is a snapshot and can be gamed (download bots, star campaigns). It decides what was scanned, never how it scored.</li>
+<li>The &quot;is it a server&quot; test is a heuristic backed by a hand list; borderline packages are listed in <code>excluded</code> with the reason so the choice can be checked.</li>
+<li>Static rules skip very large files and cannot see code fetched or generated at run time.</li>
+<li>A clean result is not a guarantee, and it only covers the pinned version.</li>
+</ul>
+</main>
+<footer class="site">Static rules only, no AI review. Scanned text is shown escaped and is not trusted. Generated by report/build_site.py.</footer>
+
+</body>
+</html>

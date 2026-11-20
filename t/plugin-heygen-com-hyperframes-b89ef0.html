@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;sha256-7w586Q56jzzYt9qKXvRQQv68YlYiTxipLMWFKQxnOOs=&#x27;; img-src &#x27;self&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta name="referrer" content="no-referrer">
+<title>hyperframes - Bawwab: Top 100 scan</title>
+<style>:root{--bg:#fbfbf8;--fg:#1b1d21;--muted:#5b616b;--line:#d9dbd6;--card:#ffffff;--accent:#0b5cad;
+--ok:#1d6b3a;--ok-bg:#e3f3e8;--warn:#7a4a00;--warn-bg:#fdf1d8;--bad:#9b1c1c;--bad-bg:#fbe4e4;
+--nv:#3d4451;--nv-bg:#e8eaee;--code:#f1f2ee;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e9ea;--muted:#a3a8b1;--line:#30343a;
+--card:#1a1d21;--accent:#7cb7ff;--ok:#8fdcaa;--ok-bg:#163222;--warn:#ffd08a;--warn-bg:#3a2b10;
+--bad:#ffaaaa;--bad-bg:#401818;--nv:#c9ced6;--nv-bg:#2a2e35;--code:#1f2328}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:8px;background:var(--card);padding:6px 10px;z-index:9}
+header.site,main,footer.site{max-width:1080px;margin:0 auto;padding:0 16px}
+header.site{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header.site .brand{font-weight:700;font-size:1.1rem;text-decoration:none;color:var(--fg)}
+header.site nav a{margin-right:16px}
+footer.site{color:var(--muted);font-size:.875rem;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--line);margin-top:40px}
+h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h2{font-size:1.25rem;margin:32px 0 8px}
+.lede{color:var(--muted);margin-top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8rem;line-height:1.1}.stat span{color:var(--muted);font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.85rem;font-weight:600;white-space:nowrap}
+.b-clean{color:var(--ok);background:var(--ok-bg)}.b-suspicious{color:var(--warn);background:var(--warn-bg)}
+.b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
+.b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
+.b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
+pre.ev{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;margin:6px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.loc{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.review{border-left:4px solid var(--line);padding:4px 10px;margin-top:8px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin:12px 0}
+.filters label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted)}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:10rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{font:inherit;font-weight:600;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+th[aria-sort=ascending] button::after{content:" \25B2"}th[aria-sort=descending] button::after{content:" \25BC"}
+td.num,th.num{text-align:right}tbody tr:hover{background:var(--code)}
+.note{background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px}
+details summary{cursor:pointer;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{display:inline-block;font-size:.78rem;line-height:1.4;padding:1px 8px;border:1px solid var(--line);border-radius:4px;color:var(--fg);text-decoration:none;background:var(--code);overflow-wrap:anywhere}
+.tag:hover{border-color:var(--accent)}.tag-k{color:var(--muted);font-weight:600}
+@media (max-width:640px){.hide-sm{display:none}h1{font-size:1.4rem}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site"><a class="brand" href="../index.html">Bawwab: Top 100 scan</a>
+<nav aria-label="Main"><a href="../index.html">Overview</a><a href="../targets.html">All 100</a><a href="../method.html">Method</a><a href="../index.html#disputes">Disputes</a></nav></header>
+<main id="main">
+<h1>hyperframes</h1>
+<p><span class="badge b-not-verified">Not verified</span> </p>
+<p>The scan did not finish (download failure, timeout or scanner error), so this target was not checked. This says nothing either way about whether it is safe.</p>
+<dl class="meta"><dt>Kind</dt><dd>Plugin</dd><dt>Source</dt><dd>github</dd><dt>Repository</dt><dd>heygen-com/hyperframes</dd><dt>Commit</dt><dd><code>8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2</code></dd><dt>Listed in</dt><dd>anthropics/claude-plugins-official</dd><dt>Popularity</dt><dd>87,230 GitHub stars (2026-11-20) (official, always included)</dd><dt>Link</dt><dd><a href="https://github.com/heygen-com/hyperframes/tree/8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2" rel="noopener noreferrer">https://github.com/heygen-com/hyperframes/tree/8d2b6e7bdc1c2c26d1abf64ef075c00a1bb230a2</a></dd><dt>Scanned</dt><dd>2026-11-20T16:27:52+00:00</dd><dt>Scan time</dt><dd>600.1 s</dd></dl>
+<h2>Why it was not verified</h2><pre class="ev"><code>timed out after 600 s</code></pre>
+<h2 id="dispute">Dispute this result</h2><p>Maintainer and think this is wrong? <a href="https://github.com/anasAsh/bawwab/issues/new?template=dispute.md&amp;labels=dispute&amp;title=Dispute%3A+hyperframes+%28plugin-heygen-com-hyperframes-b89ef0%29" rel="noopener noreferrer">Open a dispute on GitHub</a> with the target id <code>plugin-heygen-com-hyperframes-b89ef0</code>.</p>
+</main>
+<footer class="site">Static rules only, no AI review. Scanned text is shown escaped and is not trusted. Generated by report/build_site.py.</footer>
+
+</body>
+</html>

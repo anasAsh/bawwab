@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;sha256-7w586Q56jzzYt9qKXvRQQv68YlYiTxipLMWFKQxnOOs=&#x27;; img-src &#x27;self&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta name="referrer" content="no-referrer">
+<title>@sap-ux/fiori-mcp-server - Bawwab: Top 100 scan</title>
+<style>:root{--bg:#fbfbf8;--fg:#1b1d21;--muted:#5b616b;--line:#d9dbd6;--card:#ffffff;--accent:#0b5cad;
+--ok:#1d6b3a;--ok-bg:#e3f3e8;--warn:#7a4a00;--warn-bg:#fdf1d8;--bad:#9b1c1c;--bad-bg:#fbe4e4;
+--nv:#3d4451;--nv-bg:#e8eaee;--code:#f1f2ee;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e9ea;--muted:#a3a8b1;--line:#30343a;
+--card:#1a1d21;--accent:#7cb7ff;--ok:#8fdcaa;--ok-bg:#163222;--warn:#ffd08a;--warn-bg:#3a2b10;
+--bad:#ffaaaa;--bad-bg:#401818;--nv:#c9ced6;--nv-bg:#2a2e35;--code:#1f2328}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:8px;background:var(--card);padding:6px 10px;z-index:9}
+header.site,main,footer.site{max-width:1080px;margin:0 auto;padding:0 16px}
+header.site{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header.site .brand{font-weight:700;font-size:1.1rem;text-decoration:none;color:var(--fg)}
+header.site nav a{margin-right:16px}
+footer.site{color:var(--muted);font-size:.875rem;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--line);margin-top:40px}
+h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h2{font-size:1.25rem;margin:32px 0 8px}
+.lede{color:var(--muted);margin-top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8rem;line-height:1.1}.stat span{color:var(--muted);font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.85rem;font-weight:600;white-space:nowrap}
+.b-clean{color:var(--ok);background:var(--ok-bg)}.b-suspicious{color:var(--warn);background:var(--warn-bg)}
+.b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
+.b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
+.b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
+pre.ev{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;margin:6px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.loc{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.review{border-left:4px solid var(--line);padding:4px 10px;margin-top:8px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin:12px 0}
+.filters label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted)}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:10rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{font:inherit;font-weight:600;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+th[aria-sort=ascending] button::after{content:" \25B2"}th[aria-sort=descending] button::after{content:" \25BC"}
+td.num,th.num{text-align:right}tbody tr:hover{background:var(--code)}
+.note{background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px}
+details summary{cursor:pointer;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{display:inline-block;font-size:.78rem;line-height:1.4;padding:1px 8px;border:1px solid var(--line);border-radius:4px;color:var(--fg);text-decoration:none;background:var(--code);overflow-wrap:anywhere}
+.tag:hover{border-color:var(--accent)}.tag-k{color:var(--muted);font-weight:600}
+@media (max-width:640px){.hide-sm{display:none}h1{font-size:1.4rem}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site"><a class="brand" href="../index.html">Bawwab: Top 100 scan</a>
+<nav aria-label="Main"><a href="../index.html">Overview</a><a href="../targets.html">All 100</a><a href="../method.html">Method</a><a href="../index.html#disputes">Disputes</a></nav></header>
+<main id="main">
+<h1>@sap-ux/fiori-mcp-server</h1>
+<p><span class="badge b-malicious">Flagged as possibly malicious</span> Reviewed: expected behaviour</p>
+<p>Bawwab&#x27;s static rules matched a pattern it treats as critical. Read the review notes: a reviewed false alarm is marked as such.</p>
+<dl class="meta"><dt>Kind</dt><dd>MCP server</dd><dt>Source</dt><dd>npm</dd><dt>Version</dt><dd><code>1.17.0</code></dd><dt>Popularity</dt><dd>107,745 npm downloads/week (2026-11-20)</dd><dt>Link</dt><dd><a href="https://www.npmjs.com/package/@sap-ux/fiori-mcp-server/v/1.17.0" rel="noopener noreferrer">https://www.npmjs.com/package/@sap-ux/fiori-mcp-server/v/1.17.0</a></dd><dt>Scanned</dt><dd>2026-11-20T16:13:20+00:00</dd><dt>Scan time</dt><dd>68.9 s</dd></dl>
+<div class="note"><strong>Review note:</strong> SAP&#x27;s Fiori MCP server: a large esbuild bundle of SAP and Microsoft libraries; the only outbound data is opt-out usage telemetry via Azure Application Insights, and no secret-reading and sending was found.</div>
+<h2>Findings (8)</h2><article class="card">
+<h3><code>files.truncated</code>: Scan limit reached <span class="badge b-suspicious">med</span></h3>
+<p class="loc">dist/data/embeddings/embeddings.bin</p>
+
+<pre class="ev"><code>dist/data/embeddings/embeddings.bin is 1319424 bytes (limit 1000000); not scanned</code></pre>
+<p><strong>What this means:</strong> Some files, or the tail of a very large file, were not scanned, so malicious code could hide in them.</p>
+<p><strong>The rule&#39;s general advice:</strong> Review the unscanned files manually or raise the limits. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-expected-behaviour">Expected for what this tool does</span></p><p>A 1.3 MB binary of embedding vectors for the bundled documentation search (model all-MiniLM-L6-v2, 859 vectors per metadata.json). Not code and not scanned for content.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>files.truncated</code>: Scan limit reached <span class="badge b-suspicious">med</span></h3>
+<p class="loc">assets/icon.png</p>
+
+<pre class="ev"><code>assets/icon.png contains NUL bytes; not scanned</code></pre>
+<p><strong>What this means:</strong> Some files, or the tail of a very large file, were not scanned, so malicious code could hide in them.</p>
+<p><strong>The rule&#39;s general advice:</strong> Review the unscanned files manually or raise the limits. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>A 512x512 PNG icon; binary data triggers the NUL-byte skip.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>credential-access</code>: Touches credentials or secrets <span class="badge b-suspicious">high</span></h3>
+<p class="loc">dist/index.js:265</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI03: Identity and Privilege Abuse"><span class="tag-k">OWASP Agentic</span> ASI03 Identity and Privilege Abuse</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0083" rel="noopener noreferrer" title="MITRE ATLAS AML.T0083: Credentials from AI Agent Configuration"><span class="tag-k">MITRE ATLAS</span> AML.T0083 Credentials from AI Agent Configuration</a></p>
+<pre class="ev"><code>`;yg.DEFAULT_CONTENT_TYPE=&quot;application/octet-stream&quot;;yg.prototype.append=function(t,e,r){r=r||{},typeof r==&quot;string&quot;&amp;&amp;(r={filename:r});var n=O2r.prototype.append.bind(this);if((typeof e==&quot;number&quot;||e==n</code></pre>
+<p><strong>What this means:</strong> Reads files or environment holding keys, tokens or sessions.</p>
+<p><strong>The rule&#39;s general advice:</strong> Confirm the tool needs this; otherwise do not install. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>Line 265 of the bundle holds the bundled form-data and debug libraries. The only environment access is process.env.DEBUG and DEBUG_* variables, and no credential files are read.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>exfil.host</code>: References an exfiltration-style host <span class="badge b-suspicious">high</span></h3>
+<p class="loc">dist/index.js:17558</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0025" rel="noopener noreferrer" title="MITRE ATLAS AML.T0025: Exfiltration via Cyber Means"><span class="tag-k">MITRE ATLAS</span> AML.T0025 Exfiltration via Cyber Means</a></p>
+<pre class="ev"><code>`).join(&quot;&quot;)}return e(t)}}}});var kma=N((ewf,Rma)=&gt;{var K1n=Object.defineProperty,i_u=Object.getOwnPropertyDescriptor,o_u=Object.getOwnPropertyNames,a_u=Object.prototype.hasOwnProperty,s_u=(t,e)=&gt;{for(</code></pre>
+<p><strong>What this means:</strong> Paste, webhook and tunnel services are commonly used to receive stolen data.</p>
+<p><strong>The rule&#39;s general advice:</strong> Remove or justify the destination. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-expected-behaviour">Expected for what this tool does</span></p><p>Line 17558 is the bundled Azure Monitor / Application Insights SDK. It contains Application Insights ingestion endpoints and a lookup of the Azure instance metadata address (169.254.169.254) to detect the host environment. This is telemetry the README says is on by default and can be disabled with ~/.fioritools/telemetrysettings.json or SAP_UX_FIORI_TOOLS_DISABLE_TELEMETRY=true.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>exfil.combo</code>: Reads credentials and makes network calls <span class="badge b-malicious">critical</span></h3>
+<p class="loc">dist/index.js:265</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0037" rel="noopener noreferrer" title="MITRE ATLAS AML.T0037: Data from Local System"><span class="tag-k">MITRE ATLAS</span> AML.T0037 Data from Local System</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0025" rel="noopener noreferrer" title="MITRE ATLAS AML.T0025: Exfiltration via Cyber Means"><span class="tag-k">MITRE ATLAS</span> AML.T0025 Exfiltration via Cyber Means</a></p>
+<pre class="ev"><code>`;yg.DEFAULT_CONTENT_TYPE=&quot;application/octet-stream&quot;;yg.prototype.append=function(t,e,r){r=r||{},typeof r==&quot;string&quot;&amp;&amp;(r={filename:r});var n=O2r.prototype.append.bind(this);if((typeof e==&quot;number&quot;||e==n</code></pre>
+<p><strong>What this means:</strong> Credential access together with outbound requests in one file is the shape of data theft.</p>
+<p><strong>The rule&#39;s general advice:</strong> Do not install unless the flow is understood and benign. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>The line combines the bundled form-data and debug libraries. Environment reads are limited to DEBUG and DEBUG_* names, and no read secrets reach a network call.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>files.truncated</code>: Scan limit reached <span class="badge b-suspicious">med</span></h3>
+<p class="loc">dist/index.js</p>
+
+<pre class="ev"><code>too large to parse within the memory budget; regex rules only</code></pre>
+<p><strong>What this means:</strong> Some files, or the tail of a very large file, were not scanned, so malicious code could hide in them.</p>
+<p><strong>The rule&#39;s general advice:</strong> Review the unscanned files manually or raise the limits. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-expected-behaviour">Expected for what this tool does</span></p><p>The 15 MB file is a single esbuild bundle of the server and its dependencies, too large for the parser, so only regex rules ran. I searched it for environment, credential and host patterns and found only the debug, form-data and Azure telemetry libraries described in the other entries.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>credential-access</code>: Touches credentials or secrets <span class="badge b-suspicious">high</span></h3>
+<p class="loc">dist/data/embeddings/records.jsonl:10</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI03: Identity and Privilege Abuse"><span class="tag-k">OWASP Agentic</span> ASI03 Identity and Privilege Abuse</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0083" rel="noopener noreferrer" title="MITRE ATLAS AML.T0083: Credentials from AI Agent Configuration"><span class="tag-k">MITRE ATLAS</span> AML.T0083 Credentials from AI Agent Configuration</a></p>
+<pre class="ev"><code>{&quot;id&quot;:&quot;local-btp-fiori-tools-1-chunk-0&quot;,&quot;content&quot;:&quot;**TITLE**: UI5 Deployment Configuration (ui5-deploy.yaml) — Fields, Defaults, and Examples\n\n**INTRODUCTION**: Short, actionable reference for confi</code></pre>
+<p><strong>What this means:</strong> Reads files or environment holding keys, tokens or sessions.</p>
+<p><strong>The rule&#39;s general advice:</strong> Confirm the tool needs this; otherwise do not install. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>A JSONL record of documentation text for the bundled search index, describing ui5-deploy.yaml and recommending env:VAR references and a .env file for credentials. It is reference text for users and not an instruction to the agent to read secrets.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>exfil.combo</code>: Reads credentials and makes network calls <span class="badge b-malicious">critical</span></h3>
+<p class="loc">dist/data/embeddings/records.jsonl:10</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0037" rel="noopener noreferrer" title="MITRE ATLAS AML.T0037: Data from Local System"><span class="tag-k">MITRE ATLAS</span> AML.T0037 Data from Local System</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0025" rel="noopener noreferrer" title="MITRE ATLAS AML.T0025: Exfiltration via Cyber Means"><span class="tag-k">MITRE ATLAS</span> AML.T0025 Exfiltration via Cyber Means</a></p>
+<pre class="ev"><code>{&quot;id&quot;:&quot;local-btp-fiori-tools-1-chunk-0&quot;,&quot;content&quot;:&quot;**TITLE**: UI5 Deployment Configuration (ui5-deploy.yaml) — Fields, Defaults, and Examples\n\n**INTRODUCTION**: Short, actionable reference for confi</code></pre>
+<p><strong>What this means:</strong> Credential access together with outbound requests in one file is the shape of data theft.</p>
+<p><strong>The rule&#39;s general advice:</strong> Do not install unless the flow is understood and benign. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>The same documentation record on UI5 deployment configuration. It mentions a .env file and credential fields as documentation only, with no code and no network behaviour.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article>
+<details><summary>1 low-severity notes (informational, do not affect the result)</summary><article class="card">
+<h3><code>files.binary-unscanned</code>: Binary files not analysed <span class="badge b-low">low</span></h3>
+
+
+<pre class="ev"><code>10 binary files not analysed; use --deep to run in the sandbox</code></pre>
+<p><strong>What this means:</strong> Prebuilt executables cannot be read by static rules, so what they do is unknown until they run.</p>
+<p><strong>What you can do:</strong> Use --deep to run the package in the sandbox, or prefer packages built from source.</p>
+
+</article></details>
+<h2 id="dispute">Dispute this result</h2><p>Maintainer and think this is wrong? <a href="https://github.com/anasAsh/bawwab/issues/new?template=dispute.md&amp;labels=dispute&amp;title=Dispute%3A+%40sap-ux%2Ffiori-mcp-server+%28mcp-npm-sap-ux-fiori-mcp-server-4a4d98%29" rel="noopener noreferrer">Open a dispute on GitHub</a> with the target id <code>mcp-npm-sap-ux-fiori-mcp-server-4a4d98</code>.</p>
+</main>
+<footer class="site">Static rules only, no AI review. Scanned text is shown escaped and is not trusted. Generated by report/build_site.py.</footer>
+
+</body>
+</html>

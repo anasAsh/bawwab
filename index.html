@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;sha256-7w586Q56jzzYt9qKXvRQQv68YlYiTxipLMWFKQxnOOs=&#x27;; img-src &#x27;self&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta name="referrer" content="no-referrer">
+<title>Bawwab: Top 100 scan</title>
+<style>:root{--bg:#fbfbf8;--fg:#1b1d21;--muted:#5b616b;--line:#d9dbd6;--card:#ffffff;--accent:#0b5cad;
+--ok:#1d6b3a;--ok-bg:#e3f3e8;--warn:#7a4a00;--warn-bg:#fdf1d8;--bad:#9b1c1c;--bad-bg:#fbe4e4;
+--nv:#3d4451;--nv-bg:#e8eaee;--code:#f1f2ee;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e9ea;--muted:#a3a8b1;--line:#30343a;
+--card:#1a1d21;--accent:#7cb7ff;--ok:#8fdcaa;--ok-bg:#163222;--warn:#ffd08a;--warn-bg:#3a2b10;
+--bad:#ffaaaa;--bad-bg:#401818;--nv:#c9ced6;--nv-bg:#2a2e35;--code:#1f2328}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:8px;background:var(--card);padding:6px 10px;z-index:9}
+header.site,main,footer.site{max-width:1080px;margin:0 auto;padding:0 16px}
+header.site{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header.site .brand{font-weight:700;font-size:1.1rem;text-decoration:none;color:var(--fg)}
+header.site nav a{margin-right:16px}
+footer.site{color:var(--muted);font-size:.875rem;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--line);margin-top:40px}
+h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h2{font-size:1.25rem;margin:32px 0 8px}
+.lede{color:var(--muted);margin-top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8rem;line-height:1.1}.stat span{color:var(--muted);font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.85rem;font-weight:600;white-space:nowrap}
+.b-clean{color:var(--ok);background:var(--ok-bg)}.b-suspicious{color:var(--warn);background:var(--warn-bg)}
+.b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
+.b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
+.b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
+pre.ev{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;margin:6px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.loc{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.review{border-left:4px solid var(--line);padding:4px 10px;margin-top:8px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin:12px 0}
+.filters label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted)}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:10rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{font:inherit;font-weight:600;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+th[aria-sort=ascending] button::after{content:" \25B2"}th[aria-sort=descending] button::after{content:" \25BC"}
+td.num,th.num{text-align:right}tbody tr:hover{background:var(--code)}
+.note{background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px}
+details summary{cursor:pointer;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{display:inline-block;font-size:.78rem;line-height:1.4;padding:1px 8px;border:1px solid var(--line);border-radius:4px;color:var(--fg);text-decoration:none;background:var(--code);overflow-wrap:anywhere}
+.tag:hover{border-color:var(--accent)}.tag-k{color:var(--muted);font-weight:600}
+@media (max-width:640px){.hide-sm{display:none}h1{font-size:1.4rem}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site"><a class="brand" href="index.html">Bawwab: Top 100 scan</a>
+<nav aria-label="Main"><a href="index.html">Overview</a><a href="targets.html">All 100</a><a href="method.html">Method</a><a href="index.html#disputes">Disputes</a></nav></header>
+<main id="main">
+
+<h1>Scanning the 100 most popular MCP servers, skills and plugins</h1>
+<p class="lede">50 MCP servers, 30 skills and 20 plugins, ranked by downloads or GitHub stars,
+each pinned to an exact version or commit and scanned with Bawwab's static rules. Scan date: 2026-11-20.</p>
+<section aria-labelledby="h-counts"><h2 id="h-counts">Headline counts</h2>
+<p class="lede"><strong>41 flagged by static rules · 0 confirmed harmful after hand-review.</strong>
+The rule verdicts below are what the scanner said before anyone read the code; each target's page shows the reviewed outcome next to it.</p>
+<div class="stats"><div class="stat"><b>100</b><span>targets scanned</span></div><div class="stat"><b>58</b><span>No issues found</span></div><div class="stat"><b>28</b><span>Not malicious, needs a look</span></div><div class="stat"><b>13</b><span>Flagged as possibly malicious</span></div><div class="stat"><b>1</b><span>Not verified</span></div></div>
+<p>Every target that was not clean was checked by hand before publication. Review outcome for the 41 flagged targets:</p>
+<ul><li>Reviewed: expected behaviour: 24</li><li>Reviewed: false alarm: 17</li></ul>
+<p><a href="targets.html">See all 100 targets in a sortable table</a>.</p></section>
+<section aria-labelledby="h-method"><h2 id="h-method">How this was done</h2>
+<ul>
+<li><strong>Selection.</strong> MCP servers are ranked by weekly npm or PyPI downloads (official modelcontextprotocol/servers entries always included); skills and plugins by GitHub stars of the repository that hosts them, with at most two per repository after Anthropic's official ones. <a href="method.html">Full method</a>.</li>
+<li><strong>Pinned.</strong> Each target is scanned at an exact package version or git commit, listed on its page.</li>
+<li><strong>Download only.</strong> Packages are fetched with Bawwab's own fetchers and read as files. Nothing is installed or run.</li>
+<li><strong>Static rules only.</strong> The verdict comes from Bawwab's pattern and code-flow rules, without the AI review step Bawwab normally adds, and without running anything in a sandbox.</li>
+<li><strong>Hand-checked.</strong> Each flagged finding carries a reviewer's status: confirmed, known false alarm, or expected for what the tool does.</li>
+</ul></section>
+<section aria-labelledby="h-cat"><h2 id="h-cat">Categories</h2>
+<p>Each finding is tagged with the public threat categories its rule maps to: the OWASP Top 10 for LLM
+Applications, the OWASP Top 10 for Agentic Applications, MITRE ATLAS techniques and CWE weaknesses. The tags
+describe the kind of risk the rule looks for, not a confirmed attack. Rules that only say part of a target was not
+checked are left untagged on purpose. Sources:</p>
+<ul><li><a href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer">OWASP Top 10 for LLM Applications</a>, version 2025, retrieved 2026-11-20</li><li><a href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer">OWASP Top 10 for Agentic Applications</a>, version 2026 (published 2025-12-09), retrieved 2026-11-20</li><li><a href="https://github.com/mitre-atlas/atlas-data/blob/main/dist/v6/ATLAS-2026.10.yaml" rel="noopener noreferrer">MITRE ATLAS</a>, version 2026.10, retrieved 2026-11-20</li><li><a href="https://cwe-api.mitre.org/api/v1/cwe/weakness/" rel="noopener noreferrer">MITRE CWE</a>, version 4.21, retrieved 2026-11-20</li></ul></section>
+
+<section aria-labelledby="h-limits"><h2 id="h-limits">Limits</h2>
+<ul>
+<li>Static rules see code patterns, not intent. "Not malicious, needs a look" means a pattern worth reading, not an accusation.</li>
+<li>No AI review was used, so findings that Bawwab's judge would normally clear are shown as raw rule hits with a human note instead.</li>
+<li>Very large files are skipped by the scanner and reported as such; code that is downloaded or generated at run time is not seen.</li>
+<li>A clean result means no rule fired at this version. It is not a guarantee, and later versions may differ.</li>
+<li>Popularity numbers are a snapshot and can be inflated (bots, CI, star campaigns); they decide what was scanned, not how it scored.</li>
+</ul></section>
+<section aria-labelledby="h-repro"><h2 id="h-repro">Reproduce</h2>
+<dl class="meta"><dt>Bawwab commit</dt><dd><code>994a4d4c793bced93c0d02571378286016d061bb</code></dd>
+<dt>Rule set</dt><dd><code>525789e12cd3569003781a11c75540b128cfbfb920275e351652ddf03a21e662</code></dd>
+<dt>Per-target timeout</dt><dd>600 s</dd></dl>
+<pre class="ev">git checkout 994a4d4c793bced93c0d02571378286016d061bb
+report/run_scan.sh            # reads the pinned report/targets.json, writes report/out/results.json
+uv run python report/build_site.py</pre></section>
+<section aria-labelledby="disputes"><h2 id="disputes">Disputes</h2>
+<p>If you maintain one of these packages and think a result is wrong, <a href="https://github.com/anasAsh/bawwab/issues/new?template=dispute.md&amp;labels=dispute">open a dispute</a>
+(each target page has a link with the target filled in). Say which finding, why it is wrong, and link to the code. We re-check and update the page and the review note.</p></section>
+
+</main>
+<footer class="site">Static rules only, no AI review. Scanned text is shown escaped and is not trusted. Generated by report/build_site.py.</footer>
+
+</body>
+</html>

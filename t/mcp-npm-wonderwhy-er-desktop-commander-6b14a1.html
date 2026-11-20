@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src &#x27;none&#x27;; style-src &#x27;sha256-7w586Q56jzzYt9qKXvRQQv68YlYiTxipLMWFKQxnOOs=&#x27;; img-src &#x27;self&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;">
+<meta name="referrer" content="no-referrer">
+<title>@wonderwhy-er/desktop-commander - Bawwab: Top 100 scan</title>
+<style>:root{--bg:#fbfbf8;--fg:#1b1d21;--muted:#5b616b;--line:#d9dbd6;--card:#ffffff;--accent:#0b5cad;
+--ok:#1d6b3a;--ok-bg:#e3f3e8;--warn:#7a4a00;--warn-bg:#fdf1d8;--bad:#9b1c1c;--bad-bg:#fbe4e4;
+--nv:#3d4451;--nv-bg:#e8eaee;--code:#f1f2ee;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--fg:#e8e9ea;--muted:#a3a8b1;--line:#30343a;
+--card:#1a1d21;--accent:#7cb7ff;--ok:#8fdcaa;--ok-bg:#163222;--warn:#ffd08a;--warn-bg:#3a2b10;
+--bad:#ffaaaa;--bad-bg:#401818;--nv:#c9ced6;--nv-bg:#2a2e35;--code:#1f2328}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:8px;background:var(--card);padding:6px 10px;z-index:9}
+header.site,main,footer.site{max-width:1080px;margin:0 auto;padding:0 16px}
+header.site{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding-top:20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header.site .brand{font-weight:700;font-size:1.1rem;text-decoration:none;color:var(--fg)}
+header.site nav a{margin-right:16px}
+footer.site{color:var(--muted);font-size:.875rem;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--line);margin-top:40px}
+h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h2{font-size:1.25rem;margin:32px 0 8px}
+.lede{color:var(--muted);margin-top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font-size:1.8rem;line-height:1.1}.stat span{color:var(--muted);font-size:.9rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.85rem;font-weight:600;white-space:nowrap}
+.b-clean{color:var(--ok);background:var(--ok-bg)}.b-suspicious{color:var(--warn);background:var(--warn-bg)}
+.b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
+.b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
+.b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
+.card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
+pre.ev{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;margin:6px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.loc{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.review{border-left:4px solid var(--line);padding:4px 10px;margin-top:8px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end;margin:12px 0}
+.filters label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted)}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:10rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th button{font:inherit;font-weight:600;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+th[aria-sort=ascending] button::after{content:" \25B2"}th[aria-sort=descending] button::after{content:" \25BC"}
+td.num,th.num{text-align:right}tbody tr:hover{background:var(--code)}
+.note{background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px}
+details summary{cursor:pointer;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tag{display:inline-block;font-size:.78rem;line-height:1.4;padding:1px 8px;border:1px solid var(--line);border-radius:4px;color:var(--fg);text-decoration:none;background:var(--code);overflow-wrap:anywhere}
+.tag:hover{border-color:var(--accent)}.tag-k{color:var(--muted);font-weight:600}
+@media (max-width:640px){.hide-sm{display:none}h1{font-size:1.4rem}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site"><a class="brand" href="../index.html">Bawwab: Top 100 scan</a>
+<nav aria-label="Main"><a href="../index.html">Overview</a><a href="../targets.html">All 100</a><a href="../method.html">Method</a><a href="../index.html#disputes">Disputes</a></nav></header>
+<main id="main">
+<h1>@wonderwhy-er/desktop-commander</h1>
+<p><span class="badge b-suspicious">Not malicious, needs a look</span> Reviewed: expected behaviour</p>
+<p>Bawwab&#x27;s static rules found patterns that deserve a human look. This is not a finding that the package is malicious; the review notes below say what each pattern turned out to be.</p>
+<dl class="meta"><dt>Kind</dt><dd>MCP server</dd><dt>Source</dt><dd>npm</dd><dt>Version</dt><dd><code>0.3.4</code></dd><dt>Popularity</dt><dd>1,418,548 npm downloads/week (2026-11-20)</dd><dt>Link</dt><dd><a href="https://www.npmjs.com/package/@wonderwhy-er/desktop-commander/v/0.3.4" rel="noopener noreferrer">https://www.npmjs.com/package/@wonderwhy-er/desktop-commander/v/0.3.4</a></dd><dt>Scanned</dt><dd>2026-11-20T16:07:42+00:00</dd><dt>Scan time</dt><dd>12.0 s</dd></dl>
+<div class="note"><strong>Review note:</strong> Install script sends an anonymous install telemetry event; the other flags are prompt text, a file-type list, and an env copy for a launched Chrome.</div>
+<h2>Findings (4)</h2><article class="card">
+<h3><code>install-script</code>: Runs code at install time <span class="badge b-suspicious">med</span></h3>
+<p class="loc">package.json:29</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI05: Unexpected Code Execution (RCE)"><span class="tag-k">OWASP Agentic</span> ASI05 Unexpected Code Execution (RCE)</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0010.001" rel="noopener noreferrer" title="MITRE ATLAS AML.T0010.001: Supply Chain Compromise: Software"><span class="tag-k">MITRE ATLAS</span> AML.T0010.001 Supply Chain Compromise: Software</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0011.001" rel="noopener noreferrer" title="MITRE ATLAS AML.T0011.001: User Execution: Malicious Package"><span class="tag-k">MITRE ATLAS</span> AML.T0011.001 User Execution: Malicious Package</a></p>
+<pre class="ev"><code>node dist/track-installation.js &amp;&amp; node dist/npm-scripts/verify-ripgrep.js || node -e &quot;process.exit(0)&quot;</code></pre>
+<p><strong>What this means:</strong> Install hooks run automatically with your privileges before you can review anything.</p>
+<p><strong>The rule&#39;s general advice:</strong> Read the script; prefer packages with no install hooks. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-expected-behaviour">Expected for what this tool does</span></p><p>The npm install script runs dist/track-installation.js, which detects how the package was installed (including the parent process command line) and POSTs a &#x27;package_installed&#x27; event with platform, Node version and a client ID to the project&#x27;s telemetry endpoint. The script is documented in its own header; the fallback to &#x27;process.exit(0)&#x27; only prevents install failure. Users should be aware that install-time telemetry is sent.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>credential-access</code>: Touches credentials or secrets <span class="badge b-suspicious">high</span></h3>
+<p class="loc">dist/server.js:553</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI03: Identity and Privilege Abuse"><span class="tag-k">OWASP Agentic</span> ASI03 Identity and Privilege Abuse</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0083" rel="noopener noreferrer" title="MITRE ATLAS AML.T0083: Credentials from AI Agent Configuration"><span class="tag-k">MITRE ATLAS</span> AML.T0083 Credentials from AI Agent Configuration</a></p>
+<pre class="ev"><code>- Looking for configuration/setup files: &quot;.env&quot;, &quot;dockerfile&quot;, &quot;tsconfig.json&quot;</code></pre>
+<p><strong>What this means:</strong> Reads files or environment holding keys, tokens or sessions.</p>
+<p><strong>The rule&#39;s general advice:</strong> Confirm the tool needs this; otherwise do not install. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>The match is a line of tool-description text suggesting that an assistant look for files such as .env or tsconfig.json when exploring a project. It does not read any file.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>exfil.combo</code>: Reads credentials and makes network calls <span class="badge b-suspicious">med</span></h3>
+<p class="loc">dist/tools/pdf/markdown.js:319</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0037" rel="noopener noreferrer" title="MITRE ATLAS AML.T0037: Data from Local System"><span class="tag-k">MITRE ATLAS</span> AML.T0037 Data from Local System</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0025" rel="noopener noreferrer" title="MITRE ATLAS AML.T0025: Exfiltration via Cyber Means"><span class="tag-k">MITRE ATLAS</span> AML.T0025 Exfiltration via Cyber Means</a></p>
+<pre class="ev"><code>const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =&gt; name.toUpperCase() !== &#x27;USERPROFILE&#x27;));</code></pre>
+<p><strong>What this means:</strong> Credential access together with outbound requests in one file is the shape of data theft.</p>
+<p><strong>The rule&#39;s general advice:</strong> Do not install unless the flow is understood and benign. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>On Windows only, a copy of the process environment (minus USERPROFILE) is passed to the Chrome instance the package launches to render PDFs. It is not sent anywhere else.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article><article class="card">
+<h3><code>credential-access</code>: Touches credentials or secrets <span class="badge b-suspicious">high</span></h3>
+<p class="loc">dist/ui/file-preview/shared/preview-file-types.js:39</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI03: Identity and Privilege Abuse"><span class="tag-k">OWASP Agentic</span> ASI03 Identity and Privilege Abuse</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0083" rel="noopener noreferrer" title="MITRE ATLAS AML.T0083: Credentials from AI Agent Configuration"><span class="tag-k">MITRE ATLAS</span> AML.T0083 Credentials from AI Agent Configuration</a></p>
+<pre class="ev"><code>&#x27;.env&#x27;,</code></pre>
+<p><strong>What this means:</strong> Reads files or environment holding keys, tokens or sessions.</p>
+<p><strong>The rule&#39;s general advice:</strong> Confirm the tool needs this; otherwise do not install. <span class="loc">(see the review note for this case)</span></p>
+<div class="review"><p><span class="badge b-false-positive">Known false alarm</span></p><p>The &#x27;.env&#x27; entry is one item in a list of file extensions the file previewer treats as text. It does not read credentials.</p><p class="loc">Reviewed by Bawwab maintainers, 2026-11-20</p></div>
+</article>
+<details><summary>3 low-severity notes (informational, do not affect the result)</summary><article class="card">
+<h3><code>identity.repo-mismatch</code>: Repository does not match the package name <span class="badge b-low">low</span></h3>
+
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0111" rel="noopener noreferrer" title="MITRE ATLAS AML.T0111: AI Supply Chain Reputation Inflation"><span class="tag-k">MITRE ATLAS</span> AML.T0111 AI Supply Chain Reputation Inflation</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0074" rel="noopener noreferrer" title="MITRE ATLAS AML.T0074: Masquerading"><span class="tag-k">MITRE ATLAS</span> AML.T0074 Masquerading</a></p>
+<pre class="ev"><code>repository &#x27;DesktopCommanderMCP&#x27; shares no word with package name &#x27;@wonderwhy-er/desktop-commander&#x27;</code></pre>
+<p><strong>What this means:</strong> A package whose linked repository has an unrelated name may point to someone else&#x27;s code to look legitimate.</p>
+<p><strong>What you can do:</strong> Open the repository and confirm it is the real source of this package.</p>
+
+</article><article class="card">
+<h3><code>install-script</code>: Runs code at install time <span class="badge b-low">low</span></h3>
+<p class="loc">package.json:45</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI05: Unexpected Code Execution (RCE)"><span class="tag-k">OWASP Agentic</span> ASI05 Unexpected Code Execution (RCE)</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0010.001" rel="noopener noreferrer" title="MITRE ATLAS AML.T0010.001: Supply Chain Compromise: Software"><span class="tag-k">MITRE ATLAS</span> AML.T0010.001 Supply Chain Compromise: Software</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0011.001" rel="noopener noreferrer" title="MITRE ATLAS AML.T0011.001: User Execution: Malicious Package"><span class="tag-k">MITRE ATLAS</span> AML.T0011.001 User Execution: Malicious Package</a></p>
+<pre class="ev"><code>npm run build</code></pre>
+<p><strong>What this means:</strong> Install hooks run automatically with your privileges before you can review anything.</p>
+<p><strong>What you can do:</strong> Read the script; prefer packages with no install hooks.</p>
+
+</article><article class="card">
+<h3><code>credential-access</code>: Touches credentials or secrets <span class="badge b-low">low</span></h3>
+<p class="loc">dist/tools/pdf/markdown.js:319</p>
+<p class="tags" aria-label="Threat categories"><a class="tag" href="https://genai.owasp.org/llm-top-10/" rel="noopener noreferrer" title="OWASP LLM LLM03: Supply Chain"><span class="tag-k">OWASP LLM</span> LLM03 Supply Chain</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI03: Identity and Privilege Abuse"><span class="tag-k">OWASP Agentic</span> ASI03 Identity and Privilege Abuse</a><a class="tag" href="https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/" rel="noopener noreferrer" title="OWASP Agentic ASI04: Agentic Supply Chain Vulnerabilities"><span class="tag-k">OWASP Agentic</span> ASI04 Agentic Supply Chain Vulnerabilities</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0055" rel="noopener noreferrer" title="MITRE ATLAS AML.T0055: Unsecured Credentials"><span class="tag-k">MITRE ATLAS</span> AML.T0055 Unsecured Credentials</a><a class="tag" href="https://atlas.mitre.org/techniques/AML.T0083" rel="noopener noreferrer" title="MITRE ATLAS AML.T0083: Credentials from AI Agent Configuration"><span class="tag-k">MITRE ATLAS</span> AML.T0083 Credentials from AI Agent Configuration</a></p>
+<pre class="ev"><code>const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =&gt; name.toUpperCase() !== &#x27;USERPROFILE&#x27;));</code></pre>
+<p><strong>What this means:</strong> Reads files or environment holding keys, tokens or sessions.</p>
+<p><strong>What you can do:</strong> Confirm the tool needs this; otherwise do not install.</p>
+
+</article></details>
+<h2 id="dispute">Dispute this result</h2><p>Maintainer and think this is wrong? <a href="https://github.com/anasAsh/bawwab/issues/new?template=dispute.md&amp;labels=dispute&amp;title=Dispute%3A+%40wonderwhy-er%2Fdesktop-commander+%28mcp-npm-wonderwhy-er-desktop-commander-6b14a1%29" rel="noopener noreferrer">Open a dispute on GitHub</a> with the target id <code>mcp-npm-wonderwhy-er-desktop-commander-6b14a1</code>.</p>
+</main>
+<footer class="site">Static rules only, no AI review. Scanned text is shown escaped and is not trusted. Generated by report/build_site.py.</footer>
+
+</body>
+</html>
