@@ -60,7 +60,10 @@ def test_e2e_ordinary_call_silent(proj, tmp_path):
 
 def test_plugin_manifest():
     m = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
-    assert m["name"] == "bawwab" and m["version"] == "0.1.0"
+    import tomllib
+
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    assert m["name"] == "bawwab" and m["version"] == version  # bumped together: Claude Code caches by version
     assert m["mcpServers"]["bawwab"] == {  # fix round 1: pinned to uv.lock, venv in the plugin data dir
         "command": "uv", "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "--frozen", "--quiet", "bawwab-mcp"],
         "env": {"UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"}}

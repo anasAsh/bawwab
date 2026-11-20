@@ -70,7 +70,10 @@ def test_scan_job_steps(wf):
     assert "--allow-unreviewed" in _step(wf, "scan", "report/build_site.py")["run"]
     assert "GITHUB_STEP_SUMMARY" in _step(wf, "scan", "report/needs_review.py")["run"]
     scan_step = _step(wf, "scan", "report/run_scan.sh")
-    assert "REPORT_PYTHON=.venv/bin/python" in scan_step["run"] and "RUNNER_TEMP" in scan_step["run"]
+    assert "REPORT_PYTHON=.venv/bin/python" in scan_step["run"]
+    # scan.py refuses a work dir inside the real home, and $RUNNER_TEMP is under /home/runner on GitHub
+    work = scan_step["run"].split("REPORT_WORK=", 1)[1].split()[0]
+    assert work.startswith("/var/tmp/") and "RUNNER_TEMP" not in scan_step["run"]
     pages = next(s for s in _steps(wf, "scan") if "upload-pages-artifact@" in (s.get("uses") or ""))
     assert pages["with"]["path"] == "report/out/site"
     data = next(s for s in _steps(wf, "scan") if "/upload-artifact@" in (s.get("uses") or ""))
