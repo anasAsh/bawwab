@@ -97,6 +97,21 @@ Bawwab checks at two points:
    what *actually changed* in Claude's config and install folders. Anything new and unscanned is scanned and quarantined.
    While something is quarantined, every tool call except read-only ones is blocked until you approve or reject it.
 
+### Security levels
+
+You choose how much Bawwab blocks. On first start it asks; until you choose, the level is **high**.
+
+| | low | medium | high (default) |
+|---|---|---|---|
+| Install found **malicious** | warns | blocks | blocks |
+| Install found **suspicious** (including a failed or timed-out scan) | warns | warns | blocks |
+| Unscanned change to Claude's config | warns | quarantines if malicious | quarantines if not clean |
+
+A warning goes to you and to Claude, and Claude Code's normal permission prompts still apply. Two things hold at
+every level: Bawwab's **self-protection** (Claude can't run `approve`/`reject`, edit Bawwab's state or remove its
+hooks), and **only you can lower the level** (`! bawwab level medium` or `low`). Claude may raise it to high. A
+project's `.claude/bawwab.json` can only raise it.
+
 ### What it looks for
 
 | Layer | Catches |
@@ -105,7 +120,7 @@ Bawwab checks at two points:
 | ☣️ **Known malware** | npm and PyPI packages listed as malicious (`MAL-*`) in [OSV](https://osv.dev), from the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed. A failed lookup is a note, not a block. |
 | 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
-| 🕸️ **Cross-server check** | server A's text steering server B's tools |
+| 🕸️ **Cross-server check** | server A's tool, prompt or resource descriptions steering server B's tools (skills, agents and READMEs that name tools on purpose are left to the injection rules) |
 | 📦 **Deep mode** *(coming)* | runs the server in a locked-down Docker sandbox with decoy credentials and a network trap |
 
 ### Design rules
@@ -200,18 +215,23 @@ Correct means the verdict is at least the label (clean < suspicious < malicious)
 /plugin install bawwab@bawwab
 ```
 
-Restart Claude Code (or start a new session) after installing. On first start, Bawwab asks whether to scan
-everything you already have installed, or to trust it as-is and only check new installs. Hooks and settings
-that other plugins and tools had already configured come back as **one batch** with a single approval id, not
-one prompt each.
+Restart Claude Code (or start a new session) after installing. On first start, Bawwab welcomes you and asks
+two things: your [security level](#security-levels), and whether to scan everything you already have
+installed or trust it as-is and only check new installs. Hooks and settings that other plugins and tools had
+already configured come back as **one batch** with a single approval id, not one prompt each.
+
+When something is on hold, Bawwab shows one short table (id, item, verdict, why) and Claude asks you about
+each item. Type `/bawwab-run` any time to see what is on hold, decide, and optionally start a full scan.
 
 The plugin adds:
 
 - **Hooks:** `PreToolUse` (the gate and the effect check), `PostToolUse` (the effect check after a tool
   changed something), `SessionStart` (the inventory) and `UserPromptSubmit` (deferred warnings). Ordinary tool
   calls pass in milliseconds without starting bawwab.
-- **The `bawwab` skill:** tells Claude to show blocks verbatim, never run `bawwab approve` itself, and never
-  route around a block.
+- **The `/bawwab-run` command:** shows what is on hold, asks you about each item, hands you the exact commands
+  to run, then offers a full scan.
+- **The `bawwab` skill** (for Claude, not in the slash menu): show blocks as they are, ask before deciding,
+  never run `bawwab approve` itself, and never route around a block.
 - **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
 - **The `bawwab` command** (`bin/bawwab`, a small launcher for the plugin's own copy, in the same virtualenv as
   the hooks). Claude Code puts it on the `PATH` of Claude's Bash tool, so you don't need the CLI install below.
@@ -233,9 +253,10 @@ which downloads and installs its Python dependencies on first start (those are c
 list, but not scanned): exactly what it would warn you about in any other plugin. The first start sets up in the
 background for about a minute; until then Bawwab holds install commands and lets everything else through. Its rules aren't bent for itself, and nothing is exempt by name. So when Bawwab gates an
 install or upgrade of Bawwab, you see those findings and approve once per version. Afterwards, the inventory and
-effect check recognise the copy whose code is actually running (same real path as the running hook, named
-`bawwab`, not a symlink) and list it as "bawwab (running code, not scanned)". Any other copy called bawwab is
-scanned like everything else.
+effect check recognise the copy whose code is actually running and list it as "bawwab (running code, not
+scanned)": the same real path as the running hook, or a copy holding byte-identical code and nothing else that
+could run (so a second copy of the same Bawwab never quarantines the installed one). It must be named `bawwab`
+and not be a symlink. Any other copy called bawwab is scanned like everything else: the name proves nothing.
 
 ### CLI only (optional)
 
@@ -266,8 +287,12 @@ bawwab scan https://mcp.example.com/mcp             # remote MCP server (lists i
 bawwab scan <target> --json                         # machine-readable report
 
 # Decide on something Bawwab blocked
-bawwab approve <id>            # allow it (malicious items need --force)
-bawwab reject <id>             # refuse it; quarantined items are removed, with a backup
+bawwab approve <id> [<id>…]    # allow them (malicious items need --force); prints each item's name
+bawwab reject <id> [<id>…]     # refuse them; quarantined items are removed, with a backup
+
+# Security level
+bawwab level                   # show it
+bawwab level high|medium|low   # set it (only you can lower it)
 
 # Understand a result
 bawwab explain <finding-id>    # plain-language reason + suggested fix
@@ -275,15 +300,15 @@ bawwab diff <name>             # what changed since you trusted it
 
 # Everything already installed
 bawwab init --scan             # first run: scan everything now
-bawwab effects                 # list quarantined items
+bawwab effects                 # what is on hold, with every finding and evidence
 ```
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
 In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. If `bawwab` isn't on your
 shell's `PATH` (plugin only), use the command exactly as Bawwab's message prints it, which names the plugin's
-launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan` and `setup --retry`, but
-never `approve`, `reject` or `init --skip`, by any name or path.
+launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
+and `level high`, but never `approve`, `reject`, `init --skip` or a lower level, by any name or path.
 
 ### MCP tools
 
@@ -306,6 +331,7 @@ Reports come back framed as untrusted data, with bawwab's own instructions kept 
 
 ```json
 {
+  "level": "high",
   "mode": "standard",
   "llm": { "backend": "claude-cli", "model": "claude-sonnet-5-5" },
   "thresholds": { "malicious": "critical", "suspicious": "med" },
@@ -331,6 +357,32 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   rules in charge, so a target that fools the scanner still gets the usual prompt.
 - **What actually changed is checked too.** Even if a command slips past the gate, the effect check sees the
   new server, skill, plugin or hook in Claude's configuration and quarantines it until you decide.
+
+## Threat analysis methodology
+
+Bawwab is analysed from two sides:
+
+- **Bawwab itself: STRIDE per component.** [`docs/threat-model.md`](docs/threat-model.md) lists the assets
+  (your credentials, Claude's config, the approval store, verdict integrity, Bawwab's own code, your
+  attention), the actors (a malicious extension author, a prompt-injected agent, a deliberately adversarial
+  same-user agent, a hostile registry or server), the trust boundaries and data flow, and for each component
+  (gate; prefilter and fingerprint; scanner and fetchers; Claude review; effect check; store and approvals;
+  bootstrap and launcher; MCP server and inventory) the Spoofing, Tampering, Repudiation, Information
+  disclosure, Denial of service and Elevation of privilege threats, with the control that answers each, the
+  residual risk that remains, and the top open risks in priority order.
+- **What Bawwab detects in other extensions: a mapped rule catalogue.** Every rule is mapped in
+  [`taxonomy.json`](bawwab/scan/rules/data/taxonomy.json) to the
+  [OWASP Top 10 for LLM Applications (2025)](https://genai.owasp.org/llm-top-10/) (e.g. LLM01 prompt
+  injection, LLM03 supply chain), the [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/)
+  (ASI ids),
+  [MITRE ATLAS](https://atlas.mitre.org/) techniques and [CWE](https://cwe.mitre.org/) weaknesses. A test keeps
+  the catalogue and the mapping in step.
+
+Both are checked against evidence: the [benchmark](#benchmark) (labelled malicious and benign samples,
+precision/recall/false-positive rate), a red-team set of attacks on Bawwab itself (`eval/redteam/`), and real
+popular packages that must come back clean. The [top-100 report](https://anasash.github.io/bawwab/) applies
+the same rules to the most popular MCP servers, skills and plugins, with every flagged finding hand-reviewed
+or labelled "Not yet reviewed".
 
 ## Honest limitations
 
