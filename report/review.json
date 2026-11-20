@@ -43,6 +43,3725 @@
      "date": "2026-11-20"
     }
    ]
+  },
+  "mcp-npm-modelcontextprotocol-server-pdf-bb5912": {
+   "name": "@modelcontextprotocol/server-pdf",
+   "summary": "Both flags are a bundled logging library and a minified UI bundle; nothing sends data out.",
+   "findings": [
+    {
+     "match": {
+      "key": "6b06f3de47f4"
+     },
+     "status": "false-positive",
+     "note": "This is the bundled 'debug' logging library. It reads only environment variables whose names start with DEBUG_ to configure log options, and does not send them anywhere.",
+     "evidence_checked": "dist/index.js:700-725",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0a48fe7a4d9e"
+     },
+     "status": "false-positive",
+     "note": "This is a long encoded string inside the minified, bundled single-file UI (mcp-app.html). It is part of the packaged front-end code, not a separately decoded or executed payload.",
+     "evidence_checked": "dist/mcp-app.html:106",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-wonderwhy-er-desktop-commander-6b14a1": {
+   "name": "@wonderwhy-er/desktop-commander",
+   "summary": "Install script sends an anonymous install telemetry event; the other flags are prompt text, a file-type list, and an env copy for a launched Chrome.",
+   "findings": [
+    {
+     "match": {
+      "key": "3e45c7d21c54"
+     },
+     "status": "expected-behaviour",
+     "note": "The npm install script runs dist/track-installation.js, which detects how the package was installed (including the parent process command line) and POSTs a 'package_installed' event with platform, Node version and a client ID to the project's telemetry endpoint. The script is documented in its own header; the fallback to 'process.exit(0)' only prevents install failure. Users should be aware that install-time telemetry is sent.",
+     "evidence_checked": "package.json:25-32; dist/track-installation.js:1-60,90-150,270-300",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1cd479033404"
+     },
+     "status": "false-positive",
+     "note": "The match is a line of tool-description text suggesting that an assistant look for files such as .env or tsconfig.json when exploring a project. It does not read any file.",
+     "evidence_checked": "dist/server.js:548-555",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "11ec839ebc2a"
+     },
+     "status": "false-positive",
+     "note": "On Windows only, a copy of the process environment (minus USERPROFILE) is passed to the Chrome instance the package launches to render PDFs. It is not sent anywhere else.",
+     "evidence_checked": "dist/tools/pdf/markdown.js:300-321",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0200cb417322"
+     },
+     "status": "false-positive",
+     "note": "The '.env' entry is one item in a list of file extensions the file previewer treats as text. It does not read credentials.",
+     "evidence_checked": "dist/ui/file-preview/shared/preview-file-types.js:35-42",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-mcp-for-blender-ed971d": {
+   "name": "mcp-for-blender",
+   "summary": "Documentation install command, a Claude config path helper for the setup CLI, and a test fixture.",
+   "findings": [
+    {
+     "match": {
+      "rule": "remote-code.pipe-shell",
+      "file": "PKG-INFO"
+     },
+     "status": "expected-behaviour",
+     "note": "The package description documents an optional installer one-liner that pipes a script from the project's own site (mcp-for-blender.com) into sh. It appears only in documentation text and is not run by the package.",
+     "evidence_checked": "PKG-INFO:55-66",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "remote-code.pipe-shell",
+      "file": "src/mcp_for_blender.egg-info/PKG-INFO"
+     },
+     "status": "expected-behaviour",
+     "note": "This is a copy of the same documented installer command in generated package metadata. It is not executed by the package.",
+     "evidence_checked": "src/mcp_for_blender.egg-info/PKG-INFO:63",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8779e7f59719"
+     },
+     "status": "expected-behaviour",
+     "note": "The setup CLI computes the location of the Claude Code config file (~/.claude.json, or under CLAUDE_CONFIG_DIR) so it can check whether the Blender MCP server is already registered there and add it. This is the setup tool's stated purpose.",
+     "evidence_checked": "src/blender_mcp/setup_cli.py:385-410",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "dff9f35f706a"
+     },
+     "status": "false-positive",
+     "note": "A unit test creates a dummy file named id_rsa in a temporary directory to verify that non-image files are refused. It reads no real key.",
+     "evidence_checked": "tests/test_image_input_security.py:165-185",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-mcp-proxy-53d768": {
+   "name": "mcp-proxy",
+   "summary": "All flags are the yargs .env('MCP_PROXY') option prefix and test code copying process.env to child processes.",
+   "findings": [
+    {
+     "match": {
+      "key": "5e26e16725cc"
+     },
+     "status": "false-positive",
+     "note": "The matched line is the yargs '.env(\"MCP_PROXY\")' call, which lets command-line options be filled from MCP_PROXY_* environment variables. It does not read .env files or credentials, and nothing is sent anywhere.",
+     "evidence_checked": "dist/bin/mcp-proxy.mjs:6485-6500",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8e71e2f4555f"
+     },
+     "status": "false-positive",
+     "note": "The matched line is the yargs '.env(\"MCP_PROXY\")' call, which lets command-line options be filled from MCP_PROXY_* environment variables. It does not read .env files or credentials, and nothing is sent anywhere.",
+     "evidence_checked": "dist/bin/mcp-proxy.mjs:6485-6500",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "22da4af6ed3a"
+     },
+     "status": "false-positive",
+     "note": "Test helper that starts a fixture MCP server from src/fixtures with the test process's environment plus test-specific values. The child is launched by the test itself and nothing is sent out.",
+     "evidence_checked": "src/protocolEras.test.ts:60-80",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3b888c81f4d4"
+     },
+     "status": "false-positive",
+     "note": "Test helper that starts a fixture MCP server from src/fixtures with the test process's environment plus test-specific values. The child is launched by the test itself and nothing is sent out.",
+     "evidence_checked": "src/proxyServer.events.test.ts:360-375",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "09279d77e074"
+     },
+     "status": "false-positive",
+     "note": "Test helper that copies the environment while removing MCP_PROXY* variables, so they do not affect the CLI process the test spawns. It reads nothing else and sends nothing.",
+     "evidence_checked": "src/bin/mcp-proxy.test.ts:15-35",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "203a64e31cb8"
+     },
+     "status": "false-positive",
+     "note": "The matched line is the yargs '.env(\"MCP_PROXY\")' call, which lets command-line options be filled from MCP_PROXY_* environment variables. It does not read .env files or credentials, and nothing is sent anywhere.",
+     "evidence_checked": "src/bin/mcp-proxy.ts:45-60",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "01d0e55689e6"
+     },
+     "status": "false-positive",
+     "note": "The matched line is the yargs '.env(\"MCP_PROXY\")' call, which lets command-line options be filled from MCP_PROXY_* environment variables. It does not read .env files or credentials, and nothing is sent anywhere.",
+     "evidence_checked": "src/bin/mcp-proxy.ts:45-60",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-mcp-proxy-for-aws-3d5fc3": {
+   "name": "mcp-proxy-for-aws",
+   "summary": "The flags are docstring text in example scripts mentioning a .env file.",
+   "findings": [
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "examples/mcp-client/*/main.py"
+     },
+     "status": "false-positive",
+     "note": "The matched line is in the setup docstring of four example client scripts (Agent Framework, LangChain, LlamaIndex, Strands). The scripts load a .env file with python-dotenv for the connection settings they list (server URL, AWS service, region and, in two, an LLM API key) and use them to connect to the configured MCP server with AWS IAM signing. They are examples, not part of the proxy itself.",
+     "evidence_checked": "examples/mcp-client/agent-framework/main.py:15-63; langchain/main.py:15-60; llamaindex/main.py:15-64; strands/main.py:15-56",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-mcp-atlassian-87c383": {
+   "name": "mcp-atlassian",
+   "summary": "Flags are local-module imports named .env, docs, and security-test fixtures with private IPs.",
+   "findings": [
+    {
+     "match": {
+      "key": "0bfd19571f9a"
+     },
+     "status": "false-positive",
+     "note": "A list of untracked files (.env, .env.*, dev/) that git-worktree tooling copies between developer checkouts. It is development configuration and is not read at runtime.",
+     "evidence_checked": ".worktreeinclude:1-4",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2c87f7f37af3"
+     },
+     "status": "false-positive",
+     "note": "Documentation text in the package description advising users to keep .env files secure.",
+     "evidence_checked": "PKG-INFO:155-165",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "9ec397f72d15"
+     },
+     "status": "false-positive",
+     "note": "A developer script that updates tool counts inside repository documentation files, including .env.example (the template file). It reads and rewrites those docs files and does not read credentials.",
+     "evidence_checked": "scripts/generate_tool_docs.py:695-720",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7ba096eebd2b"
+     },
+     "status": "false-positive",
+     "note": "Help text in a developer test script telling the reader to start Docker test instances using the repository's .env.example template. It is echoed text only.",
+     "evidence_checked": "scripts/test_with_real_data.sh:48-62",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6faeeb5646f9"
+     },
+     "status": "expected-behaviour",
+     "note": "The command-line interface has an optional --env-file argument so users can load their own settings from a .env file they point to. This is the documented way to supply configuration.",
+     "evidence_checked": "src/mcp_atlassian/__init__.py:232-251",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "src/mcp_atlassian/utils/environment.py"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import ...' of a helper module for reading typed environment settings, such as boolean flags and numeric limits. It is not a read of a .env file. The file is environment.py (checks which Atlassian auth settings are present).",
+     "evidence_checked": "src/mcp_atlassian/utils/environment.py:1-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "src/mcp_atlassian/utils/http.py"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import ...' of a helper module for reading typed environment settings, such as boolean flags and numeric limits. It is not a read of a .env file. The file is http.py (retry and rate-limit helpers).",
+     "evidence_checked": "src/mcp_atlassian/utils/http.py:1-80",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "src/mcp_atlassian/utils/pagination.py"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import ...' of a helper module for reading typed environment settings, such as boolean flags and numeric limits. It is not a read of a .env file. The file is pagination.py (an optional result-limit cap).",
+     "evidence_checked": "src/mcp_atlassian/utils/pagination.py:1-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "src/mcp_atlassian/utils/proxy.py"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import ...' of a helper module for reading typed environment settings, such as boolean flags and numeric limits. It is not a read of a .env file. The file is proxy.py (HTTP/PAC proxy settings).",
+     "evidence_checked": "src/mcp_atlassian/utils/proxy.py:1-70",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2d280b877e22"
+     },
+     "status": "false-positive",
+     "note": "A log message printed after the OAuth setup wizard, telling the user which ATLASSIAN_OAUTH_* variables to add to their own .env file or environment. The client secret is printed as '<redacted>'.",
+     "evidence_checked": "src/mcp_atlassian/utils/oauth_setup.py:320-350",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "eb896a8bb8e8"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import ...' in the HTTP retry and rate-limit helper. No data is sent anywhere by that line.",
+     "evidence_checked": "src/mcp_atlassian/utils/http.py:1-80",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "390cfe475554"
+     },
+     "status": "false-positive",
+     "note": "The match is the package's own relative import 'from .env import is_env_truthy' in the proxy-settings helper. No data is sent anywhere by that line.",
+     "evidence_checked": "src/mcp_atlassian/utils/proxy.py:1-70",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/unit/test_generate_tool_docs.py"
+     },
+     "status": "false-positive",
+     "note": "A unit test writes a throwaway .env.example file into a temporary directory to test the documentation-count script. No real credentials are read.",
+     "evidence_checked": "tests/unit/test_generate_tool_docs.py:345-367",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/unit/utils/test_io.py"
+     },
+     "status": "false-positive",
+     "note": "A security regression test creates a decoy .env file in a temporary 'home' directory to verify that the server's file-path check refuses to expose it. It reads no real file.",
+     "evidence_checked": "tests/unit/utils/test_io.py:188-215",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/unit/confluence/test_attachments.py"
+     },
+     "status": "false-positive",
+     "note": "A security regression test creates a decoy .env file in a temporary directory to verify that a remote caller cannot upload it as an attachment. It reads no real file.",
+     "evidence_checked": "tests/unit/confluence/test_attachments.py:2232-2262",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/unit/test_truststore_env.py"
+     },
+     "status": "false-positive",
+     "note": "The matched text is a module docstring for a test of how a TLS-truststore setting is read from the environment and .env files; the test uses plain values and no credentials.",
+     "evidence_checked": "tests/unit/test_truststore_env.py:1-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/unit/*/test_client.py"
+     },
+     "status": "false-positive",
+     "note": "The matched text is a test docstring about disabling requests' trust_env so a .netrc file cannot override PAT/OAuth authentication. The test uses a mocked session and reads no credentials.",
+     "evidence_checked": "tests/unit/confluence/test_client.py:358-388; tests/unit/jira/test_client.py:488-515",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "tests/unit/test_truststore_env.py"
+     },
+     "status": "false-positive",
+     "note": "Same truststore-setting test docstring as above; the test only compares parsed values and sends nothing.",
+     "evidence_checked": "tests/unit/test_truststore_env.py:1-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "tests/unit/*/test_client.py"
+     },
+     "status": "false-positive",
+     "note": "Test docstrings about disabling trust_env so .netrc cannot override authentication; the tests use mocked sessions and send nothing.",
+     "evidence_checked": "tests/unit/confluence/test_client.py:358-388; tests/unit/jira/test_client.py:488-515",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.host",
+      "file": "tests/**/*.py"
+     },
+     "status": "false-positive",
+     "note": "Test inputs that use private or link-local addresses (127.0.0.1, 10.x, 192.168.x, 169.254.169.254) to verify the server's SSRF protection rejects them or that they are not treated as Atlassian Cloud URLs. The tests assert rejection with mocks and contact none of these hosts.",
+     "evidence_checked": "tests/unit/test_external_auth.py:478-503; jira/test_client.py:132-156; jira/test_forms_api.py:380-402; servers/test_dependencies.py:2685-2705; servers/test_host_origin_guard.py:98-123; servers/test_main_server.py:978-1003; utils/test_urls.py:158-174",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-mcpo-e83d7c": {
+   "name": "mcpo",
+   "summary": "An MCP-to-OpenAPI proxy that launches the user's configured stdio MCP servers and passes them the proxy's environment; nothing is sent elsewhere.",
+   "findings": [
+    {
+     "match": {
+      "key": "773bc8b28aba"
+     },
+     "status": "expected-behaviour",
+     "note": "The Dockerfile installs Node.js with NodeSource's official setup script (curl | bash) at image build time, so stdio servers launched via npx work in the container. It is not run when the package is installed from PyPI.",
+     "evidence_checked": "Dockerfile:8-18",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e48ba19c887a"
+     },
+     "status": "false-positive",
+     "note": "A link to the project's GitHub Discussions inside an issue template; the rule misread the text 'pip install' near a URL. No package is installed from it.",
+     "evidence_checked": ".github/ISSUE_TEMPLATE/bug_report.yaml:15-22",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "21312b9b3b45"
+     },
+     "status": "false-positive",
+     "note": "A link to Open WebUI's GitHub Discussions inside an issue template; the rule misread the text 'pip install' near a URL. No package is installed from it.",
+     "evidence_checked": ".github/ISSUE_TEMPLATE/feature_request.yaml:28-32",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3c79fa4b99cd"
+     },
+     "status": "expected-behaviour",
+     "note": "For a single stdio server, the proxy stores a copy of its own environment to hand to the MCP server subprocess it starts, which is how stdio servers receive variables such as API keys. The copy stays in the app state and is not sent over the network.",
+     "evidence_checked": "src/mcpo/main.py:860-872; 286",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "46635b88efb5"
+     },
+     "status": "expected-behaviour",
+     "note": "Builds the environment (the proxy's environment plus the server's configured env) for the stdio MCP server subprocess via StdioServerParameters. The data goes only to the child process the user configured; no code in this path reads secrets and sends them to a remote host.",
+     "evidence_checked": "src/mcpo/main.py:155-185",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-expo-mcp-c73522": {
+   "name": "expo-mcp",
+   "summary": "Expo's MCP server; the flag is an assignment into a child-process environment for an iOS XCTest run.",
+   "findings": [
+    {
+     "match": {
+      "key": "7e07afacdcdf"
+     },
+     "status": "false-positive",
+     "note": "The code sets TEST_RUNNER_TARGET_BUNDLE_ID (the app id) in the environment of the xcodebuild test run it launches, so the iOS test driver knows which app to target. It writes a variable; it does not read credentials.",
+     "evidence_checked": "dist/automation/AutomationIos.js:50-80",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-hostinger-mcp-ff65cd": {
+   "name": "@hostinger/mcp",
+   "summary": "Hostinger's official API MCP server; the flagged lines are an env copy for a curl child process, documentation strings, and a deny-list that keeps secret files out of deployment archives.",
+   "findings": [
+    {
+     "match": {
+      "key": "6f8bbd082a00"
+     },
+     "status": "false-positive",
+     "note": "A copy of the environment, with PATH reduced to absolute entries, is passed to a local curl probe of the user's own PocketBase URL in a bundled helper script. The environment is not read for secrets or sent anywhere.",
+     "evidence_checked": "skills/headless/steps/04-content-model/pocketbase/scripts/pb-verify.mjs:80-115",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bfafc6ec32ff"
+     },
+     "status": "false-positive",
+     "note": "The critical combo rule paired an environment copy with network use in the same script. The copy only goes to a curl child process that probes the user's own PocketBase /api/realtime endpoint; no secrets are collected or transmitted.",
+     "evidence_checked": "skills/headless/steps/04-content-model/pocketbase/scripts/pb-verify.mjs:80-115",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d6b02e34b85a"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.agency-hosting.js:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1586d5f692a6"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.agency-hosting.ts:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3354d48a21f4"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.js:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a3200c8d37f8"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.ts:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fe883beb8a14"
+     },
+     "status": "false-positive",
+     "note": "This is a deny-list (isSecretFile) used when archiving a project for deployment: files such as .env, .npmrc and private keys are skipped so they are not uploaded. The names are not read.",
+     "evidence_checked": "src/core/runtime.js:425-455",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c9e255c12cc6"
+     },
+     "status": "false-positive",
+     "note": "Same deny-list of secret file names used to exclude files from deployment archives; nothing is read or sent.",
+     "evidence_checked": "src/core/runtime.js:440-455",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e02311c6b8a4"
+     },
+     "status": "false-positive",
+     "note": "This is a deny-list (isSecretFile) used when archiving a project for deployment: files such as .env, .npmrc and private keys are skipped so they are not uploaded. The names are not read.",
+     "evidence_checked": "src/core/runtime.ts:465-495 (mirrors runtime.js)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "182551a0fd9c"
+     },
+     "status": "false-positive",
+     "note": "Same deny-list of secret file names used to exclude files from deployment archives; nothing is read or sent.",
+     "evidence_checked": "src/core/runtime.ts:480 (mirrors runtime.js)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fc59c2367bbc"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/skills.js:63",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "20e38aa9915d"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/skills.ts:77",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f20f1243b870"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips node_modules, .git and secret files (.env, keys, credentials). It is documentation, not credential access.",
+     "evidence_checked": "src/core/tools/all.js:75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a33210cfac3c"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/all.ts:95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7cedfb4e4c84"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/hosting.js:75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ef8f29a5ed62"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/hosting.ts:95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-hostinger-api-mcp-903daf": {
+   "name": "hostinger-api-mcp",
+   "summary": "Hostinger's official API MCP server; the flagged lines are an env copy for a curl child process, documentation strings, and a deny-list that keeps secret files out of deployment archives.",
+   "findings": [
+    {
+     "match": {
+      "key": "6f8bbd082a00"
+     },
+     "status": "false-positive",
+     "note": "A copy of the environment, with PATH reduced to absolute entries, is passed to a local curl probe of the user's own PocketBase URL in a bundled helper script. The environment is not read for secrets or sent anywhere.",
+     "evidence_checked": "skills/headless/steps/04-content-model/pocketbase/scripts/pb-verify.mjs:80-115",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bfafc6ec32ff"
+     },
+     "status": "false-positive",
+     "note": "The critical combo rule paired an environment copy with network use in the same script. The copy only goes to a curl child process that probes the user's own PocketBase /api/realtime endpoint; no secrets are collected or transmitted.",
+     "evidence_checked": "skills/headless/steps/04-content-model/pocketbase/scripts/pb-verify.mjs:80-115",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d6b02e34b85a"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.agency-hosting.js:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1586d5f692a6"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.agency-hosting.ts:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3354d48a21f4"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.js:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a3200c8d37f8"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/instructions.ts:2",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fe883beb8a14"
+     },
+     "status": "false-positive",
+     "note": "This is a deny-list (isSecretFile) used when archiving a project for deployment: files such as .env, .npmrc and private keys are skipped so they are not uploaded. The names are not read.",
+     "evidence_checked": "src/core/runtime.js:425-455",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c9e255c12cc6"
+     },
+     "status": "false-positive",
+     "note": "Same deny-list of secret file names used to exclude files from deployment archives; nothing is read or sent.",
+     "evidence_checked": "src/core/runtime.js:440-455",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e02311c6b8a4"
+     },
+     "status": "false-positive",
+     "note": "This is a deny-list (isSecretFile) used when archiving a project for deployment: files such as .env, .npmrc and private keys are skipped so they are not uploaded. The names are not read.",
+     "evidence_checked": "src/core/runtime.ts:465-495 (mirrors runtime.js)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "182551a0fd9c"
+     },
+     "status": "false-positive",
+     "note": "Same deny-list of secret file names used to exclude files from deployment archives; nothing is read or sent.",
+     "evidence_checked": "src/core/runtime.ts:480 (mirrors runtime.js)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fc59c2367bbc"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/skills.js:63",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "20e38aa9915d"
+     },
+     "status": "false-positive",
+     "note": "Text inside a string constant (agent instructions, bundled skill text or a tool parameter description) that mentions credential files such as .env; the code does not read any credential file at this location.",
+     "evidence_checked": "src/core/skills.ts:77",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f20f1243b870"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips node_modules, .git and secret files (.env, keys, credentials). It is documentation, not credential access.",
+     "evidence_checked": "src/core/tools/all.js:75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a33210cfac3c"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/all.ts:95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7cedfb4e4c84"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/hosting.js:75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ef8f29a5ed62"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter description stating that the deploy archive skips secret files. Documentation only.",
+     "evidence_checked": "src/core/tools/hosting.ts:95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-azure-mcp-f26559": {
+   "name": "@azure/mcp",
+   "summary": "Microsoft's Azure MCP launcher; its postinstall only checks that the matching platform binary package is installed.",
+   "findings": [
+    {
+     "match": {
+      "key": "d2fdec87ed41"
+     },
+     "status": "expected-behaviour",
+     "note": "The postinstall script only resolves the platform-specific package (for example @azure/mcp-linux-x64) and prints a troubleshooting link if it is missing. It makes no network calls and runs nothing else.",
+     "evidence_checked": "package.json:43-45; scripts/post-install-script.js:1-22",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-sentry-mcp-server-e1dcaf": {
+   "name": "@sentry/mcp-server",
+   "summary": "Sentry's MCP server, shipped as one 3.9 MB bundle; the flags are an embedded Sentry SDK worker, a scanner budget limit, CLI help text and ordinary parameter descriptions.",
+   "findings": [
+    {
+     "match": {
+      "key": "a27601f4b704"
+     },
+     "status": "false-positive",
+     "note": "The 4228-character base64 literal decodes to the bundled @sentry/node local-variables worker script (header '@sentry/node 11.12.0'), which is the Sentry SDK's own error-capture helper.",
+     "evidence_checked": "dist/sentry-mcp.cjs:151",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "53b95c8ebca4"
+     },
+     "status": "false-positive",
+     "note": "The scanner's analysis budget was exceeded because the bundle is about 3.9 MB; this reflects file size, not behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs:151",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "eaea17fac148"
+     },
+     "status": "false-positive",
+     "note": "The line is a bundled command-line parser containing user help text that suggests running from a directory with a Sentry DSN in .env files. No credential file is read at this location.",
+     "evidence_checked": "dist/sentry-mcp.cjs:25",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "4801c0a0014f"
+     },
+     "status": "false-positive",
+     "note": "Same bundled command-line parser and help text as the credential-access flag; no secrets are read or sent.",
+     "evidence_checked": "dist/sentry-mcp.cjs:25",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "335df0ef622c"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f01fb8b34e63"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "71e830329302"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "21ed2d7d95af"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a0054750464f"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "286624521fe4"
+     },
+     "status": "false-positive",
+     "note": "Tool parameter descriptions for Sentry API arguments (for example start and end given as an alternative to statsPeriod, or project taking precedence over project_id). They describe how arguments combine and do not alter other tools' behaviour.",
+     "evidence_checked": "dist/sentry-mcp.cjs (tool definitions, grep of descriptions)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-agentation-mcp-25c21c": {
+   "name": "agentation-mcp",
+   "summary": "A setup and server CLI that checks for the user's local Claude Code config to register or verify its own MCP entry; the file is not sent anywhere.",
+   "findings": [
+    {
+     "match": {
+      "key": "53a7bc28b55d"
+     },
+     "status": "expected-behaviour",
+     "note": "The setup wizard builds the path ~/.claude.json and only checks whether it exists, printing a found or not-found message before running 'claude mcp add' for this server.",
+     "evidence_checked": "dist/cli.js:2734-2790",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "12c4b77c26fd"
+     },
+     "status": "expected-behaviour",
+     "note": "The path is only tested for existence in the wizard; the doctor command parses it locally to check for an 'agentation' MCP entry and prints pass or warn. No content from it is transmitted.",
+     "evidence_checked": "dist/cli.js:2746-2751, 2836-2860",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-launchdarkly-mcp-server-2d7863": {
+   "name": "@launchdarkly/mcp-server",
+   "summary": "One low-signal match inside a bundled copy of the 'debug' logging library.",
+   "findings": [
+    {
+     "match": {
+      "key": "5f8d14013ba4"
+     },
+     "status": "false-positive",
+     "note": "The flagged line is in the bundled 'debug' npm library (body-parser dependency), which reads only environment variables starting with DEBUG_ to configure logging. No credential is read or sent anywhere here.",
+     "evidence_checked": "bin/mcp-server.js:15520-15540",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-postgres-mcp-748f15": {
+   "name": "postgres-mcp",
+   "summary": "The only finding is a README install instruction for uv.",
+   "findings": [
+    {
+     "match": {
+      "key": "a22d36bdf454"
+     },
+     "status": "expected-behaviour",
+     "note": "This is a documentation line in the package description showing the standard uv installer command for developers setting up from source. The package code does not run it.",
+     "evidence_checked": "PKG-INFO:620-630",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-lean-lsp-mcp-3bc5bb": {
+   "name": "lean-lsp-mcp",
+   "summary": "README install instructions for uv, and an environment copy passed to the package's own lake subprocess.",
+   "findings": [
+    {
+     "match": {
+      "key": "0d231e247d13"
+     },
+     "status": "expected-behaviour",
+     "note": "This is a README line telling users how to install uv with its official installer. It is documentation only and is not executed by the package.",
+     "evidence_checked": "PKG-INFO:62-68",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2893551af06d"
+     },
+     "status": "expected-behaviour",
+     "note": "The same README install instruction for uv, duplicated in the egg-info metadata copy. It is documentation only.",
+     "evidence_checked": "src/lean_lsp_mcp.egg-info/PKG-INFO:67 (same text as PKG-INFO:67)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a4d58c2111fd"
+     },
+     "status": "false-positive",
+     "note": "The copy of os.environ is used only as the environment for the 'lake' build commands that the Loogle helper launches itself (with LAKE_ARTIFACT_CACHE set to false). It is not sent over the network.",
+     "evidence_checked": "src/lean_lsp_mcp/loogle.py:255-300",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-mongodb-mcp-server-5b8a21": {
+   "name": "mongodb-mcp-server",
+   "summary": "Re-exports of a 'Keychain' class name from the library entry points matched a credential keyword.",
+   "findings": [
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "dist/**/*"
+     },
+     "status": "false-positive",
+     "note": "These lines re-export the 'Keychain' symbol (an in-memory registry of secret values, used to redact them from logs) from @mongodb-js/mcp-core in the library entry points. They do not read any OS keychain or credential file.",
+     "evidence_checked": "dist/esm/lib.js:19, dist/esm/web.js:4, dist/cjs/lib.js:3, dist/cjs/web.js:3, and the matching .d.ts files",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-nx-mcp-34f7ae": {
+   "name": "nx-mcp",
+   "summary": "A single 3 MB bundled file; the code reads Nx Cloud tokens from the user's workspace and sends them to the Nx Cloud API, plus anonymous usage analytics, with no sign of secrets being sent elsewhere.",
+   "findings": [
+    {
+     "match": {
+      "key": "59a765678383"
+     },
+     "status": "expected-behaviour",
+     "note": "The scanner reports that it stopped its flow analysis on this large minified bundle (about 3 MB, mostly on one line). This is a scanner limit, not behaviour of the package.",
+     "evidence_checked": "main.js (size/structure check)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e4124235e34b"
+     },
+     "status": "false-positive",
+     "note": "The match is in the bundled dependency code on this long line. The only credential-like values the package reads are NX_CLOUD_AUTH_TOKEN / NX_CLOUD_ACCESS_TOKEN (environment or the workspace's nx-cloud.env file), which are used for the Nx Cloud integration. No SSH, cloud-provider or browser credential files are read.",
+     "evidence_checked": "main.js: strings near NX_CLOUD_ACCESS_TOKEN, nx-cloud.env, XJ=\"https://cloud.nx.app\"; full list of process.env reads",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6b4b78cfa122"
+     },
+     "status": "false-positive",
+     "note": "The rule paired environment access with network calls inside a bundle that contains Express, undici, dotenv and similar libraries. The network destinations are the Nx Cloud API (cloud.nx.app or a URL configured in the workspace), where the workspace's own Nx Cloud token is used as the auth header for Nx Cloud queries, and Google Analytics telemetry that sends only editor, OS and version fields. The environment is not enumerated or uploaded.",
+     "evidence_checked": "main.js: string-search of all http(s) hosts, process.env.* reads, google-analytics _post() payload, Nx Cloud token helpers",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-ha-mcp-8d09c8": {
+   "name": "ha-mcp",
+   "summary": "Findings are install instructions in docs, .env-file mentions, vendored FastMCP/MCP SDK CLI code, and tool descriptions that refer to the server's own skill-guide tool.",
+   "findings": [
+    {
+     "match": {
+      "key": "8d159282532c"
+     },
+     "status": "expected-behaviour",
+     "note": "Documentation in the package description showing a macOS install script command for users. The package code does not run it.",
+     "evidence_checked": "PKG-INFO:189-192",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8a15a19271a2"
+     },
+     "status": "false-positive",
+     "note": "Help text printed on a missing-configuration error that mentions creating a .env file. No file is read at this line.",
+     "evidence_checked": "src/ha_mcp/__main__.py:190-195",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3d6d77b4c006"
+     },
+     "status": "expected-behaviour",
+     "note": "The server loads its own configuration from a .env file in the project directory (name selectable via HAMCP_ENV_FILE) to get its Home Assistant URL and token. The values are used for the user's own Home Assistant connection.",
+     "evidence_checked": "src/ha_mcp/config_settings.py:25-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ac49763f282f"
+     },
+     "status": "expected-behaviour",
+     "note": "The vendored FastMCP library reads its own settings from a .env file named by FASTMCP_ENV_FILE. This is standard settings loading.",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/settings.py:19",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8066a0ef3dcf"
+     },
+     "status": "false-positive",
+     "note": "A console message in the vendored FastMCP CLI listing places searched for MCP servers; it only prints text.",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/client.py:1025-1032",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "768c498ed22c"
+     },
+     "status": "expected-behaviour",
+     "note": "The vendored FastMCP CLI discovery command reads ~/.claude.json to list MCP servers configured for Claude Code. It is a local developer command; the results are printed and not sent anywhere.",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/discovery.py:160-185",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a1d860c1685f"
+     },
+     "status": "false-positive",
+     "note": "The vendored FastMCP installer checks whether a 'claude' executable exists at ~/.claude/local/claude. It checks for the binary path only and reads no credentials.",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/claude_code.py:36-50",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6a752fcceec3"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/claude_desktop.py:173",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5000634f8698"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/cursor.py:262",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e42e4e6cf851"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/gemini_cli.py:186",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "4868b0d3a8d7"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/goose.py:163",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "03e1b614dfab"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/mcp_json.py:134",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "73489a8ae9bd"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored FastMCP installer CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/cli/install/shared.py:287",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "617a8ef95a01"
+     },
+     "status": "expected-behaviour",
+     "note": "An error message in the vendored FastMCP code telling the user how to install uv. It is only text and is not executed.",
+     "evidence_checked": "src/ha_mcp/_vendor/fastmcp/utilities/mcp_server_config/v1/environments/uv.py:115-123",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "21672dc2a284"
+     },
+     "status": "false-positive",
+     "note": "This line is help text or a CLI option description mentioning a .env file; it does not read secrets here. (vendored MCP SDK CLI)",
+     "evidence_checked": "src/ha_mcp/_vendor/mcp/cli/cli.py:405",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "535def49f059"
+     },
+     "status": "false-positive",
+     "note": "The environment copy is passed only to the MCP Inspector (npx) subprocess started by the vendored MCP SDK 'dev' command. It is not sent over the network.",
+     "evidence_checked": "src/ha_mcp/_vendor/mcp/cli/cli.py:270-290",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a9ca4d5b929e"
+     },
+     "status": "false-positive",
+     "note": "A docstring explaining that environment variables override the settings file. No credential is read at this line.",
+     "evidence_checked": "src/ha_mcp/settings_ui/_handlers_backups.py:455-465",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "tool-shadowing",
+      "file": "tool ha_config_set_*"
+     },
+     "status": "expected-behaviour",
+     "note": "These tool descriptions tell the model to call the server's own 'ha_get_skill_guide' tool (or consult local skills) before writing Home Assistant configuration. It refers to a tool in the same server and does not redirect other tools.",
+     "evidence_checked": "src/ha_mcp/tools/tools_config_automations.py:564, tools_config_dashboards.py:2538, tools_config_scenes.py:699, tools_config_helpers.py:707, tools_config_scripts.py:558, tools_yaml_config.py:387",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "dec839b0ed55"
+     },
+     "status": "false-positive",
+     "note": "The phrase 'instead of entity_id' just describes a parameter alternative (unique_id) of ha_get_entity. It is not an instruction to the model.",
+     "evidence_checked": "src/ha_mcp/tools/tools_entities.py:1832-1842",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-aikidosec-mcp-1a6106": {
+   "name": "@aikidosec/mcp",
+   "summary": "The environment copy goes only to the Aikido local scanner that the package downloads and starts; the Aikido API key is sent to Aikido hosts only.",
+   "findings": [
+    {
+     "match": {
+      "key": "29fd005059b2"
+     },
+     "status": "expected-behaviour",
+     "note": "The match is on the minified bundle line. Credential-related text in the package is the setup guidance (AIKIDO_API_KEY, OS keychain via keytar) and help text that suggests persisting the key in a shell profile or ~/.claude/settings.json at the user's choice. The key is sent only as a Bearer token to Aikido API hosts.",
+     "evidence_checked": "dist/index.js: strings near AIKIDO_API_KEY, 'aikido-mcp' keychain entry, Authorization header helper, README.md",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "da99a0039045"
+     },
+     "status": "false-positive",
+     "note": "The spread of process.env is used only for the environment of the Aikido Local Scanner child process, which the package downloads from Aikido's S3 bucket and starts itself, with AIKIDO_API_KEY and AIKIDO_API_URL added. Other process.env reads are for the 'debug' library, logging and the API key. No environment dump is sent to a remote host.",
+     "evidence_checked": "dist/index.js: LN() local-scanner runner (env={...process.env,AIKIDO_API_KEY,...}), all http(s) hosts, Authorization helper",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-sveltejs-mcp-3ee72d": {
+   "name": "@sveltejs/mcp",
+   "summary": "Bundled debug library reads DEBUG_* variables; the oversized file is a source map.",
+   "findings": [
+    {
+     "match": {
+      "key": "4f067f0bab47"
+     },
+     "status": "false-positive",
+     "note": "The file is a 25 MB JavaScript source map (JSON with names and mappings), not executable code; only the size limit was hit. The head of the file is standard source-map fields.",
+     "evidence_checked": "dist/handlers-C6KsHmHb.mjs.map:head",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "58c18819b5b8"
+     },
+     "status": "false-positive",
+     "note": "The scanner ran out of analysis budget on a large bundle. The flagged region is the bundled 'debug' npm package.",
+     "evidence_checked": "dist/handlers-C6KsHmHb.mjs:10240-10270",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "4101eb4ca191"
+     },
+     "status": "false-positive",
+     "note": "This is the bundled 'debug' package building its options from environment variables whose names start with DEBUG_. It reads no other variables and sends nothing anywhere.",
+     "evidence_checked": "dist/handlers-C6KsHmHb.mjs:10240-10270",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-sap-ux-fiori-mcp-server-4a4d98": {
+   "name": "@sap-ux/fiori-mcp-server",
+   "summary": "SAP's Fiori MCP server: a large esbuild bundle of SAP and Microsoft libraries; the only outbound data is opt-out usage telemetry via Azure Application Insights, and no secret-reading and sending was found.",
+   "findings": [
+    {
+     "match": {
+      "key": "09637613ff5d"
+     },
+     "status": "expected-behaviour",
+     "note": "A 1.3 MB binary of embedding vectors for the bundled documentation search (model all-MiniLM-L6-v2, 859 vectors per metadata.json). Not code and not scanned for content.",
+     "evidence_checked": "dist/data/embeddings/metadata.json; dist/data/embeddings/embeddings.bin (file type)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1998ca9d7e6e"
+     },
+     "status": "false-positive",
+     "note": "A 512x512 PNG icon; binary data triggers the NUL-byte skip.",
+     "evidence_checked": "assets/icon.png (file type)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6cc75bddd968"
+     },
+     "status": "false-positive",
+     "note": "Line 265 of the bundle holds the bundled form-data and debug libraries. The only environment access is process.env.DEBUG and DEBUG_* variables, and no credential files are read.",
+     "evidence_checked": "dist/index.js:265 (all env and credential-pattern matches in the line)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "eb958099b3bd"
+     },
+     "status": "expected-behaviour",
+     "note": "Line 17558 is the bundled Azure Monitor / Application Insights SDK. It contains Application Insights ingestion endpoints and a lookup of the Azure instance metadata address (169.254.169.254) to detect the host environment. This is telemetry the README says is on by default and can be disabled with ~/.fioritools/telemetrysettings.json or SAP_UX_FIORI_TOOLS_DISABLE_TELEMETRY=true.",
+     "evidence_checked": "dist/index.js:17558 (full-line pattern search); dist/index.js telemetry client code; README.md:295-323",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "89214fe03462"
+     },
+     "status": "false-positive",
+     "note": "The line combines the bundled form-data and debug libraries. Environment reads are limited to DEBUG and DEBUG_* names, and no read secrets reach a network call.",
+     "evidence_checked": "dist/index.js:265",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c640053cf00c"
+     },
+     "status": "expected-behaviour",
+     "note": "The 15 MB file is a single esbuild bundle of the server and its dependencies, too large for the parser, so only regex rules ran. I searched it for environment, credential and host patterns and found only the debug, form-data and Azure telemetry libraries described in the other entries.",
+     "evidence_checked": "dist/index.js:265, 17558; package.json",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "58ffe1b78408"
+     },
+     "status": "false-positive",
+     "note": "A JSONL record of documentation text for the bundled search index, describing ui5-deploy.yaml and recommending env:VAR references and a .env file for credentials. It is reference text for users and not an instruction to the agent to read secrets.",
+     "evidence_checked": "dist/data/embeddings/records.jsonl:10",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "501e7d28254c"
+     },
+     "status": "false-positive",
+     "note": "The same documentation record on UI5 deployment configuration. It mentions a .env file and credential fields as documentation only, with no code and no network behaviour.",
+     "evidence_checked": "dist/data/embeddings/records.jsonl:10",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-npm-ui5-mcp-server-3383c5": {
+   "name": "@ui5/mcp-server",
+   "summary": "Project template files whose .gitignore lists .env.",
+   "findings": [
+    {
+     "match": {
+      "key": "9724f0d23958"
+     },
+     "status": "false-positive",
+     "note": "This is a template .gitignore for generated projects that excludes .env from version control. Nothing is read.",
+     "evidence_checked": "resources/template-js/_.gitignore:10-20",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b15695cf6a14"
+     },
+     "status": "false-positive",
+     "note": "Template .gitignore for generated TypeScript projects that excludes .env from version control. Nothing is read.",
+     "evidence_checked": "resources/template-ts/_.gitignore:14-20",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-awslabs-aws-api-mcp-server-0b6aec": {
+   "name": "awslabs-aws-api-mcp-server",
+   "summary": "An exception docstring mentions the AWS credentials file path as troubleshooting advice.",
+   "findings": [
+    {
+     "match": {
+      "key": "a484bdb52f3f"
+     },
+     "status": "false-positive",
+     "note": "The text is a docstring on an error class listing causes and fixes, including checking ~/.aws/credentials. It does not read that file. It also says to inform the user of the failure.",
+     "evidence_checked": "awslabs/aws_api_mcp_server/core/common/errors.py:645-670",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "mcp-pypi-mcp-proxy-3e6bf4": {
+   "name": "mcp-proxy",
+   "summary": "Both findings are in the test suite, which only checks environment passing to a child process.",
+   "findings": [
+    {
+     "match": {
+      "key": "892ee84efdb5"
+     },
+     "status": "false-positive",
+     "note": "A test assertion that the proxy's environment-handling option passes a test token and a keep-value to the child server parameters. It uses fixed dummy values and makes no network call.",
+     "evidence_checked": "tests/test_cli_arguments.py:225-250",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0997d74f3816"
+     },
+     "status": "false-positive",
+     "note": "Test helper that copies the environment, sets a test token and launches the proxy as a local subprocess on 127.0.0.1. Nothing is sent off the machine.",
+     "evidence_checked": "tests/test_mcp_server.py:270-310",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "skill-anthropics-skills-skills-claude-api-b91236": {
+   "name": "claude-api",
+   "summary": "A diagnostic script's regex list mentions environment-variable access.",
+   "findings": [
+    {
+     "match": {
+      "key": "a80ecd6508fb"
+     },
+     "status": "false-positive",
+     "note": "The line is a regular expression in a table of patterns the script searches for in the user's own code, to find values interpolated into prompts. The script does not read environment variables and has no network code.",
+     "evidence_checked": "shared/preserved-thinking-migration/prefix_diff.py:1385-1400 and a grep for environ/requests/urllib/socket",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "skill-leonxlnx-taste-skill-skills-taste-skill-f3b29d": {
+   "name": "taste-skill",
+   "summary": "Findings are the ngrok logo entry in a bundled icon set.",
+   "findings": [
+    {
+     "match": {
+      "key": "0d098d969e6f"
+     },
+     "status": "false-positive",
+     "note": "A demo HTML page showing icon chips; 'ngrok' is a logo name and file name. The only external URLs are Google Fonts and the SVG namespace.",
+     "evidence_checked": "assets/icons/demo.html:49 and URL search of the file",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "465e07b1225e"
+     },
+     "status": "false-positive",
+     "note": "An icon index entry whose id and name are 'ngrok' (a logo for the ngrok brand). It is data, not a network reference.",
+     "evidence_checked": "assets/icons/index.json:2838-2850",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3bfc31f08592"
+     },
+     "status": "false-positive",
+     "note": "Icon credits entry for the ngrok SVG file, with licence and source repository (gilbarbara/logos). It is data, not a network reference.",
+     "evidence_checked": "assets/icons/demo/icons-credits.json:3340-3350",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-mattpocock-skills-d1dbe9": {
+   "name": "mattpocock-skills",
+   "summary": "A wizard script template that writes user-entered values to a local .env file.",
+   "findings": [
+    {
+     "match": {
+      "key": "5c49dc957aaa"
+     },
+     "status": "expected-behaviour",
+     "note": "The template sets ENV_FILE to .env by default and offers a write_env helper that stores values the user types into it, creating it with mode 0600. It can also pass a value to 'gh secret set' when the wizard author calls that. It does not read other credentials.",
+     "evidence_checked": "skills/engineering/wizard/template.sh:26, 92-165",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-dietrichgebert-ponytail-1cb7b1": {
+   "name": "ponytail",
+   "summary": "A coding-style plugin whose only outbound call is an opt-in, user-configured webhook (off by default); the scanner hits are benchmark scripts, tests and PNG images.",
+   "findings": [
+    {
+     "match": {
+      "key": "107f2c8fdfb9"
+     },
+     "status": "false-positive",
+     "note": "A PNG icon; binary image data (NUL bytes are normal for PNG), not code.",
+     "evidence_checked": "assets/codex-icon.png (file type check)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "433a3e23a8f3"
+     },
+     "status": "false-positive",
+     "note": "A PNG logo image; binary image data (NUL bytes are normal for PNG), not code.",
+     "evidence_checked": "assets/logo.png (file type check)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "da2753762fe4"
+     },
+     "status": "expected-behaviour",
+     "note": "A config-field description for an optional webhook token. The webhook is empty by default; if the user sets a URL, hooks/band/metrics.ts sends the task's metrics row as JSON to it, and refuses plain http unless the target is local.",
+     "evidence_checked": "plugin.json:20-40; hooks/band/metrics.ts:296-310; hooks/band/register.tsx:154-180",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "45a39116cf92"
+     },
+     "status": "expected-behaviour",
+     "note": "Docstring in a developer benchmark script saying the LLM judge reads an Anthropic API key from a local .env or the environment. It is not part of the plugin's runtime hooks.",
+     "evidence_checked": "benchmarks/agentic/complete.py:1-30; benchmarks/agentic/judge.py:36-95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1a4751987077"
+     },
+     "status": "expected-behaviour",
+     "note": "Docstring in the benchmark judge. load_key() reads ANTHROPIC_API_KEY from a local .env or the environment and sends it only as the x-api-key header to api.anthropic.com, or falls back to the claude CLI.",
+     "evidence_checked": "benchmarks/agentic/judge.py:10-50,62-95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "75c89b3bbc54"
+     },
+     "status": "expected-behaviour",
+     "note": "The benchmark judge reads an Anthropic key and posts to api.anthropic.com, the key's own provider. The only other network call in the file is that same API; nothing is sent to a third party.",
+     "evidence_checked": "benchmarks/agentic/judge.py:36-95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c363c3ab24e8"
+     },
+     "status": "false-positive",
+     "note": "Copies the environment to start the benchmark's own generated node server on a random port; the harness then talks to 127.0.0.1 only.",
+     "evidence_checked": "benchmarks/agentic/tasks.py:530-560",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b8a5bdcacbc0"
+     },
+     "status": "false-positive",
+     "note": "The environment copy is passed to a local child process, and the only HTTP requests go to 127.0.0.1. Nothing leaves the machine.",
+     "evidence_checked": "benchmarks/agentic/tasks.py:530-560",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b10de32011a4"
+     },
+     "status": "false-positive",
+     "note": "Reads HOME or USERPROFILE to locate the plugin's own '.ponytail-band' flag file under the Claude config directory. No credentials are read.",
+     "evidence_checked": "hooks/band/register.tsx:75-95",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5c26686ad102"
+     },
+     "status": "false-positive",
+     "note": "Test code that mocks a read of the plugin's own flag file at a fake /home/u path.",
+     "evidence_checked": "tests/band.test.tsx:288-298",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "55cd2d57c748"
+     },
+     "status": "false-positive",
+     "note": "Test code that points HOME at a temporary directory before running the hook scripts.",
+     "evidence_checked": "tests/hooks-windows.test.js:110-120",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "dfd8dba66abc"
+     },
+     "status": "false-positive",
+     "note": "Test code that checks the path of the plugin's own '.ponytail-active' state file in a temporary home.",
+     "evidence_checked": "tests/hooks.test.js:58-70",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-thedotmack-claude-mem-plugin-b07831": {
+   "name": "claude-mem",
+   "summary": "A local memory plugin that records tool use and prompts to ~/.claude-mem; its network calls are opt-in sync and Telegram, configured model providers, and documented default-on anonymous telemetry, and it reads the Claude Code login to start its own observer.",
+   "findings": [
+    {
+     "match": {
+      "key": "65047d3e1218"
+     },
+     "status": "expected-behaviour",
+     "note": "Launcher shim: it only searches the local Claude config and plugin cache for the plugin's own mcp-server.cjs and loads it. It reads env vars to find directories, not credentials, and fetches nothing.",
+     "evidence_checked": "plugin/.mcp.json:1-15",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bd6217bd48e9"
+     },
+     "status": "expected-behaviour",
+     "note": "The inline script only resolves a local install directory and require()s the plugin's own mcp-server.cjs from disk. It makes no network call and sends no environment data.",
+     "evidence_checked": "plugin/.mcp.json:1-15",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bbbced421d3f"
+     },
+     "status": "expected-behaviour",
+     "note": "Windows launcher shim in the Codex hook file. It locates the already-installed plugin under the Claude config directory and runs its own bun-runner.js with worker-service.cjs; nothing is downloaded.",
+     "evidence_checked": "hooks/codex-hooks.json:5-20",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "9a0a7d583192"
+     },
+     "status": "false-positive",
+     "note": "Reads HOME and CLAUDE_MEM_DATA_DIR to find the plugin's own settings.json for auto-clear options. No credentials are read.",
+     "evidence_checked": "hooks/hooks-module.js:365-395",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d46bf0c4125d"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/context-generator.cjs:6 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "69b18f6eea54"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/context-read-worker.cjs:8 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "90c7eaa8a660"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/hook-service.cjs:9 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "825941fd8eba"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/mcp-server.cjs:7 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7adad27e2b22"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/transcript-watcher.cjs:7 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8a9d461d4d65"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/work-view-read-worker.cjs:7 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0deb0bc22839"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/worker-service.cjs:81 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "cb427db169df"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "sqlite/SessionStore.js:7 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "59d54b8c6576"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "sqlite/observations/files.js:4 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3ddb9fc459db"
+     },
+     "status": "false-positive",
+     "note": "Minified esbuild bundle. The matched snippet is the bundler's file-write and path helpers plus an os/env lookup for the data directory; no credential store is read by this match. Reading and storing local session data in ~/.claude-mem is the memory tool's purpose.",
+     "evidence_checked": "scripts/server-service.cjs:4 (surrounding code)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fc5b9213cc82"
+     },
+     "status": "expected-behaviour",
+     "note": "Minified bundle containing both env access and network code (cmem.ai cloud sync, which is off unless a hub URL is set). Hosts are the plugin's own services and configured providers; no environment dump is sent.",
+     "evidence_checked": "scripts/context-generator.cjs:6 (hosts listed across file)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "527d22e96403"
+     },
+     "status": "expected-behaviour",
+     "note": "Minified bundle with both env access and a sync client; sync is off unless configured. No environment dump is sent anywhere.",
+     "evidence_checked": "scripts/context-read-worker.cjs:8",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8900bf5d92fb"
+     },
+     "status": "expected-behaviour",
+     "note": "Hook bundle includes aggregated anonymous usage telemetry to PostHog (on by default, documented in the README with a disable command), and optional cloud sync. The telemetry payload is an allowlist of counts and version fields, not prompts or credentials.",
+     "evidence_checked": "scripts/hook-service.cjs:9 (telemetry allowlist near b0=[...])",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a579044e3436"
+     },
+     "status": "expected-behaviour",
+     "note": "MCP server bundle with env access and an optional cloud-sync client and PostHog telemetry. No code sends environment contents or credentials off the machine.",
+     "evidence_checked": "scripts/mcp-server.cjs:7",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b0cd3a3224ce"
+     },
+     "status": "expected-behaviour",
+     "note": "Server bundle with LLM provider clients (Anthropic, OpenRouter, Gemini) that send the user's configured provider key to that provider. No environment dump is sent elsewhere.",
+     "evidence_checked": "scripts/server-service.cjs:4",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "daa2de66fe68"
+     },
+     "status": "expected-behaviour",
+     "note": "Transcript watcher bundle includes PostHog telemetry (documented, on by default, allowlisted counts) and a sync client. No environment dump is sent.",
+     "evidence_checked": "scripts/transcript-watcher.cjs:7",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "40aa82585b12"
+     },
+     "status": "expected-behaviour",
+     "note": "Work-view read worker bundle contains a sync client (off unless configured); no environment contents are sent.",
+     "evidence_checked": "scripts/work-view-read-worker.cjs:7",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "96c60a5c4ad2"
+     },
+     "status": "expected-behaviour",
+     "note": "The worker bundle reads the Claude Code OAuth token (macOS keychain, Windows credential store, libsecret or .credentials.json) and puts it into the environment of the local Claude subprocess it starts for its observer. It also sends session summaries to Telegram when the user configures a bot token, and optional telemetry and sync. The token is not posted to any other host in the code read.",
+     "evidence_checked": "scripts/worker-service.cjs:81; 1978139-1985900 (OAuth helpers, byte offsets); 3628 (Telegram)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "07b2e1ced549"
+     },
+     "status": "false-positive",
+     "note": "The match is an error-message string telling the user to install uv with 'curl ... | sh' or brew; the plugin does not run it.",
+     "evidence_checked": "scripts/worker-service.cjs:964 (string at column ~33900)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c1481ba176a9"
+     },
+     "status": "false-positive",
+     "note": "A scanner limit notice, not a finding about the code; the file was too large for the flow analysis.",
+     "evidence_checked": "scripts/worker-service.cjs:124",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "13c7fdcbe2c3"
+     },
+     "status": "expected-behaviour",
+     "note": "The line holds an SQL statement and, further along, a Telegram sendMessage helper that posts a wrap-up text to api.telegram.org with a bot token and chat id the user sets (configure-telegram.mjs). It is a notification feature, off unless configured.",
+     "evidence_checked": "scripts/worker-service.cjs:3628; skills/mode-creator/scripts/configure-telegram.mjs:100-215",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5016939e861b"
+     },
+     "status": "expected-behaviour",
+     "note": "The agent-cost-report skill reads Claude Code transcripts under ~/.claude/projects to total token usage, which is its stated purpose. The optional classifier is off by default and sends scrubbed excerpts to OpenRouter only with --classify and the user's OPENROUTER_API_KEY.",
+     "evidence_checked": "skills/agent-cost-report/scripts/acr/transcripts.py:1-40; classify.py:1-60; SKILL.md:128",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "708a8f603a65"
+     },
+     "status": "expected-behaviour",
+     "note": "Setup script for Telegram notifications. It prompts for a BotFather token, calls api.telegram.org with it and saves it into claude-mem settings; the user supplies the token and the script runs only when invoked.",
+     "evidence_checked": "skills/mode-creator/scripts/configure-telegram.mjs:100-215",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f814b60068d6"
+     },
+     "status": "false-positive",
+     "note": "A bundled path table that names the data-dir .env file used for the plugin's own provider keys. No file is read at that line.",
+     "evidence_checked": "skills/request-progress/scripts/request-groups.mjs:480-505",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "37cbf31b1dd8"
+     },
+     "status": "expected-behaviour",
+     "note": "Bundled copy of the worker's settings code, which loads ~/.claude-mem/.env for the user's own LLM provider keys and uses them for that provider's API calls. No other host receives them.",
+     "evidence_checked": "skills/request-progress/scripts/request-groups.mjs:500 and env-loading code",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5d142d89bbc7"
+     },
+     "status": "false-positive",
+     "note": "Minified React viewer UI; the match is a bundled iterator helper error string. The bundle has no filesystem or credential-path access.",
+     "evidence_checked": "ui/viewer-bundle.js:11",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f4741b8f6968"
+     },
+     "status": "false-positive",
+     "note": "Minified React viewer UI with no process.env, file or credential access; its URLs are provider names in settings labels.",
+     "evidence_checked": "ui/viewer-bundle.js:11",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3e3b63da50ec"
+     },
+     "status": "false-positive",
+     "note": "The long literal is a compressed character-class lookup table bundled with the Tailwind/CSS tooling, not an encoded payload.",
+     "evidence_checked": "ui/work-view/assets/ui-message-QJhjFBnC.js:1",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7fc213c19ece"
+     },
+     "status": "false-positive",
+     "note": "Minified front-end bundle; no filesystem or credential access found in it.",
+     "evidence_checked": "ui/work-view/assets/ui-message-QJhjFBnC.js:1",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2bef1c4ddfa2"
+     },
+     "status": "false-positive",
+     "note": "Front-end bundle whose only hostnames are provider names in UI text; it makes no calls that send environment data.",
+     "evidence_checked": "ui/work-view/assets/ui-message-QJhjFBnC.js:1",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5898cb4d6fee"
+     },
+     "status": "expected-behaviour",
+     "note": "The memory plugin registers hooks on every tool use (PostToolUse '*') plus prompts, session start/stop; each runs the 'claude-mem' command to record observations locally. Recording activity is what a memory plugin does.",
+     "evidence_checked": "hooks/hooks.json:1-120",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "789d9052653c"
+     },
+     "status": "expected-behaviour",
+     "note": "The bundled mcp-search server starts through an inline `node -e` launcher that loads scripts/mcp-server.cjs, which Bawwab couldn't trace, so that server wasn't scanned as its own target. We checked that file for outbound hosts and credential paths only, not line by line.",
+     "evidence_checked": "plugin/.mcp.json; scripts/mcp-server.cjs (hosts and paths only)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-thedotmack-claude-mem-cowork-0017bd": {
+   "name": "cmem-pro",
+   "summary": "The cloud-side CMEM Pro hook set: with an API key configured, it sends redacted prompts and tool activity to cmem.ai, and does nothing otherwise or when a local claude-mem is installed.",
+   "findings": [
+    {
+     "match": {
+      "key": "350a8f2ea238"
+     },
+     "status": "false-positive",
+     "note": "Reads CLAUDE_CONFIG_DIR/HOME to check settings.json and installed_plugins.json for whether the local claude-mem plugin is installed; no credentials are read.",
+     "evidence_checked": "cowork/scripts/cmem-hook.mjs:590-625",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1e46f9ac3dda"
+     },
+     "status": "expected-behaviour",
+     "note": "Same install-detection lookup. The hook (inert without an API key) sends redacted prompts and tool payloads to cmem.ai or a configured apiBase, but only when no local claude-mem is installed, and sends no environment data.",
+     "evidence_checked": "scripts/cmem-hook.mjs:41-75,263-345,405-430,590-625",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5016939e861b"
+     },
+     "status": "expected-behaviour",
+     "note": "Skill reads Claude Code transcripts under ~/.claude/projects to compute token costs; its optional classifier is off by default and needs --classify and the user's OpenRouter key.",
+     "evidence_checked": "skills/agent-cost-report/scripts/acr/transcripts.py:1-40 (identical to claude-mem plugin copy)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b1aa4a8e9093"
+     },
+     "status": "false-positive",
+     "note": "Test code that spawns the hook with a temporary HOME and a loopback API base to check redaction.",
+     "evidence_checked": "test/cmem-hook-redaction.test.mjs:38-50",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1abcd1a58f3c"
+     },
+     "status": "false-positive",
+     "note": "Test runner passes a temporary HOME and a 127.0.0.1 API base with a dummy key to the hook.",
+     "evidence_checked": "test/run-tests.mjs:55-64",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bed7f7ff3cb8"
+     },
+     "status": "expected-behaviour",
+     "note": "A PostToolUse hook on every tool that runs cmem-hook.mjs 'observation'. It captures tool payloads, redacts secret patterns, and sends them to cmem.ai when an API key is configured; with no key it does nothing.",
+     "evidence_checked": "hooks/hooks.json:30-48; scripts/cmem-hook.mjs:263-345,528-545",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-career-ops-hq-career-ops-a4b120": {
+   "name": "career-ops",
+   "summary": "Job-search automation plugin; all 145 findings are .env config loading for user-chosen model APIs, test fixtures, and prompts that forbid reading secrets; no exfiltration found.",
+   "findings": [
+    {
+     "match": {
+      "key": "496442032c84"
+     },
+     "status": "expected-behaviour",
+     "note": "The backup tool's file filter lists .env and .env.* so they are left out of the backup copy; it does not read their contents.",
+     "evidence_checked": "backup.mjs:180-192",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d1fb2a6a7a2d"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads GEMINI_API_KEY from the data-root or working-directory .env with dotenv so the script can call the Gemini API the user configured.",
+     "evidence_checked": "batch-evaluate-gemini.mjs:38-43,158,218",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d37dbe9b7ae7"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads only the CAREER_OPS_PROFILE value from the data-root .env to report which profile is selected; nothing is sent anywhere.",
+     "evidence_checked": "doctor.mjs:138-146",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a2bde4102b21"
+     },
+     "status": "expected-behaviour",
+     "note": "Eval case that asks a sandboxed agent to create a .env file and checks the sandbox, testing the plugin's write guard; no real secrets involved.",
+     "evidence_checked": "evals/record-claude.mjs:895",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "369bb175963f"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads GEMINI_API_KEY from .env with dotenv for the Gemini evaluator; the key is used only for the Gemini request the user runs.",
+     "evidence_checked": "gemini-eval.mjs:70-80,317",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "337c83b45cde"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads only the CAREER_OPS_CLI value from the data-root .env via dotenv.parse.",
+     "evidence_checked": "lib/agent-cli.mjs:12-24",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fba97cb007f3"
+     },
+     "status": "expected-behaviour",
+     "note": "Parses the data-root .env to find browser launch settings (e.g. Playwright executable path); values are cached locally and not sent.",
+     "evidence_checked": "lib/browser-launch.mjs:108-122",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bbd27580c303"
+     },
+     "status": "false-positive",
+     "note": "Error-message text advising the user to set a sandbox env var in the shell or data-root .env; no file is read.",
+     "evidence_checked": "lib/remote-page-browser-check.mjs:84",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "99065f703cc5"
+     },
+     "status": "false-positive",
+     "note": ".env.example is a filename in the updater manifest of shipped files; not a secrets read.",
+     "evidence_checked": "lib/update-manifest.mjs:490",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "169277eade29"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads .env with dotenv; the script talks to a local Ollama server (default localhost:11434) or the OLLAMA_BASE_URL the user sets. No key is sent elsewhere.",
+     "evidence_checked": "ollama-eval.mjs:55-62,128",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "29eddb9ac28b"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads OPENAI_API_KEY from .env and sends it as a Bearer header to the user-chosen OpenAI-compatible endpoint, which is what the script is for.",
+     "evidence_checked": "openai-eval.mjs:60-70,113-139",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "295df198486c"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads OPENAI_API_KEY from .env and sends it as a Bearer header to OPENAI_BASE_URL (default api.openai.com), as documented in its usage text.",
+     "evidence_checked": "openai-tailor.mjs:41,82-103,333",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1881acda1dc0"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads .env beside the script and fills unset process.env keys; the API key goes to openrouter.ai for the model call the user runs.",
+     "evidence_checked": "openrouter-runner.mjs:70-90",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "af245222cd92"
+     },
+     "status": "false-positive",
+     "note": "Only a console hint telling the user to add keys to .env; no file is read.",
+     "evidence_checked": "plugins.mjs:218-225",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d114a30a56d8"
+     },
+     "status": "expected-behaviour",
+     "note": "Warns when a .env sits beside the code instead of the data folder and prints a hint to copy plugin keys; it only checks for existence and prints advice.",
+     "evidence_checked": "plugins/_engine.mjs:180-196",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "23f3bfc010a5"
+     },
+     "status": "false-positive",
+     "note": "Error message telling the user to add APIFY_TOKEN to .env; no file is read at this line.",
+     "evidence_checked": "plugins/apify/index.mjs:178",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "4bafe0ae29bd"
+     },
+     "status": "expected-behaviour",
+     "note": "Error message for missing Gmail OAuth values; the plugin uses env credentials with oauth2.googleapis.com and gmail.googleapis.com only, as the user enables it.",
+     "evidence_checked": "plugins/gmail/index.mjs:28-29,99",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b88249fc6d42"
+     },
+     "status": "false-positive",
+     "note": "Help text about setting a token in the shell rather than .env; no file is read.",
+     "evidence_checked": "plugins/h1b-sponsor/token.mjs:153",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "586d4085b95d"
+     },
+     "status": "expected-behaviour",
+     "note": "Requires NOTION_ACCESS_TOKEN from env and sends it to api.notion.com for the Notion plugin the user enables.",
+     "evidence_checked": "plugins/notion/_notion.mjs:65-73",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "87de1c0f50f4"
+     },
+     "status": "expected-behaviour",
+     "note": "Writes a CAREER_OPS_CLI=<cli> line into the data-root .env, keeping other lines and file mode; no network use.",
+     "evidence_checked": "remember-cli.mjs:20-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "766b8ca6adb7"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads the data-root .env with dotenv so the job scanner can read its configured settings; scanner requests go to job-board APIs.",
+     "evidence_checked": "scan.mjs:106-112",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "818714c74869"
+     },
+     "status": "expected-behaviour",
+     "note": "Test suite code: copies process.env for a local go build child process; no data leaves the machine.",
+     "evidence_checked": "test-all.mjs:2385-2400",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3dd4e801fb34"
+     },
+     "status": "false-positive",
+     "note": ".claude/settings.json appears in a list of user-layer paths the updater must not overwrite; it is not read.",
+     "evidence_checked": "update-system.mjs:375-392",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "386eff801c9c"
+     },
+     "status": "false-positive",
+     "note": ".env.example is a filename in a test fixture list; no secrets are read.",
+     "evidence_checked": "updater-migration-tests.mjs:312",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "920a9edc8836"
+     },
+     "status": "false-positive",
+     "note": "Assertion that .claude/settings.json is covered by the updater's protected-path list; the file is not read.",
+     "evidence_checked": "validate-system-paths-coverage.mjs:178",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "02f103c60635"
+     },
+     "status": "expected-behaviour",
+     "note": "Local web dashboard meter: scans ~/.claude/projects session files for token counts and runs the local claude CLI's /usage; the scanner code has no network calls.",
+     "evidence_checked": "web/src/app/api/usage/route.ts:20-45; web/src/lib/claude-usage-scan.mjs; web/src/lib/claude-plan-usage.mjs",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "199ce473dbfc"
+     },
+     "status": "false-positive",
+     "note": "Prompt text that tells the model not to open or quote .env files or credentials; it restricts access rather than requesting it.",
+     "evidence_checked": "web/src/lib/apply/agent-interpret.ts:80-90",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "94a76e2eb70e"
+     },
+     "status": "false-positive",
+     "note": "Prompt text that tells the model to read no other files and never open or quote .env or credentials.",
+     "evidence_checked": "web/src/lib/apply/answer-prompt.mjs:68-75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "09ad41b30ad8"
+     },
+     "status": "false-positive",
+     "note": "Defines a deny list (Read(**/.env) etc.) passed to the agent CLI so it cannot read secrets.",
+     "evidence_checked": "web/src/lib/apply/planner.ts:45",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c5a76eb2aebe"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads the CAREER_OPS_CLI line from the data-root .env.",
+     "evidence_checked": "web/src/lib/remembered-cli.mjs:15-38",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e962fe286a5a"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads only the CAREER_OPS_PROFILE value from the data-root .env to report which profile is selected; nothing is sent anywhere.",
+     "evidence_checked": "doctor.mjs:138-146",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8e80868715e9"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads .env with dotenv; the script talks to a local Ollama server (default localhost:11434) or the OLLAMA_BASE_URL the user sets. No key is sent elsewhere.",
+     "evidence_checked": "ollama-eval.mjs:55-62,128",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3481757189be"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads OPENAI_API_KEY from .env and sends it as a Bearer header to the user-chosen OpenAI-compatible endpoint, which is what the script is for.",
+     "evidence_checked": "openai-eval.mjs:60-70,113-139",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3d01895f42db"
+     },
+     "status": "expected-behaviour",
+     "note": "Loads OPENAI_API_KEY from .env and sends it as a Bearer header to OPENAI_BASE_URL (default api.openai.com), as documented in its usage text.",
+     "evidence_checked": "openai-tailor.mjs:41,82-103,333",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ef6115fec47b"
+     },
+     "status": "expected-behaviour",
+     "note": "Reads .env beside the script and fills unset process.env keys; the API key goes to openrouter.ai for the model call the user runs.",
+     "evidence_checked": "openrouter-runner.mjs:70-90",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1feed9ed10ab"
+     },
+     "status": "expected-behaviour",
+     "note": "Warns when a .env sits beside the code instead of the data folder and prints a hint to copy plugin keys; it only checks for existence and prints advice.",
+     "evidence_checked": "plugins/_engine.mjs:180-196",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "299d3f64b02d"
+     },
+     "status": "false-positive",
+     "note": "Error message telling the user to add APIFY_TOKEN to .env; no file is read at this line.",
+     "evidence_checked": "plugins/apify/index.mjs:178",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c261313f8041"
+     },
+     "status": "expected-behaviour",
+     "note": "Error message for missing Gmail OAuth values; the plugin uses env credentials with oauth2.googleapis.com and gmail.googleapis.com only, as the user enables it.",
+     "evidence_checked": "plugins/gmail/index.mjs:28-29,99",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "658268783963"
+     },
+     "status": "expected-behaviour",
+     "note": "Requires NOTION_ACCESS_TOKEN from env and sends it to api.notion.com for the Notion plugin the user enables.",
+     "evidence_checked": "plugins/notion/_notion.mjs:65-73",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c19d8543e69d"
+     },
+     "status": "expected-behaviour",
+     "note": "Test suite code: copies process.env for a local go build child process; no data leaves the machine.",
+     "evidence_checked": "test-all.mjs:2385-2400",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d7b0e44e8f9a"
+     },
+     "status": "expected-behaviour",
+     "note": "postinstall runs npx playwright install chromium (retrying, skippable with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD) and otherwise prints a warning; it downloads the Playwright browser, not project code.",
+     "evidence_checked": "package.json:88",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c20f5e4cdbd3"
+     },
+     "status": "false-positive",
+     "note": "Test fixture creates .claude/settings.json inside a temp directory (mkdtemp) to test Playwright MCP detection; the install directory is not touched.",
+     "evidence_checked": "test-all.mjs:14330-14338",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7709aee3e178"
+     },
+     "status": "false-positive",
+     "note": "Data row for the company 'ngrok' in a Greenhouse job-board directory; the ngrok name was matched as a tunnelling host. It is a careers URL, not a callout.",
+     "evidence_checked": "employers/boards/greenhouse/n.ndjson:107",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "50764d35b793"
+     },
+     "status": "false-positive",
+     "note": "Two zero-width spaces sit inside Dutch prose on lines 64 and 99 of the README; there are no instructions in them.",
+     "evidence_checked": "modes/nl/README.md:64,99",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.host",
+      "file": "tests/**"
+     },
+     "status": "false-positive",
+     "note": "Test fixtures: URL strings such as 169.254.169.254 or 10.0.0.5 used as inputs to check the project's private-address blocking; no request is made to them.",
+     "evidence_checked": "Read each matched line in tests/** (e.g. tests/jd-page-fetch.test.mjs:97, tests/providers/*.test.mjs)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.host",
+      "file": "web/tests/**"
+     },
+     "status": "false-positive",
+     "note": "Test fixtures: private-network URLs used as inputs to the project's URL and origin guards; they are rejected, not fetched.",
+     "evidence_checked": "web/tests/lib/apply-url-guard.test.mjs:46, bind-host.test.mjs:149, origin-guard.test.mjs:191",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.host",
+      "file": "test-all.mjs"
+     },
+     "status": "false-positive",
+     "note": "Test list of private and cloud-metadata addresses that rejectPrivateOrInvalid must block; used as test input only.",
+     "evidence_checked": "test-all.mjs:2022-2034",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "tests/**"
+     },
+     "status": "false-positive",
+     "note": "Test code: writes dummy .env or settings.json files into temp directories, copies process.env for child processes, or asserts messages that mention .env. No real credentials are read or sent.",
+     "evidence_checked": "Read each matched line in tests/**",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "credential-access",
+      "file": "web/tests/**"
+     },
+     "status": "false-positive",
+     "note": "Test code: temp-dir .env fixtures, hostile prompt-injection strings used to check the prompt fencing, and path-rejection cases; nothing is read from real secret files.",
+     "evidence_checked": "web/tests/lib/*.test.mjs lines listed",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "tests/**"
+     },
+     "status": "false-positive",
+     "note": "Tests spread process.env into the environment of locally spawned child scripts; the tests have no outbound sends of that data.",
+     "evidence_checked": "Read each matched line in tests/**",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "web/tests/**"
+     },
+     "status": "false-positive",
+     "note": "Tests spread process.env into local child processes or write temp .env fixtures; no network send.",
+     "evidence_checked": "web/tests/** matched lines",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c5b501042905"
+     },
+     "status": "false-positive",
+     "note": "The .codexignore file lists .env so the Codex tool skips it; the file is not read.",
+     "evidence_checked": ".codexignore:18-27",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-ayghri-i-have-adhd-f35840": {
+   "name": "i-have-adhd",
+   "summary": "A valid 256x256 PNG logo was skipped by the text scanner; nothing else flagged.",
+   "findings": [
+    {
+     "match": {
+      "key": "ab4fabed4b0d"
+     },
+     "status": "false-positive",
+     "note": "logo.png is a normal PNG image (valid PNG signature, 256x256); binary bytes are expected so the text scan skipped it.",
+     "evidence_checked": "logo.png header (file type check)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-sickn33-agentic-awesome-skills-plugins-agentic-awesome-skills-claude-e9562a": {
+   "name": "agentic-awesome-skills",
+   "summary": "Large skill collection; the flagged lines are scanner code, documentation, help text and security-testing examples, with no code found that reads secrets and sends them elsewhere.",
+   "findings": [
+    {
+     "match": {
+      "key": "54435551cc5a"
+     },
+     "status": "expected-behaviour",
+     "note": "This collection is larger than Bawwab's 5,000-file scan limit, so part of it was not scanned. Our hand-check covered only the files with findings; the unscanned files are not verified.",
+     "evidence_checked": "scanner note; not reviewable",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "3a9f802c3304"
+     },
+     "status": "false-positive",
+     "note": "A list of file extensions (including .env) that the 007 audit scanner is willing to scan; nothing is read or sent.",
+     "evidence_checked": "skills/007/scripts/config.py:308-318",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "04b761bbfeae"
+     },
+     "status": "false-positive",
+     "note": "Remediation advice string telling users to keep secrets in a .env file excluded from version control.",
+     "evidence_checked": "skills/007/scripts/full_audit.py:243-252",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0b080d8f7da3"
+     },
+     "status": "false-positive",
+     "note": "The scanner reports curl|bash patterns it finds in scanned projects; this line is the description text of that report, not a pipe-to-shell command.",
+     "evidence_checked": "skills/007/scripts/scanners/dependency_scanner.py:803-812",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "aa585999555b"
+     },
+     "status": "false-positive",
+     "note": "Regex used to flag Dockerfile COPY/ADD of sensitive files in scanned projects.",
+     "evidence_checked": "skills/007/scripts/scanners/dependency_scanner.py:162-170",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ef84c03e91f0"
+     },
+     "status": "false-positive",
+     "note": "Module docstring of a secrets scanner describing the file types it checks.",
+     "evidence_checked": "skills/007/scripts/scanners/secrets_scanner.py:1-12",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "4405549756d0"
+     },
+     "status": "expected-behaviour",
+     "note": "Image-generation skill looks up its own GEMINI_API_KEY from the environment or a local .env as documented in the docstring; the key is used for the Gemini API.",
+     "evidence_checked": "skills/ai-studio-image/scripts/config.py:28-45",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7ea70a41c193"
+     },
+     "status": "false-positive",
+     "note": "A help message printed when no API key is set, naming where to put the key.",
+     "evidence_checked": "skills/ai-studio-image/scripts/generate.py:282-290",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "cd4bec78bd3b"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-audience-analysis/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fecc1ad6fcf0"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-audience-analysis/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7f00eb70a224"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-brand-reputation-monitoring/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "95edbedb4c9a"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-brand-reputation-monitoring/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "28260391b4b4"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-competitor-intelligence/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "acd27bb5a044"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-competitor-intelligence/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0542ff1fcb52"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-content-analytics/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1fefc54ebd4d"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-content-analytics/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1e9984ec076d"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-ecommerce/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a1fd6928272c"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-ecommerce/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "7b241de3e966"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-influencer-discovery/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b4d8aedebbbb"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-influencer-discovery/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6e2b3b3db358"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-lead-generation/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2425c32b8b48"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-lead-generation/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2b9ec200f1ba"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-market-research/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "67209cd24c91"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-market-research/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "34b89d9e7e46"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-trend-analysis/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "da93b43f9290"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-trend-analysis/reference/scripts/run_actor.js:70-80; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "49f66e0204de"
+     },
+     "status": "false-positive",
+     "note": "The match is a usage line in the help text (node --env-file=.env ...). The script reads APIFY_TOKEN from the environment and sends it only to api.apify.com.",
+     "evidence_checked": "skills/apify-ultimate-scraper/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d5cc2be7518f"
+     },
+     "status": "false-positive",
+     "note": "Same help-text line. The script's only network calls go to api.apify.com with the user's own APIFY_TOKEN and redirects disabled; no other host is contacted.",
+     "evidence_checked": "skills/apify-ultimate-scraper/reference/scripts/run_actor.js:65-75; token and fetch use near lines 110-200, 325",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a1ef145fec23"
+     },
+     "status": "expected-behaviour",
+     "note": "Script reads REPLICATE_API_TOKEN from ./.env when not set in the environment, to call the Replicate API for model checks.",
+     "evidence_checked": "skills/boring-marketing-creative/scripts/verify_models.sh:18-28",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f2ae99f740c7"
+     },
+     "status": "false-positive",
+     "note": "Only checks whether a brand .env file exists and prints yes/no; the text says values are never shown.",
+     "evidence_checked": "skills/boring-marketing-start-here/scripts/brand_context.py:322-328",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6abee6c8111c"
+     },
+     "status": "false-positive",
+     "note": "Docstring describing env resolution order; it states key values are never printed.",
+     "evidence_checked": "skills/boring-marketing-start-here/scripts/capability.py:1-14",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e828e35f6e12"
+     },
+     "status": "false-positive",
+     "note": "The deploy script excludes .env files from the staged tarball, which keeps them out of the upload.",
+     "evidence_checked": "skills/deploy-to-vercel/resources/deploy-codex.sh:205-215",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6f3fb970c3c1"
+     },
+     "status": "false-positive",
+     "note": "The deploy script excludes .env files from the staged tarball, which keeps them out of the upload.",
+     "evidence_checked": "skills/deploy-to-vercel/resources/deploy.sh:209-219",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6bae6d51c05f"
+     },
+     "status": "expected-behaviour",
+     "note": "The last30days skill loads its own API keys from ~/.config/last30days/.env to call the search APIs it advertises (OpenAI, xAI).",
+     "evidence_checked": "skills/last30days/scripts/lib/env.py:1-25",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "f6ffa585343d"
+     },
+     "status": "false-positive",
+     "note": "User-facing message telling the user to edit ~/.config/last30days/.env to add keys.",
+     "evidence_checked": "skills/last30days/scripts/lib/render.py:65-75",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5ee855e0ba5a"
+     },
+     "status": "false-positive",
+     "note": "User-facing setup banner telling the user to edit ~/.config/last30days/.env.",
+     "evidence_checked": "skills/last30days/scripts/lib/ui.py:90-98",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a520269463dd"
+     },
+     "status": "false-positive",
+     "note": "Docstring saying the launch-check tool can look for committed .env files in a repo; it is a description of a check.",
+     "evidence_checked": "skills/launch-check/scripts/launch_check.py:10-20",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e31ade709fbe"
+     },
+     "status": "false-positive",
+     "note": "A unit test writes a dummy .env containing the word 'secret' into a temp directory to check that a local preview server refuses to serve it; nothing is read or sent.",
+     "evidence_checked": "skills/liuguang-banlan-ui/tests/test_review_boundaries.py:70-85",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e325e2349731"
+     },
+     "status": "false-positive",
+     "note": "A unit test writes a dummy .env containing the word 'secret' into a temp directory to check that a local preview server refuses to serve it; nothing is read or sent.",
+     "evidence_checked": "skills/liuguang-banlan-ui/tests/test_review_boundaries.py:70-85",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d995974dd899"
+     },
+     "status": "expected-behaviour",
+     "note": "Dev-signing helper imports a locally generated self-signed code-signing certificate into the user's login keychain, as the packaging skill describes.",
+     "evidence_checked": "skills/macos-spm-app-packaging/assets/templates/setup_dev_signing.sh:45-58",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b7ebf453e9da"
+     },
+     "status": "expected-behaviour",
+     "note": "Script sets PIP_INDEX_URL to the Tsinghua PyPI mirror for use in China, as its name and comments say. It redirects package installs to a third-party mirror, which users should know.",
+     "evidence_checked": "skills/remote-gpu-trainer/scripts/setup-china-mirrors.sh:28-36",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "9e5633f5bde3"
+     },
+     "status": "false-positive",
+     "note": "Boilerplate bot reads TELEGRAM_BOT_TOKEN from the environment and prints an error if it is missing.",
+     "evidence_checked": "skills/telegram/assets/boilerplate/nodejs/src/index.ts:6-16",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fa4babcc65bd"
+     },
+     "status": "false-positive",
+     "note": "A next-steps message printed by the project scaffolder.",
+     "evidence_checked": "skills/telegram/scripts/setup_project.py:46-56",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c240ea154a3f"
+     },
+     "status": "false-positive",
+     "note": "Scaffolder copies the template's .env.example to .env in the new project; it reads no real secrets and makes no network call.",
+     "evidence_checked": "skills/whatsapp-cloud-api/scripts/setup_project.py:77-87",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6c45d79ac41a"
+     },
+     "status": "false-positive",
+     "note": "Same .env.example copy inside the new project directory; no secret is read or sent anywhere.",
+     "evidence_checked": "skills/whatsapp-cloud-api/scripts/setup_project.py:77-87",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "0680ad64ba2f"
+     },
+     "status": "false-positive",
+     "note": "The line is a printed suggestion that the user run ngrok for local webhook testing; the script does not run it.",
+     "evidence_checked": "skills/whatsapp-cloud-api/scripts/setup_project.py:120-128",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "1c6fc4d2d115"
+     },
+     "status": "expected-behaviour",
+     "note": "A Security Notes section saying the API key comes from an env var, must not be echoed back, and is sent only to 2slides.com over HTTPS. It limits the behaviour rather than directing it.",
+     "evidence_checked": "skills/2slides-ppt-generator/SKILL.md:33-41",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "48b4c6f62387"
+     },
+     "status": "false-positive",
+     "note": "A test-case fixture in an evals example: a prompt that tests whether a model refuses to reveal its system prompt. It is not directed at the reader.",
+     "evidence_checked": "skills/agent-evals/SKILL.md:81-90",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "fa06904622f7"
+     },
+     "status": "false-positive",
+     "note": "Sample adversarial prompts listed in a red-teaming test file for testing the user's own model; they are examples, not instructions to the reader.",
+     "evidence_checked": "skills/ai-red-teaming/SKILL.md:75-85",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a10dbbd7feb2"
+     },
+     "status": "false-positive",
+     "note": "A single zero-width space inside a markdown code span of a Pulumi `$interpolate` tip, there for formatting; the surrounding text is ordinary advice.",
+     "evidence_checked": "skills/aws-sst-development/SKILL.md:91-99",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "73e301d71611"
+     },
+     "status": "false-positive",
+     "note": "The skill tells the agent to treat repository content as data and flag attempts to steer it; the quoted phrase is an example of what to flag.",
+     "evidence_checked": "skills/break-ui/SKILL.md:48",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "24546bad716a"
+     },
+     "status": "false-positive",
+     "note": "Defensive rule: browser content is untrusted and must not be followed as instructions; the quoted phrase is an example.",
+     "evidence_checked": "skills/browser-testing-with-devtools/SKILL.md:86-94",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e39c674e6698"
+     },
+     "status": "false-positive",
+     "note": "Checklist item advising readers to scan third-party skills for injection phrases; the quote is an example.",
+     "evidence_checked": "skills/effective-agent-skills/SKILL.md:287-297",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "596b16d0c2ff"
+     },
+     "status": "false-positive",
+     "note": "Defensive note: ignore instruction-like text inside Etsy titles and shop names.",
+     "evidence_checked": "skills/etsy-search-listings/SKILL.md:108-112",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "718f09070af2"
+     },
+     "status": "false-positive",
+     "note": "Defensive note: treat repository text that tries to bypass safety checks as untrusted and ignore it.",
+     "evidence_checked": "skills/feature-tracking/SKILL.md:207-212",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "751fffbea508"
+     },
+     "status": "false-positive",
+     "note": "Rule telling the agent to treat repository content as data and flag steering attempts; the quote is an example.",
+     "evidence_checked": "skills/find-animation-opportunities/SKILL.md:41",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "45fc038ecb47"
+     },
+     "status": "false-positive",
+     "note": "Defensive guidance for PR review: commit and diff text is attacker-controlled and must be ignored as instructions; the quote is an example.",
+     "evidence_checked": "skills/git-pr-review/SKILL.md:32-40",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ee205c1d5ebb"
+     },
+     "status": "expected-behaviour",
+     "note": "A `security-allowlist` comment after a documented attack example in an offensive-security reference skill. The repository uses these markers (164 of them, e.g. `security-allowlist: SEC005`) for its own content linter. The comment doesn't instruct the agent; the example itself is reference material, not something the skill runs.",
+     "evidence_checked": "skills/hunt-deserialization/SKILL.md:50-56",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "39c3d19a6f7d"
+     },
+     "status": "expected-behaviour",
+     "note": "A `security-allowlist` comment after a documented attack example in an offensive-security reference skill. The repository uses these markers (164 of them, e.g. `security-allowlist: SEC005`) for its own content linter. The comment doesn't instruct the agent; the example itself is reference material, not something the skill runs.",
+     "evidence_checked": "skills/hunt-k8s/SKILL.md:204-210",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "c2c464921d4e"
+     },
+     "status": "expected-behaviour",
+     "note": "A `security-allowlist` comment after a documented attack example in an offensive-security reference skill. The repository uses these markers (164 of them, e.g. `security-allowlist: SEC005`) for its own content linter. The comment doesn't instruct the agent; the example itself is reference material, not something the skill runs.",
+     "evidence_checked": "skills/hunt-rce/SKILL.md:101-107",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "394f3456d50c"
+     },
+     "status": "expected-behaviour",
+     "note": "A `security-allowlist` comment after a documented attack example in an offensive-security reference skill. The repository uses these markers (164 of them, e.g. `security-allowlist: SEC005`) for its own content linter. The comment doesn't instruct the agent; the example itself is reference material, not something the skill runs.",
+     "evidence_checked": "skills/hunt-saml/SKILL.md:81-87",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6fec5136b176"
+     },
+     "status": "expected-behaviour",
+     "note": "A `security-allowlist` comment after a documented attack example in an offensive-security reference skill. The repository uses these markers (164 of them, e.g. `security-allowlist: SEC005`) for its own content linter. The comment doesn't instruct the agent; the example itself is reference material, not something the skill runs.",
+     "evidence_checked": "skills/hunt-xss/SKILL.md:113-119",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "326a04149728"
+     },
+     "status": "false-positive",
+     "note": "A routing table mapping observed signals (such as an exposed /.env) to the sibling skill that handles them; it does not tell the agent to read or send a file.",
+     "evidence_checked": "skills/hunt-dispatch/SKILL.md:115-122",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2bb391eee9b8"
+     },
+     "status": "false-positive",
+     "note": "Example prompt-injection strings listed as test payloads in a skill for assessing LLM apps; they are for the tester to send to the target, not instructions to the reader.",
+     "evidence_checked": "skills/hunt-llm-ai/SKILL.md:58-65",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2251c34a543f"
+     },
+     "status": "expected-behaviour",
+     "note": "A chain note in a security-testing skill describing an XXE file-read payload as an example for authorized testing; it does not direct the agent to read files on the user's machine.",
+     "evidence_checked": "skills/hunt-saml/SKILL.md:134-140",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ca384ef9ef01"
+     },
+     "status": "expected-behaviour",
+     "note": "A chain note in an XXE testing skill describing a /etc/passwd read through a target's XML parser; offensive-testing reference material, not an instruction to read local secrets.",
+     "evidence_checked": "skills/hunt-xxe/SKILL.md:437-443",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d762a9d4864e"
+     },
+     "status": "false-positive",
+     "note": "Rule telling the agent to treat repository content as data and flag steering attempts; the quote is an example.",
+     "evidence_checked": "skills/improve-animations/SKILL.md:45",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "bc878e3f4b3f"
+     },
+     "status": "false-positive",
+     "note": "An example attack prompt in a table of injection test levels for the user's own LLM app; it is not addressed to the reader.",
+     "evidence_checked": "skills/llm-security/SKILL.md:59-68",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "383735a318ea"
+     },
+     "status": "false-positive",
+     "note": "Four zero-width spaces inside a quoted example string that demonstrates a zero-width-character bypass technique in the same list of test examples.",
+     "evidence_checked": "skills/llm-security/SKILL.md:71-76",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-coreyhaines31-marketingskills-6f54ea": {
+   "name": "marketing-skills",
+   "summary": "A marketing skill collection; every flagged item is a lint-script pattern list, a test fixture, or ordinary skill prose, with no secret access or off-machine sends.",
+   "findings": [
+    {
+     "match": {
+      "key": "c06539ef5f6e"
+     },
+     "status": "false-positive",
+     "note": "This line is a comment in a repo linter that lists the pipe-to-shell patterns it looks for in skill text; the script only reads markdown files and runs nothing it finds.",
+     "evidence_checked": "scripts/check-hidden-content.mjs:10-25,74-82",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5181e7149b69"
+     },
+     "status": "false-positive",
+     "note": "This is a regular expression in the same linter that matches webhook-catcher URLs so it can report them in skill files; the script makes no network requests.",
+     "evidence_checked": "scripts/check-hidden-content.mjs:74-82",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5ccadcab3d77"
+     },
+     "status": "expected-behaviour",
+     "note": "An allowlist entry for the linter records a partner's documented install command (curl ... | sh) in tools/integrations/ploy.md, shown as text in a setup guide and not run by the package.",
+     "evidence_checked": "scripts/hidden-content-allowlist.json:55-62",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "061ed1fb5d7c"
+     },
+     "status": "false-positive",
+     "note": "The test copies the environment and points git config at the null device so the test's temporary git repo ignores the user's git settings; no credentials are read.",
+     "evidence_checked": "tests/test_skill_packaging.py:20-28",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "36256490ef41"
+     },
+     "status": "false-positive",
+     "note": "A base64 literal in a test holds a tiny ZIP file (events.json) used as a fixture for the Amplitude export test; it is decoded into a mocked response.",
+     "evidence_checked": "tests/clis/amplitude-export.test.cjs:20-32",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "cd14f199a9b4"
+     },
+     "status": "false-positive",
+     "note": "A test fixture string used to check that the linter reports pipe-to-shell commands; it is test data, not a command that runs.",
+     "evidence_checked": "tests/clis/check-hidden-content.test.cjs:80-86",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5289b4cd8f30"
+     },
+     "status": "false-positive",
+     "note": "A test fixture that checks the linter flags a hidden HTML comment mentioning ~/.env in a sample skill file; nothing reads that file.",
+     "evidence_checked": "tests/clis/check-hidden-content.test.cjs:33",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "2891553580b4"
+     },
+     "status": "false-positive",
+     "note": "A test list of webhook-catcher URLs fed to the linter to confirm it reports them; the tests do not contact them.",
+     "evidence_checked": "tests/clis/check-hidden-content.test.cjs:103-108",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "rule": "exfil.combo",
+      "file": "tests/clis/*.test.cjs"
+     },
+     "status": "false-positive",
+     "note": "Each test runs a CLI in a child process with the parent environment plus fake test tokens, with fetch replaced by a stub that returns a canned response; no real request is made and no real secret is sent.",
+     "evidence_checked": "tests/clis/google-ads-manager.test.cjs:10-24; tests/clis/instantly-v2.test.cjs:12-20 (same pattern in the other listed tests by evidence line)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "46246ae81a0d"
+     },
+     "status": "false-positive",
+     "note": "A maintainer note in README.md saying the Partners block is generated by running sync-partners.mjs; it is not addressed to an AI agent and asks for nothing.",
+     "evidence_checked": "README.md:29-33",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5e71437299d5"
+     },
+     "status": "false-positive",
+     "note": "The phrase is in guidance to the agent not to tell a user that browser-side tracking is as good as it gets; it is ordinary advice and does not ask to hide anything from the user.",
+     "evidence_checked": "skills/conversion-tracking/SKILL.md:68-76",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "97843906087b"
+     },
+     "status": "false-positive",
+     "note": "The phrase is a 'Common Mistakes' bullet about budgeting for an event series before running the first one; it is marketing advice, not an instruction to the agent.",
+     "evidence_checked": "skills/events/SKILL.md:110-118",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-chromedevtools-chrome-devtools-mcp-db4496": {
+   "name": "chrome-devtools-mcp",
+   "summary": "Google's Chrome DevTools MCP server; the flagged items are a build-time prepare script, eval scripts that pass the environment to a local child, and test fixtures.",
+   "findings": [
+    {
+     "match": {
+      "key": "584f8741d5d7"
+     },
+     "status": "expected-behaviour",
+     "note": "The npm prepare script runs scripts/prepare.ts, which patches a type declaration in node_modules and sparse-clones the devtools-frontend submodule from github.com/ChromeDevTools; this runs for developers building the repo.",
+     "evidence_checked": "package.json:30; scripts/prepare.ts:1-80",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "5780b1132514"
+     },
+     "status": "expected-behaviour",
+     "note": "The eval script copies its own environment into the env of the local MCP server process it starts over stdio and sets CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS; nothing is sent over the network by this code.",
+     "evidence_checked": "scripts/eval_gemini.ts:95-115",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "d868a3114e24"
+     },
+     "status": "expected-behaviour",
+     "note": "The profiling script copies its environment into the env of the local MCP server it launches over stdio and sets the no-usage-statistics flag; nothing is sent anywhere by this code.",
+     "evidence_checked": "scripts/profile/profile_mcp.ts:100-118",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "a0194f17a45f"
+     },
+     "status": "false-positive",
+     "note": "The file is a 2.3 MB V8 heap snapshot test fixture; the matched text is just a string table of JavaScript property names such as eval and atob, not code that runs.",
+     "evidence_checked": "tests/fixtures/example.heapsnapshot:8",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "e8804557bc95"
+     },
+     "status": "false-positive",
+     "note": "This is a unit test asserting that isLocalhost() returns false for non-local addresses like 128.0.0.1; no connection is made.",
+     "evidence_checked": "tests/utils/url.test.ts:60-70",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-anthropics-knowledge-work-plugins-productivity-f91b3d": {
+   "name": "productivity",
+   "summary": "Anthropic's knowledge-work plugin of skills and hosted MCP connectors; the only flags are two connectors with an empty URL.",
+   "findings": [
+    {
+     "match": {
+      "key": "ed054860bf56"
+     },
+     "status": "expected-behaviour",
+     "note": "The .mcp.json entry for 'google calendar' has type http and an empty url, so there is no server to start or contact until the user supplies one; the other connectors point to vendor-hosted URLs.",
+     "evidence_checked": ".mcp.json (google calendar entry)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "dda226d2701c"
+     },
+     "status": "expected-behaviour",
+     "note": "The .mcp.json entry for 'gmail' has type http and an empty url, so there is no server to start or contact until the user supplies one.",
+     "evidence_checked": ".mcp.json (gmail entry)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-anthropics-knowledge-work-plugins-enterprise-search-4fcf3f": {
+   "name": "enterprise-search",
+   "summary": "Anthropic's knowledge-work plugin of skills and hosted MCP connectors; the only flags are two connectors with an empty URL.",
+   "findings": [
+    {
+     "match": {
+      "key": "ed054860bf56"
+     },
+     "status": "expected-behaviour",
+     "note": "The .mcp.json entry for 'google calendar' has type http and an empty url, so there is no server to start or contact until the user supplies one; the other connectors point to vendor-hosted URLs.",
+     "evidence_checked": ".mcp.json (google calendar entry)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "dda226d2701c"
+     },
+     "status": "expected-behaviour",
+     "note": "The .mcp.json entry for 'gmail' has type http and an empty url, so there is no server to start or contact until the user supplies one.",
+     "evidence_checked": ".mcp.json (gmail entry)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
+  },
+  "plugin-mksglu-context-mode-plugins-claude-code-f529ad": {
+   "name": "context-mode",
+   "summary": "A local context-saving MCP server and hooks; its only network code is an npm version check, a git ls-remote tag check, and a URL fetch the user's agent requests, none of which sends secrets, and it downloads no code.",
+   "findings": [
+    {
+     "match": {
+      "key": "e525b769a8b5"
+     },
+     "status": "expected-behaviour",
+     "note": "Same bundled constant (~/.claude.json) used by the old-install check shared with server.mjs, which only looks for a context-mode entry under mcpServers.",
+     "evidence_checked": "cli.mjs:505",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8b8ced79e474"
+     },
+     "status": "expected-behaviour",
+     "note": "The constant names ~/.claude.json, which the doctor and ctx_upgrade code opens only to check whether it has a context-mode entry under mcpServers (a presence check for old installs); no contents are returned beyond that, and nothing is sent anywhere.",
+     "evidence_checked": "server.mjs:28895,48961-48992",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "6c0c27fb358a"
+     },
+     "status": "expected-behaviour",
+     "note": "Same bundled constant (~/.claude.json) used by the old-install check shared with server.mjs, which only looks for a context-mode entry under mcpServers.",
+     "evidence_checked": "opencode/plugin.js:930",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "8f3b65096fed"
+     },
+     "status": "expected-behaviour",
+     "note": "Same bundled constant (~/.claude.json) used by the old-install check shared with server.mjs, which only looks for a context-mode entry under mcpServers.",
+     "evidence_checked": "pi/index.js:12075",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "47b67555a6cb"
+     },
+     "status": "false-positive",
+     "note": "The rule paired the .claude.json filename constant with network code elsewhere in the bundle. The file is only checked for a context-mode mcpServers entry. The only outbound requests in the bundle are an npm dist-tags GET, a git ls-remote of github.com/mksglu/context-mode, and the user-directed ctx_index fetch; none carries file contents or credentials.",
+     "evidence_checked": "server.mjs:28895,48961-48992,49420-49450,49495-49510,53660-53700",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b4822fcbe215"
+     },
+     "status": "false-positive",
+     "note": "The rule paired the .claude.json filename constant with network code elsewhere in the bundle. The file is only checked for a context-mode mcpServers entry. The only outbound requests in the bundle are an npm dist-tags GET, a git ls-remote of github.com/mksglu/context-mode, and the user-directed ctx_index fetch; none carries file contents or credentials.",
+     "evidence_checked": "opencode/plugin.js:930,24978",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "ec8f3d1d74a0"
+     },
+     "status": "false-positive",
+     "note": "The rule paired the .claude.json filename constant with network code elsewhere in the bundle. The file is only checked for a context-mode mcpServers entry. The only outbound requests in the bundle are an npm dist-tags GET, a git ls-remote of github.com/mksglu/context-mode, and the user-directed ctx_index fetch; none carries file contents or credentials.",
+     "evidence_checked": "pi/index.js:12075,24985",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "251d7e5963f2"
+     },
+     "status": "expected-behaviour",
+     "note": "The plugin registers hook.mjs for PreToolUse, PostToolUse, SessionStart and UserPromptSubmit so it can route large tool output into its local index; hook.mjs has no network calls. Broad hook coverage is how the tool works.",
+     "evidence_checked": ".codex-plugin/hooks.json:1-45; hook.mjs (grep for fetch/http/net: none)",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    },
+    {
+     "match": {
+      "key": "b19c85915ea8"
+     },
+     "status": "expected-behaviour",
+     "note": "The plugin registers hook.mjs for PreToolUse, PostToolUse, SessionStart and UserPromptSubmit so it can route large tool output into its local index; hook.mjs has no network calls. Broad hook coverage is how the tool works.",
+     "evidence_checked": ".zcode-plugin/hooks.json:1-45; hooks/claude-code.json",
+     "reviewer": "Bawwab maintainers",
+     "date": "2026-11-20"
+    }
+   ]
   }
  }
 }
