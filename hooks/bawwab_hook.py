@@ -46,6 +46,24 @@ def _load_prefilter():
 
 prefilter = _load_prefilter()
 
+
+def _setup_detects(data: dict) -> bool:
+    """While setup runs there is no venv for `bawwab gate`, so a pre-filter hit is classified by bawwab's own
+    detection from this tree, which needs only the stdlib (M19): only a call it finds protected or
+    install-like waits for setup, and `git rebase --skip` or `rg approve src` passes. Any failure: True."""
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from bawwab.gate import detect  # stdlib-only; an install it must resolve needs httpx: ImportError, held
+        ti = data.get("tool_input")
+        cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
+        inp = detect.HookInput(str(data.get("tool_name") or ""), ti if isinstance(ti, dict) else {}, cwd)
+        return detect.detect_install(inp) is not None
+    except BaseException:  # noqa: BLE001 - can't tell: hold the call (fail closed)
+        return True
+
+
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead"})
 POST_TOOLS = frozenset({"Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"})
 
@@ -602,7 +620,7 @@ def gate() -> int:
         # have looked at (I5): a failing or blocked setup never switches the effect check off. Read-only tools
         # pass, as during a quarantine (I6): the user is never locked out of reading while setup fails.
         read_only = data.get("tool_name") in READ_ONLY_TOOLS
-        if install_like or blocked or (changed and not read_only and _initialised()):
+        if (install_like and _setup_detects(data)) or blocked or (changed and not read_only and _initialised()):
             print(_deny(_setup_deny()))
         return 0
     try:

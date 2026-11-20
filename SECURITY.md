@@ -38,12 +38,18 @@ but does not promise perfection. Reports that show a way past *all* layers are e
 
 Bawwab and Claude's tool shell run as the same OS user. Bawwab defends against an agent that has been steered (for
 example by prompt injection) into approving, rejecting or skipping by ordinary means: under bawwab's name, through a
-renamed symlink or copy of its launcher or console script, through `python -m bawwab` or `python -c`, or by writing to
-its store, its plugin data dir or its venv from the shell. It cannot fully stop an agent that *deliberately*
-reverse-engineers its own state as the same user, for example code that opens bawwab's SQLite store without naming
-it, or a wrapper whose target is computed at run time. Isolating bawwab's state from Claude (a separate OS user or
-a sandbox) is the only full answer. Ordinary-route bypasses of the gate are in scope; deliberate same-user state
-forgery is a known limitation.
+renamed symlink or copy of its launcher or console script, through `python -m bawwab` or `python -c`, by writing to
+its store, its plugin data dir or its venv from the shell, or through a file that holds the call. When a command runs
+a file (`sh`/`bash`/`dash`/`zsh`/`ksh <file>`, `.`/`source <file>`, `./file`, a Python/Node/Perl/Ruby script,
+`make` and its makefiles), the gate reads it without running it and refuses a protected call inside, following
+nested scripts three files deep; a file it can't read, that is over 1 MB, or that the same command changed first is
+refused. Writing a protected bawwab call into any file (Write/Edit, redirects, `tee`, heredocs, `cp`/`mv`) is
+refused too. It cannot see indirect execution: compiled programs, interpreters reading code from the network,
+runtime-computed paths, scripts reached by a bare name on PATH, and task runners other than make. It cannot fully
+stop an agent that *deliberately* reverse-engineers its own state as the same user, for example code that opens
+bawwab's SQLite store without naming it, or a wrapper whose target is computed at run time. Isolating bawwab's state
+from Claude (a separate OS user or a sandbox) is the only full answer. Ordinary-route bypasses of the gate are in
+scope; deliberate same-user state forgery and the indirect execution above are known limitations.
 
 ## Bypass Hall of Fame
 

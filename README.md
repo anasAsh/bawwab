@@ -338,9 +338,13 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   with your next prompt; it doesn't block anything.
 - Static rules can be dodged by determined obfuscation. That's why there's a Claude review, a "never below
   suspicious" floor for credential-plus-network code, and an effect check. Bawwab raises the bar a lot; it doesn't promise perfection.
-- Bawwab runs as the same OS user as Claude's tool shell. It blocks the ordinary ways for Claude to approve on
-  its own (any name or copy of the `bawwab` command, `python -m bawwab`, shell writes to its state), but an agent
-  that deliberately forges bawwab's state as the same user is out of reach.
+- Bawwab runs as the same OS user as Claude's tool shell. The gate refuses a Claude-run approval through any
+  name or copy of the `bawwab` command, `python -m bawwab`, shell writes to its state, and a script or makefile
+  that holds one: when a command runs a file with `sh`/`bash`/`.`/`source`/`./`/`make` or a Python/Node script,
+  the gate reads it (three files deep) and refuses a protected call inside, and writing such a call into any
+  file is refused. It can't see indirect execution: compiled programs, interpreters reading code from the
+  network, runtime-computed paths, other task runners (npm scripts, just). An agent that deliberately forges
+  bawwab's state as the same user is out of reach.
 - v1 protects **Claude Code**. Cursor, Codex CLI, Claude Desktop and VS Code are planned for v1.1 (see roadmap).
 
 ## Roadmap

@@ -30,7 +30,8 @@ _FIND = re.compile(r"(?:^|[\s;&|(`])find\s")
 _FIND_ACTS = re.compile(r"-delete|-exec|-ok|[|`]|\$\(|\bfor\b")
 # A user-only bawwab subcommand in the argv of any command, whatever the command word is called (R55): a renamed
 # or copied bawwab (ln -s <launcher> /tmp/bw; /tmp/bw approve AB12) has no "bawwab" in its command line.
-_PROTECTED_TAIL = re.compile(r"(?<![\w./-])(?:approve|reject)(?![\w./-])|(?<![\w-])--sk|(?<![\w./-])effects\s[^;&|\n]*--re")
+_PROTECTED_TAIL = re.compile(r"(?<![\w./-])(?:approve|reject)(?![\w./-])|(?<![\w./-])init\s[^;&|\n]*--sk"
+                             r"|(?<![\w./-])effects\s[^;&|\n]*--re")
 # Path-like words (a slash, not a URL): the pre-filter resolves these to spot a bawwab executable under any name.
 _PATH_WORD = re.compile(r"(?<![\w:/.~$-])(?:~|\.{1,2}|\$HOME|\$\{HOME\})?/[^\s;&|()<>`'\"]*|(?<![\w/])[\w.-]+/[^\s;&|()<>`'\"]*")
 _MAX_PATH_WORDS = 32
@@ -105,33 +106,175 @@ def prefilter(data: dict) -> bool:
         cmd = ti.get("command")
         if not isinstance(cmd, str):
             return False
-        return bash_install_like(cmd, cwd, home, extra) or _path_words_bawwab(_unquote(cmd), cwd)
+        s = _unquote(cmd)
+        return bash_install_like(cmd, cwd, home, extra) or _path_words_bawwab(s, cwd) or _runs_file(s, cwd)
     if tool in _FILE_TOOLS:
         fp = ti.get("file_path")
         if not isinstance(fp, str) or not fp:
             return False
         p = os.path.normpath(os.path.join(cwd or "/", fp))
         s = p + "\0" + os.path.realpath(p)
-        return any(n in s for n in _FILE_NEEDLES + extra) or _script_text(ti, p)
+        return any(n in s for n in _FILE_NEEDLES + extra) or _write_text(tool, ti, p, cwd)
     return False
 
 
-def _script_text(ti: dict, p: str) -> bool:
-    """R55: the write may create a script that runs bawwab (a shebang file whose new text names bawwab)."""
+def _write_text(tool: str, ti: dict, p: str, cwd: str) -> bool:
+    """R55/R56: the write's result may hold a bawwab call (a script that runs bawwab, or a protected bawwab
+    invocation in any file): its new text, plus for an edit the file's current text, names bawwab, or has a
+    protected subcommand next to a path that is a bawwab executable."""
     parts = [ti.get("content"), ti.get("new_string")]
     edits = ti.get("edits")
     if isinstance(edits, list):
         parts += [e.get("new_string") for e in edits if isinstance(e, dict)]
-    text = "".join(x for x in parts if isinstance(x, str))
-    if "bawwab" not in text:
-        return False
-    if text.lstrip().startswith("#!"):
-        return True
+    text = "\n".join(x for x in parts if isinstance(x, str))
+    if tool != "Write":
+        cur = _read(p)
+        if cur is None:
+            return True
+        text += "\n" + cur
+    return "bawwab" in text or (_PROTECTED_TAIL.search(text) is not None and _path_words_bawwab(text, cwd))
+
+
+# ------------------------------------------------------------------ R56: files a command runs
+
+_READ_MAX = 1 << 20  # what detection reads of a file it runs; larger: detection refuses, so route it
+_FILE_DEPTH = 3
+_MAX_FILES = 64
+_SEG_SPLIT = re.compile(r"&&|\|\||[;&|(){}`\n!]")
+_PREFIX_WORDS = {"sudo", "doas", "exec", "command", "builtin", "time", "nohup", "env", "nice", "ionice", "setsid",
+                 "timeout", "stdbuf", "xargs", "chronic", "unbuffer", "caffeinate", "then", "do", "else", "elif",
+                 "if", "while", "until", "-exec", "-execdir", "-ok", "-okdir"}
+_SHELL_NAMES = {"sh", "bash", "dash", "zsh", "ksh"}
+_RUNNER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php")
+_MAKEFILES = ("GNUmakefile", "makefile", "Makefile")
+_MAKE_INCLUDE = re.compile(r"(?m)^\s*-?s?include\s")
+_SUBCMD_WORD = re.compile(r"\b(?:approve|reject|init|effects)\b")
+# a cheap test before splitting: a runner word, or a path command word at a segment start
+_MAY_RUN = re.compile(r"(?<![\w.-])(?:sh|bash|dash|zsh|ksh|make|gmake|source|\.|python[0-9.]*|node|nodejs|perl|ruby|bun"
+                      r"|deno|php|MAKE\)|MAKE\})(?![\w.-])"
+                      r"|(?:^|[;&|(){}`\n!]|(?<![\w.-])(?:" + "|".join(sorted(_PREFIX_WORDS)) + r")(?![\w.-])|\w=\S*)"
+                      r"(?:[ \t@+-]*(?:-\S+|\d\S*)(?=[ \t]))*[ \t@+-]*[^\s;&|(){}`]*/")
+
+
+_VAR_DEF = re.compile(r"(?m)^[ \t]*(?:(?:export|override)[ \t]+)?([A-Za-z_][\w.-]*)[ \t]*"
+                      r"(?::{1,3}|\?|\+|!)?=[ \t]*(.*)$")
+_VAR_USE = re.compile(r"\$[({]([A-Za-z_][\w.-]*)[)}]")
+
+
+def _expand_vars(text: str) -> str:
+    """Simple variable definitions expanded (a makefile's `BW = ./x.sh` then `$(BW) approve`)."""
+    if "$" not in text:
+        return text
+    defs = dict(_VAR_DEF.findall(text))
+    if not defs:
+        return text
+    for _ in range(8):
+        n = _VAR_USE.sub(lambda m: defs.get(m.group(1), m.group(0)), text)
+        if n == text:
+            break
+        text = n
+    return text.replace("$$", "$")
+
+
+def _read(p: str) -> str | None:
+    """A file's text for the pre-filter: "" when missing, None when it can't be read cheaply or is too large."""
+    try:
+        st = os.stat(p)
+    except FileNotFoundError:
+        return ""
+    except (OSError, ValueError):
+        return None
+    if not stat.S_ISREG(st.st_mode) or st.st_size > _READ_MAX:
+        return None
     try:
         with open(p, "rb") as fh:
-            return fh.read(2) == b"#!"
+            return fh.read(_READ_MAX).decode("utf-8", "replace")
     except OSError:
+        return None
+
+
+def _file_calls(s: str, cwd: str) -> list[str] | None:
+    """Files the (unquoted) shell text `s` runs as code: a shell's or `.`/`source`'s file, a script given to
+    python/node/..., a path command word, a makefile. Over-matches; None: one can't be named (let detection
+    decide)."""
+    out: list[str] = []
+    piped_cat: list[str] = []
+    for seg in _SEG_SPLIT.split(s.replace("$(MAKE)", "make").replace("${MAKE}", "make")):
+        words = seg.split()
+        if words[:1] == ["cat"]:
+            piped_cat = [a for a in words[1:] if not a.startswith("-")]
+            continue
+        while words and (words[0] in _PREFIX_WORDS or re.fullmatch(r"\w+=\S*|[@+-]+|-\S+|\d\S*", words[0])):
+            words = words[1:]
+        if not words:
+            continue
+        w0 = words[0].lstrip("@+-") or words[0]
+        exe, args = os.path.basename(w0), words[1:]
+        if exe in _SHELL_NAMES or w0 in (".", "source") or _RUNNER.fullmatch(exe):
+            if any((a in ("-c", "-e", "-m", "--eval", "-p", "--print") and exe not in _SHELL_NAMES) or
+                   (a[:1] == "-" and a[1:2] != "-" and "c" in a[1:] and exe in _SHELL_NAMES) for a in args):
+                continue
+            if exe in _SHELL_NAMES and "<" in args:  # sh < file
+                out += [args[k + 1] for k, a in enumerate(args[:-1]) if a == "<"]
+                continue
+            if exe in _SHELL_NAMES and piped_cat:  # cat file | sh
+                out += piped_cat
+            j = 0
+            while j < len(args) and args[j][:1] in ("-", "+") and args[j] != "--":
+                j += 2 if args[j] in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file") else 1
+            j += j < len(args) and args[j] == "--"
+            if j < len(args):
+                out.append(args[j])
+        elif exe in ("make", "gmake"):
+            d, files = cwd, []
+            for j, a in enumerate(args):
+                nxt = args[j + 1] if j + 1 < len(args) else ""
+                if a in ("-C", "--directory") or a.startswith(("-C", "--directory=")):
+                    d = os.path.join(d, a.split("=", 1)[1] if "=" in a else (a[2:] or nxt))
+                elif a in ("-f", "--file", "--makefile") or a.startswith(("-f", "--file=", "--makefile=")):
+                    files.append(a.split("=", 1)[1] if "=" in a else (a[2:] or nxt))
+            out += [os.path.join(d, f) for f in files] or \
+                [next((os.path.join(d, n) for n in _MAKEFILES if os.path.exists(os.path.join(cwd or "/", d, n))),
+                      os.path.join(d, "Makefile"))]
+        elif "/" in w0:
+            out.append(w0)
+        if len(out) > _MAX_FILES:
+            return None
+    return out
+
+
+def _runs_file(s: str, cwd: str, depth: int = 0, seen: set[str] | None = None) -> bool:
+    """R56: the command runs a file (to _FILE_DEPTH deep) that is missing, unreadable, too large, includes
+    other makefiles, or whose text could hold a bawwab call: detection must read it. Never runs anything."""
+    if not _MAY_RUN.search(s):
         return False
+    seen = set() if seen is None else seen
+    calls = _file_calls(s, cwd)
+    if calls is None:
+        return True
+    user = os.path.expanduser("~")
+    for c in calls:
+        if "$" in c or "`" in c:
+            continue  # a runtime-computed path: detection can't read it either
+        p = os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(c.replace("${HOME}", user)
+                                                                         .replace("$HOME", user))))
+        if p in seen:
+            continue
+        seen.add(p)
+        if len(seen) > _MAX_FILES or depth >= _FILE_DEPTH:
+            return True
+        if os.path.isdir(p):
+            continue
+        text = _read(p)
+        if text is None or (not text and not os.path.exists(p)):
+            return True  # unreadable, or missing (may be created earlier in the command): detection decides
+        if "\0" in text[:8192]:
+            continue  # a compiled program
+        u = _expand_vars(_unquote(text))
+        if "bawwab" in text or _PROTECTED_TAIL.search(u) or _MAKE_INCLUDE.search(text) or \
+                (_SUBCMD_WORD.search(u) and _path_words_bawwab(u, cwd)) or _runs_file(u, cwd, depth + 1, seen):
+            return True
+    return False
 
 
 def context() -> tuple[str, tuple[str, ...]]:

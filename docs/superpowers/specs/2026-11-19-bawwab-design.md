@@ -227,13 +227,41 @@ scanning on its own.
     content), on any command word that isn't a known system program when its
     argv reads as one of those subcommands, and through `python -m bawwab…` /
     `python -c` code that imports bawwab. Copying or linking a bawwab
-    executable (`ln`, `cp`, `install`, `mv`, `rsync`, `cat … >`), and writing
-    a script that runs one, are protected; so are shell writes to bawwab's
-    home, its XDG state dir, its plugin data dir (`plugins/data/bawwab*`) and
-    its venv. Residual: a same-user agent that deliberately engineers around
-    this (a wrapper whose path is computed at run time, code that opens
-    bawwab's SQLite store without naming it, forging the data-dir markers or
-    the store's rows) can still approve or reset state. The CLI does not
+    executable (`ln`, `cp`, `install`, `mv`, `rsync`, `cat … >`) is
+    protected; so are shell writes to bawwab's home, its XDG state dir, its
+    plugin data dir (`plugins/data/bawwab*`) and its venv.
+  - **Protected actions inside files (Task 13b, R56).** When a command runs a
+    file as code (`sh|bash|dash|zsh|ksh <file>`, `sh < file`, `cat file | sh`,
+    `. <file>`, `source <file>`, a path command word such as `./file`, a
+    `python|node|perl|ruby… <file>` script, or `make [-f F] [-C D]` reading
+    its makefiles and literal includes), the gate reads the file (never runs
+    it; at most 1 MB) and applies the same protected-action check to its
+    lines: shell text through the structured pass with the call's positional
+    arguments filled in (`bawwab approve "$1"` run as `sh a.sh ID` reads as
+    `bawwab approve ID`), make recipes with simple variables expanded, other
+    code through the content rule below. Nested script calls are followed
+    three files deep; deeper is refused. A file that can't be read, is too
+    large, or was changed earlier in the same command (a redirect, `tee`,
+    `cp`/`mv`, `curl -o`, an archive extract, a `git checkout`/`pull`…) is
+    refused. Writing a protected bawwab invocation (a bawwab command word:
+    its name, the launcher or a console-script path, `python -m bawwab`, a
+    path resolving to a bawwab executable; followed by `approve`, `reject`,
+    `init --skip` or `effects --retry`; or code importing bawwab that names
+    one) into any file is refused, whatever its name or shebang: Write, Edit,
+    MultiEdit, redirects, `tee`, heredocs, `cp`/`mv`/`install` of a file. An
+    edit is judged on the invocations it adds, so editing elsewhere in a doc
+    that already shows `bawwab approve <id>` passes; prose without a bawwab
+    command word always passes. Whole-line comments in a file the gate reads
+    are skipped.
+  - **Residual (R55, R56).** A same-user agent that deliberately engineers
+    around this (a wrapper whose path is computed at run time, code that
+    opens bawwab's SQLite store without naming it, forging the data-dir
+    markers or the store's rows) can still approve or reset state. So can
+    indirect execution the gate can't see: compiled programs, interpreters
+    reading code from the network (`bash <(curl …)`), runtime-computed paths
+    (`sh "$f"`), a script found on PATH by a bare name, task runners other than
+    make (npm scripts, just, tox…), and a file changed by a program the gate
+    doesn't model before it runs. The CLI does not
     refuse under Claude's tool shell: Claude Code sets `CLAUDECODE=1` in its
     own process, so the user's `!` shell is not shown to lack it (not
     verified either way; for the smoke test).
