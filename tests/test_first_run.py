@@ -82,7 +82,13 @@ def test_init_scan_spawns_and_sets_scanned(proj, monkeypatch, capsys):
     assert spawned == [(proj, True)]
     assert open_store().init_state() == "scanned"
     assert "background" in capsys.readouterr().out
-    # after init the SessionStart hook is the usual background inventory, no question
+    # after init the SessionStart hook is the usual background inventory; it asks for a level until one is chosen
+    spawned.clear()
+    out = _session_start(proj, capsys)
+    assert spawned == [(proj, False)] and "choose Bawwab's security level" in out["hookSpecificOutput"]["additionalContext"]
+    from bawwab.config import set_level
+
+    set_level("high")
     spawned.clear()
     out = _session_start(proj, capsys)
     assert spawned == [(proj, False)] and out is None

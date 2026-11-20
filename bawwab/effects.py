@@ -904,7 +904,7 @@ def ask_context(cwd: Path) -> str:
     est = f"about {max(1, round(secs / 60))} min" if secs >= 60 else f"about {secs} s"
     level = "" if level_is_set() else level_question() + "\n\n"
     return (
-        "Bawwab (a security scanner for MCP servers, skills and plugins) is installed but not set up yet. The user "
+        "Bawwab (a security scanner for MCP servers, skills and plugins) is installed but has not scanned this machine yet. The user "
         "has seen a welcome message. Before anything else, ask them"
         f"{' (in one AskUserQuestion call)' if level else ''}:\n\n{level}"
         "Ask whether to run a full scan now.\n"
