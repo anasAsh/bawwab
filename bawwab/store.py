@@ -441,16 +441,22 @@ class Store:
                 "UPDATE effect_state SET status=?, ts=? WHERE status='provisional'", (status, _iso(_now()))
             ).rowcount
 
-    def add_quarantine(self, qid: str, ident: str, hash_: str, key: str, item: dict, report: dict) -> None:
+    def add_quarantine(self, qid: str, ident: str, hash_: str, key: str, item: dict, report: dict,
+                       status: str = "active") -> None:
+        """status "active": Claude Code's quarantine (the hook blocks while any is active). "held": an item of an
+        agent bawwab has no blocking hook for (the watcher's hold: recorded and reported, never blocking)."""
         with self._tx():
             self._conn.execute(
                 "INSERT INTO quarantine(id, ident, hash, key, item, report, status, created_at)"
-                " VALUES (?,?,?,?,?,?, 'active', ?)",
-                (qid, ident, hash_, key, json.dumps(item), json.dumps(report), _iso(_now())),
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (qid, ident, hash_, key, json.dumps(item), json.dumps(report), status, _iso(_now())),
             )
 
     def active_quarantine(self) -> list[dict]:
-        rows = self._conn.execute("SELECT * FROM quarantine WHERE status='active' ORDER BY qrow").fetchall()
+        return self.quarantine_rows("active")
+
+    def quarantine_rows(self, status: str) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM quarantine WHERE status=? ORDER BY qrow", (status,)).fetchall()
         return [dict(r) for r in rows]
 
     def quarantine_by_id(self, qid: str) -> dict | None:
