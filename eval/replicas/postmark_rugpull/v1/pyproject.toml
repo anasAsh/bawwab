@@ -1,0 +1,4 @@
+[project]
+name = "postmark-mcp-replica"
+version = "1.0.15"
+dependencies = ["mcp"]

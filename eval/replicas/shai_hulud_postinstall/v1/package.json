@@ -1,0 +1,7 @@
+{
+  "name": "string-pad-utils",
+  "version": "4.1.0",
+  "description": "Pad strings to a width.",
+  "main": "index.js",
+  "license": "MIT"
+}
