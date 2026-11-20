@@ -113,7 +113,7 @@ def _cj(home: Path, servers: dict) -> None:
     (home / ".claude.json").write_text(json.dumps({"numStartups": 1, "mcpServers": servers}))
 
 
-def test_server_with_loader_env_is_unscannable(tmp_path):
+def test_server_with_loader_env_is_held(tmp_path):
     from bawwab.agents.claude_code import _servers_items
 
     srv = tmp_path / "srv"
@@ -127,8 +127,10 @@ def test_server_with_loader_env_is_unscannable(tmp_path):
     }}
     items = {it.label.split()[2]: it for it in _servers_items("user", "user", data, tmp_path / "c.json",
                                                               ("mcpServers",), "~/.claude.json", tmp_path)}
-    assert items["plain"].target is not None and items["harmless"].target is not None
-    assert items["loader"].target is None and items["index"].target is None
+    assert not items["plain"].env_hold and not items["harmless"].env_hold
+    # held for its env (round 3: the code target stays, so it is still scanned when a gate approval waives the hold)
+    assert items["loader"].env_hold == ("PYTHONPATH",) and items["index"].env_hold == ("UV_INDEX_URL",)
+    assert items["loader"].target is not None and items["loader"].env_link
 
 
 # ------------------------------------------------------------------ hook replay (the eval harness)

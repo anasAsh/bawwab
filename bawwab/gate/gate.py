@@ -208,10 +208,11 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
     results = _scan_all(inp, det, scan, store, protected) if isinstance(det, Targets) else []
     blocks: list[str] = []
     keys: list[str] = []
+    links: list[tuple[str, str]] = []
     for reason in protected:
         text, key = _protected_block(inp, reason, store)
         keys.append(key)
-        _link_entries(store, det.env_entries, reason, key)
+        links.append((reason, key))
         if text:
             blocks.append(text)
     if det.plain:  # R57: a plain deny; no pending approval, and no `bawwab approve` to suggest
@@ -224,6 +225,9 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
             blocks.append(format_report(r, store.create_pending(r)))
     if blocks:
         return decision("deny", "\n\n".join(blocks)), keys
+    # R2-I1: link only from a call that ends allowed (every protected reason approved, every target clean/approved)
+    for reason, key in links:
+        _link_entries(store, det.env_entries, reason, key)
     if isinstance(det, Targets) and det.pinnable:
         try:
             updated, changes = pin_changes(inp, {t: r.resolved_version for t, r in results})

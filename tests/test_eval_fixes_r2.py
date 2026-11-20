@@ -47,14 +47,15 @@ def test_path_is_not_a_loader_key():  # documented residual (README "Honest limi
 
 # ------------------------------------------------------------------ R1-I1: entry hash
 
-def test_entry_hash_matches_gate_and_config_forms():
-    h = envkeys.server_entry_hash("python3", ["/s/server.py"], {"PYTHONPATH": "/lib"})
+def test_entry_hash_matches_gate_and_config_forms(tmp_path):
+    base = str(tmp_path)
+    h = envkeys.server_entry_hash("python3", ["/s/server.py"], {"PYTHONPATH": "/lib"}, base)
     spec = {"type": "stdio", "command": "python3", "args": ["/s/server.py"], "env": {"PYTHONPATH": "/lib"}}
-    assert envkeys.spec_entry_hash(spec) == h
-    assert envkeys.spec_entry_hash({**spec, "env": {"PYTHONPATH": "/lib2"}}) != h
-    assert envkeys.spec_entry_hash({**spec, "args": ["/s/other.py"]}) != h
-    assert envkeys.spec_entry_hash({**spec, "cwd": "/elsewhere"}) is None  # fields the gate never saw: no link
-    assert envkeys.spec_entry_hash({**spec, "type": "http"}) is None
+    assert envkeys.spec_entry_hash(spec, base) == h
+    assert envkeys.spec_entry_hash({**spec, "env": {"PYTHONPATH": "/lib2"}}, base) != h
+    assert envkeys.spec_entry_hash({**spec, "args": ["/s/other.py"]}, base) != h
+    assert envkeys.spec_entry_hash({**spec, "cwd": "/elsewhere"}, base) is None  # fields the gate never saw: no link
+    assert envkeys.spec_entry_hash({**spec, "type": "http"}, base) is None
 
 
 @pytest.fixture(scope="module")

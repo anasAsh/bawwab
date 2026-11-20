@@ -369,7 +369,7 @@ def _env_checks(env: dict[str, str], name: str, acc: _Acc, entry: str | None = N
 
 
 def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: str, acc: _Acc) -> None:
-    _env_checks(env, name, acc, server_entry_hash(cmd, args, env))
+    _env_checks(env, name, acc, server_entry_hash(cmd, args, env, cwd or os.getcwd()))
     from bawwab.fetch.target import target_from_command
 
     t = target_from_command(cmd, args)

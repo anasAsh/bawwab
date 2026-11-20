@@ -1,6 +1,6 @@
 # Bawwab effectiveness evaluation (Task 15)
 
-Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1 and 2). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
+Run on 2026-11-20 against the `feat/bawwab` tree (regenerated after Task 15 fix rounds 1–3). Raw data: [`results/`](results/) (`attacks.json`, `normal.json`,
 `replicas.json`, `latency.json`, `baseline.json`, `summary.json`). Reproduce with
 `uv run python eval/run_eval.py` (about 3 minutes, offline). `tests/test_eval.py` replays a subset in CI.
 `tests/test_eval_misses.py` pins every remaining miss as a strict xfail, and `tests/test_eval_fixes.py` covers the misses fixed in round 1.
@@ -157,10 +157,17 @@ The table counts 116 entries:
   gate as a protected action. Since fix round 1, the effect check also refuses to accept such a server by scanning:
   it needs an explicit approval, including when the env is added later to an accepted server. One list of keys,
   `bawwab/envkeys.py`, is shared by both.
-  - Since fix round 2, the user's approval at the gate is linked to a hash of that exact entry (command, args,
-    env), so the effect check accepts it without a second quarantine. Any later change to the entry, or a field the
-    gate never saw (such as `cwd`), is quarantined again. The normal-work task `mcp-add-pythonpath-approved` (§4)
-    measures this flow.
+  - Since fix round 2, the user's approval at the gate is linked to a hash of that exact entry, so the effect check
+    doesn't quarantine it a second time. The normal-work task `mcp-add-pythonpath-approved` (§4) measures this flow.
+  - Since fix round 3, the link waives **only** the env hold (the "env loads code, can't be accepted by a scan"
+    quarantine). It does not waive the code scan:
+    - the effect check still scans the server's code in place, so a malicious server is quarantined whatever env
+      approval exists;
+    - the hash covers command, args, env and the project dir, so the same entry in another project is not covered;
+    - the link is written only by a gate call that ends allowed, with every pending reason approved and every
+      target clean or approved;
+    - entries with a non-string arg or env value, or any field the gate never saw (such as `cwd`), never link.
+  - Any later change to the entry is quarantined again.
   - `PATH` is deliberately not on the list; this is documented in README "Honest limitations".
 - **Approval routes.**
   - All 22 that README and SECURITY.md say are refused are refused. That covers: direct, absolute path, `uv run`,
@@ -249,7 +256,7 @@ best-effort … the effect check is the backstop" and the Task 9 parked list):
 Wall time of `python3 hooks/bawwab_hook.py <sub>` on this machine, 30 runs each (10 for the last row). For scale, a
 bare `python3 -c pass` took 11.9 ms median and 27.3 ms p95.
 
-These figures come from the fix-round-2 full run. The machine was shared with other work (load average 3–5), so
+These figures come from the fix-round-2 full run. The round-3 eval run was at load average 7, so its latency numbers aren't used; this table is still the round-2 measurement. The machine was shared with other work (load average 3–5), so
 expect run-to-run noise of about 10–20 ms on the fast paths and more on p95. In round 1 a quieter latency-only run
 measured about 24 ms median on the prefilter path and 278 / 296 ms on the full gate.
 

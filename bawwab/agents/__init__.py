@@ -51,6 +51,11 @@ class EffectItem:
     keypath: tuple = ()  # keys of the entry inside that file
     path: str | None = None  # a skill dir / command or agent file / plugin install dir
     requires: tuple = ()  # toggles: idents that must be accepted for an enable to be accepted
+    # servers: env keys that load code or switch the package index (bawwab/envkeys.py). Such an item is held as
+    # unscannable unless the user approved this exact entry at the gate (env_link: its entry hash); then only that hold
+    # is waived and the code target is still scanned.
+    env_hold: tuple = ()
+    env_link: str | None = None
 
     @property
     def hash(self) -> str:

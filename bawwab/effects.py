@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bawwab.clicmd import cmd
-from bawwab.envkeys import entry_meta_key, spec_entry_hash
+from bawwab.envkeys import entry_meta_key
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
@@ -312,15 +312,12 @@ def _scan_item(it: EffectItem, scan, cfg, store: Store) -> ScanReport:
 
 
 def _gate_approved_entry(store: Store, it: EffectItem) -> bool:
-    """R1-I1: a server held back only for its env (loader keys), whose exact entry (command, args, env) the user
-    approved at the gate. Any other field, or any change to these, has another hash and no link."""
-    if it.category != "servers":
-        return False
-    h = spec_entry_hash(it.value)
-    if h is None:
+    """R1-I1: the user approved this exact server entry (command, args, env, project dir) at the gate, from a call
+    that ended allowed. Any other field, any change, or another project has another hash (or none) and no link."""
+    if it.category != "servers" or not it.env_link:
         return False
     try:
-        keys = json.loads(store.get_meta(entry_meta_key(h)) or "[]")
+        keys = json.loads(store.get_meta(entry_meta_key(it.env_link)) or "[]")
     except ValueError:
         return False
     return isinstance(keys, list) and any(isinstance(k, str) and store.is_approved(k) and not store.is_rejected(k)
@@ -353,11 +350,14 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
             return False, r
         off = it.value is False or it.value in ([], None)
         return off or store.is_approved(r.key) or all(_accepted_now(store, i, current) for i in it.requires), r
-    if it.category in UNSCANNABLE or it.target is None:
+    # a server held for its env: unscannable unless the user approved this exact entry at the gate, which waives only
+    # the hold (R2-I1): the code below is still scanned like any server's
+    held = bool(it.env_hold) and not _gate_approved_entry(store, it)
+    if it.category in UNSCANNABLE or it.target is None or held:
         r = _unscannable_report(it)
         if store.is_rejected(r.key):
             return False, r
-        return store.is_approved(r.key) or _batch_approved(store, it) or _gate_approved_entry(store, it), r
+        return store.is_approved(r.key) or _batch_approved(store, it), r
     try:
         r = _scan_item(it, scan, cfg, store)
     except Exception as e:  # noqa: BLE001 - one bad item fails closed on its own

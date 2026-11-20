@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 
 CODE_ENV = frozenset({
     "NODE_OPTIONS", "NODE_PATH", "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH",
@@ -40,27 +41,33 @@ def loader_keys(env: object) -> list[str]:
 
 
 # ------------------------------------------------------------------ gate approval -> effect check link
+# What the link waives: ONLY the effect check's "env loads code, so it can't be accepted by a scan" hold, for the
+# exact entry the user approved at the gate, in that project. The server's code is still scanned in place.
 
 _LINKABLE_FIELDS = {"type", "command", "args", "env"}  # what `claude mcp add` writes; anything else: no link
 
 
-def server_entry_hash(command: str, args: list, env: dict) -> str:
-    """The identity of a command server's entry as the gate saw it: command, args and env, exactly."""
-    canon = json.dumps({"command": command, "args": [str(a) for a in args],
-                        "env": {str(k): str(v) for k, v in env.items()}},
+def server_entry_hash(command: str, args: list, env: dict, base: str) -> str | None:
+    """The identity of a command server's entry as the gate saw it: command, args and env exactly, plus the real path
+    of the project dir its relative paths resolve against. None unless every arg and env value is a string."""
+    if not isinstance(command, str) or not all(isinstance(a, str) for a in args) \
+            or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        return None
+    canon = json.dumps({"command": command, "args": list(args), "env": dict(env),
+                        "base": os.path.realpath(base)},
                        sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canon.encode()).hexdigest()[:32]
 
 
-def spec_entry_hash(spec: object) -> str | None:
-    """server_entry_hash of a config entry, or None when the entry holds anything the gate's approval didn't see
-    (a cwd, headers, another transport): such an entry is never covered by a gate approval."""
+def spec_entry_hash(spec: object, base) -> str | None:
+    """server_entry_hash of a config entry resolved against base, or None when the entry holds anything the gate's
+    approval didn't see (a cwd, headers, another transport) or a non-string arg/env value: never linked."""
     if not isinstance(spec, dict) or not set(spec) <= _LINKABLE_FIELDS or spec.get("type", "stdio") != "stdio":
         return None
     cmd, args, env = spec.get("command"), spec.get("args", []), spec.get("env", {})
     if not isinstance(cmd, str) or not isinstance(args, list) or not isinstance(env, dict):
         return None
-    return server_entry_hash(cmd, args, env)
+    return server_entry_hash(cmd, args, env, str(base))
 
 
 def entry_meta_key(h: str) -> str:
