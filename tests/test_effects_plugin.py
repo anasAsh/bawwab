@@ -95,7 +95,9 @@ def test_init_scan_batches_install_time_hooks(env, capsys):
     details = fx.quarantine_details(fx.quarantined())
     for c in ("other-plugin-stop", "other-guard", "statusLine"):
         assert c in details
+    capsys.readouterr()
     assert main(["approve", q[0]["id"]]) == 0
+    assert capsys.readouterr().out == f"approved 3 existing hooks/settings ({q[0]['id']})\n"  # the batch, as listed
     assert _active() == [] and not fx.flag_path().exists()
     statuses = {i: r["status"] for i, r in open_store().all_effect_rows().items()}
     assert sum(1 for s in statuses.values() if s == "approved") == 3

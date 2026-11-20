@@ -729,6 +729,12 @@ def _why(q: dict, findings: list) -> str:
     return sanitise(text, 90)
 
 
+def decision_name(store: Store, q: dict) -> str:
+    """What approve/reject decide for q's id, named as the table names it: the item, or the whole batch."""
+    n = sum(1 for x in store.active_quarantine() if x["id"] == q["id"])
+    return f"{n} existing hooks/settings" if n > 1 else item_name(q)
+
+
 def _groups(entries: list[dict]) -> dict[str, list[dict]]:
     groups: dict[str, list[dict]] = {}
     for q in entries:

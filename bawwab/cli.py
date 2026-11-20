@@ -160,7 +160,7 @@ def _decide(args) -> int:
     failed = 0
     for qid in dict.fromkeys(args.id):
         q = effects.find_quarantine(store, qid)
-        name = effects.item_name(q) if q is not None else None
+        name = effects.decision_name(store, q) if q is not None else None
         if args.cmd == "approve":
             ok, msg = store.approve(qid, force=args.force)
             verb = "approved"
