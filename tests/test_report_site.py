@@ -415,3 +415,82 @@ def test_why_escapes_hostile_paths(tmp_path):
     why = _why_section(page)
     assert "&lt;img src=x onerror=alert(1)&gt;.js" in why and "alert(2)" in why
     assert "<img" not in page and "<img" not in (out / "targets.html").read_text()
+
+
+# ------------------------------------------------------------------ --allow-unreviewed (weekly CI build)
+
+def _cli(tmp_path, targets, results, review, *extra) -> tuple[int, Path]:
+    tp, rp, vp = _write(tmp_path, targets, results, review)
+    out = tmp_path / "site"
+    return build_site.main(["--targets", str(tp), "--results", str(rp), "--review", str(vp), "--out", str(out),
+                            *extra]), out
+
+
+def test_default_still_refuses_unreviewed(tmp_path, capsys):
+    t = _npm_target()
+    code, out = _cli(tmp_path, [t], {t["id"]: _result(t, findings=[_finding()])}, {})
+    assert code == 2 and "REFUSING TO PUBLISH" in capsys.readouterr().err and not out.exists()
+    with pytest.raises(build_site.PublishRefused):
+        build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, findings=[_finding()])}, {}), out,
+                         allow_unreviewed=False)
+
+
+def test_allow_unreviewed_publishes_with_badges(tmp_path, capsys):
+    t = _npm_target()
+    code, out = _cli(tmp_path, [t], {t["id"]: _result(t, verdict="malicious", findings=[_finding(sev="critical")])},
+                     {}, "--allow-unreviewed")
+    assert code == 0
+    assert "unreviewed" in capsys.readouterr().err  # still listed, as a warning
+    page = (out / "t" / f"{t['id']}.html").read_text()
+    assert re.search(r'<span class="badge b-unreviewed">Not yet reviewed</span>', page)
+    assert "Not yet reviewed: rule verdict only" in page
+    assert "Not yet reviewed: rule verdict only" in (out / "targets.html").read_text()
+    assert "Reviewed: false alarm" not in page
+
+
+def test_mixed_reviewed_and_unreviewed_is_not_yet_reviewed(tmp_path):
+    t = _npm_target()
+    f1, f2 = _finding(evidence="one"), _finding(rule="obfuscation.blob", evidence="two")
+    review = {t["id"]: {"findings": [{"match": {"key": f1["key"]}, "status": "false-positive", "note": "fine"}]}}
+    out = tmp_path / "site"
+    views, _ = build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, findings=[f1, f2])}, review), out,
+                                allow_unreviewed=True)
+    assert views[0].outcome == "Not yet reviewed: rule verdict only"
+    page = (out / "t" / f"{t['id']}.html").read_text()
+    assert "Known false alarm" in page and page.count('class="badge b-unreviewed">Not yet reviewed<') == 1
+
+
+def test_allow_unreviewed_headline_counts(tmp_path):
+    a, b, c = _npm_target("a-mcp", rank=1), _npm_target("b-mcp", rank=2), _npm_target("c-mcp", rank=3)
+    fa, fb = _finding(evidence="a"), _finding(evidence="b")
+    results = {a["id"]: _result(a, findings=[fa]), b["id"]: _result(b, findings=[fb]),
+               c["id"]: _result(c, verdict="clean")}
+    review = {a["id"]: {"findings": [{"match": {"key": fa["key"]}, "status": "false-positive", "note": "n"}]}}
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [a, b, c], results, review), out, allow_unreviewed=True)
+    index = (out / "index.html").read_text()
+    assert "2 flagged by static rules · 1 reviewed · 0 confirmed harmful · 1 awaiting review" in index
+    assert "Scanned 2026-11-20. 1 flagged targets are awaiting hand-review" in index
+    assert "Every target that was not clean was checked by hand" not in index
+    # Everything reviewed: today's wording, no banner, even with the flag on.
+    review[b["id"]] = {"findings": [{"match": {"key": fb["key"]}, "status": "confirmed", "note": "n"}]}
+    build_site.build(*_write(tmp_path, [a, b, c], results, review), out, allow_unreviewed=True)
+    index = (out / "index.html").read_text()
+    assert "2 flagged by static rules · 1 confirmed harmful after hand-review." in index
+    assert "awaiting" not in index
+
+
+def test_allow_unreviewed_still_blocks_unsafe_ids(tmp_path):
+    t = _npm_target()
+    bad = dict(_npm_target("bad-mcp", rank=2), id="../Bad ID")
+    results = {t["id"]: _result(t, findings=[_finding()])}
+    _, problems, _ = build_site.plan([t, bad], results, {"targets": {}}, allow_unreviewed=True)
+    assert problems == ["'../Bad ID': unsafe target id"]
+    # build() never gets that far: the targets file is validated first, flag or not.
+    with pytest.raises(ValueError):
+        build_site.build(*_write(tmp_path, [t, bad], results, {}), tmp_path / "site", allow_unreviewed=True)
+    assert not (tmp_path / "site").exists()
+    # A flagged verdict with nothing to review is malformed input, not "unreviewed": still blocks.
+    results = {t["id"]: _result(t, findings=[])}
+    with pytest.raises(build_site.PublishRefused):
+        build_site.build(*_write(tmp_path, [t], results, {}), tmp_path / "site", allow_unreviewed=True)

@@ -1,10 +1,14 @@
 """Turn report/out/results.json + report/review.json into a static site in report/out/site/.
 
-    uv run python report/build_site.py [--repo OWNER/NAME] [--out report/out/site]
+    uv run python report/build_site.py [--repo OWNER/NAME] [--out report/out/site] [--allow-unreviewed]
 
 Publishing gate: every target whose static verdict is not clean must have a review entry for each of
 its counted findings (severity at or above the suspicious threshold). If any is missing the build
 REFUSES (exit 2) and lists what still needs a human look; nothing is written.
+
+--allow-unreviewed (the weekly CI build) publishes those findings anyway, each badged "Not yet reviewed",
+their target's outcome "Not yet reviewed: rule verdict only", and the overview counts them as awaiting
+review. Unsafe ids and malformed input still refuse.
 
 Everything that came out of a scan (names, paths, evidence, error text) is hostile input. It is
 sanitised with Bawwab's own sanitiser and HTML-escaped before it reaches a page, and every page
@@ -201,9 +205,15 @@ def state_of(result: dict | None, spec: str) -> str:
     return v if v in ("clean", "suspicious", "malicious") else "not-verified"
 
 
+UNREVIEWED = "Not yet reviewed: rule verdict only"
+
+
 def outcome_of(v: View) -> str:
     if v.state in ("clean", "not-verified"):
         return VERDICT_LABEL[v.state]
+    # One unread finding is enough: the reviewed ones say nothing about it (only with --allow-unreviewed).
+    if any(r is None for _, r in v.counted):
+        return UNREVIEWED
     stats = {r["status"] for _, r in v.counted if r}
     if "confirmed" in stats:
         return "Concern confirmed by review"
@@ -237,8 +247,10 @@ def why_flagged(v: View) -> list[tuple[str, str, int, str]]:
     return out
 
 
-def plan(targets: list[dict], results: dict, review: dict) -> tuple[list[View], list[str], list[str]]:
-    """(views, publish-blocking problems, warnings)."""
+def plan(targets: list[dict], results: dict, review: dict,
+         allow_unreviewed: bool = False) -> tuple[list[View], list[str], list[str]]:
+    """(views, publish-blocking problems, warnings). With allow_unreviewed an unreviewed finding is a warning
+    (the page labels it); every other problem still blocks."""
     views: list[View] = []
     problems: list[str] = []
     warnings: list[str] = []
@@ -260,8 +272,9 @@ def plan(targets: list[dict], results: dict, review: dict) -> tuple[list[View], 
                 problems.append(f"{tg['id']}: verdict {state} but no counted finding to review")
             for f, r in v.counted:
                 if r is None:
-                    problems.append(f"{tg['id']}: unreviewed {f.get('severity')} finding {f.get('rule')} "
-                                    f"[{f.get('key')}] {sanitise(f.get('file') or '', 80)}:{f.get('line') or ''}")
+                    (warnings if allow_unreviewed else problems).append(
+                        f"{tg['id']}: unreviewed {f.get('severity')} finding {sanitise(f.get('rule') or '', 80)} "
+                        f"[{f.get('key')}] {sanitise(f.get('file') or '', 80)}:{f.get('line') or ''}")
         v.outcome = outcome_of(v)
         views.append(v)
     ids = {tg["id"] for tg in targets}
@@ -299,6 +312,7 @@ h1{font-size:1.75rem;line-height:1.25;margin:24px 0 8px;overflow-wrap:anywhere}h
 .b-malicious{color:var(--bad);background:var(--bad-bg)}.b-not-verified{color:var(--nv);background:var(--nv-bg)}
 .b-confirmed{color:var(--bad);background:var(--bad-bg)}.b-false-positive{color:var(--ok);background:var(--ok-bg)}
 .b-expected-behaviour{color:var(--nv);background:var(--nv-bg)}.b-low{color:var(--nv);background:var(--nv-bg)}
+.b-unreviewed{color:var(--nv);background:var(--nv-bg);border:1px dashed var(--nv)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:12px 0}
 .card h3{margin:0 0 6px;font-size:1.05rem;overflow-wrap:anywhere}
 dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:12px 0}dl.meta dt{color:var(--muted)}dl.meta dd{margin:0;overflow-wrap:anywhere}
@@ -432,17 +446,34 @@ def index_page(views: list[View], meta: dict, repo: str, tax: dict | None = None
         (c["not-verified"], VERDICT_LABEL["not-verified"])])
     review = "".join(f"<li>{e(k)}: {n}</li>" for k, n in sorted(oc.items())) or "<li>Nothing was flagged.</li>"
     confirmed = sum(1 for v in flagged if "confirm" in v.outcome.lower())
+    # Only non-zero with --allow-unreviewed; at zero the page reads exactly as a fully reviewed report.
+    awaiting = sum(1 for v in flagged if v.outcome == UNREVIEWED)
     commit = e(meta.get("bawwab_commit", "unknown"))
     dirty = " (with uncommitted changes)" if meta.get("bawwab_dirty") else ""
+    if awaiting:
+        banner = (f'\n<div class="note" role="note"><strong>Scanned {e(meta.get("scan_date", "unknown"))}. {awaiting} flagged '
+                  "targets are awaiting hand-review:</strong> their labels are what the static rules said before anyone "
+                  "read the code.</div>")
+        headline = (f"{len(flagged)} flagged by static rules · {len(flagged) - awaiting} reviewed · "
+                    f"{confirmed} confirmed harmful · {awaiting} awaiting review.")
+        checked = (f"{len(flagged) - awaiting} of the {len(flagged)} flagged targets have been checked by hand; the other "
+                   f"{awaiting} are marked &ldquo;{e(UNREVIEWED)}&rdquo;.")
+        hand = ("Each flagged finding carries a reviewer's status (confirmed, known false alarm, or expected for what "
+                "the tool does), or is marked &ldquo;Not yet reviewed&rdquo; until someone has read it.")
+    else:
+        banner = ""
+        headline = f"{len(flagged)} flagged by static rules · {confirmed} confirmed harmful after hand-review."
+        checked = "Every target that was not clean was checked by hand before publication."
+        hand = "Each flagged finding carries a reviewer's status: confirmed, known false alarm, or expected for what the tool does."
     body = f"""
-<h1>Scanning the 100 most popular MCP servers, skills and plugins</h1>
+<h1>Scanning the 100 most popular MCP servers, skills and plugins</h1>{banner}
 <p class="lede">{kinds['mcp']} MCP servers, {kinds['skill']} skills and {kinds['plugin']} plugins, ranked by downloads or GitHub stars,
 each pinned to an exact version or commit and scanned with Bawwab's static rules. Scan date: {e(meta.get('scan_date', 'unknown'))}.</p>
 <section aria-labelledby="h-counts"><h2 id="h-counts">Headline counts</h2>
-<p class="lede"><strong>{len(flagged)} flagged by static rules · {confirmed} confirmed harmful after hand-review.</strong>
+<p class="lede"><strong>{headline}</strong>
 The rule verdicts below are what the scanner said before anyone read the code; each target's page shows the reviewed outcome next to it.</p>
 <div class="stats">{stats}</div>
-<p>Every target that was not clean was checked by hand before publication. Review outcome for the {len(flagged)} flagged targets:</p>
+<p>{checked} Review outcome for the {len(flagged)} flagged targets:</p>
 <ul>{review}</ul>
 <p><a href="targets.html">See all {len(views)} targets in a sortable table</a>.</p></section>
 <section aria-labelledby="h-method"><h2 id="h-method">How this was done</h2>
@@ -451,7 +482,7 @@ The rule verdicts below are what the scanner said before anyone read the code; e
 <li><strong>Pinned.</strong> Each target is scanned at an exact package version or git commit, listed on its page.</li>
 <li><strong>Download only.</strong> Packages are fetched with Bawwab's own fetchers and read as files. Nothing is installed or run.</li>
 <li><strong>Static rules only.</strong> The verdict comes from Bawwab's pattern and code-flow rules, without the AI review step Bawwab normally adds, and without running anything in a sandbox.</li>
-<li><strong>Hand-checked.</strong> Each flagged finding carries a reviewer's status: confirmed, known false alarm, or expected for what the tool does.</li>
+<li><strong>Hand-checked.</strong> {hand}</li>
 </ul></section>
 {categories_section(tax or {})}
 <section aria-labelledby="h-limits"><h2 id="h-limits">Limits</h2>
@@ -528,6 +559,9 @@ def finding_card(f: dict, r: dict | None, tax: dict | None = None) -> str:
         rev = (f'<div class="review"><p>{badge(r["status"], STATUSES[r["status"]])}</p><p>{e(r["note"])}</p>'
                + (f'<p class="loc">Reviewed by {e(r.get("reviewer"))}{", " + e(r.get("date")) if r.get("date") else ""}</p>'
                   if r.get("reviewer") else "") + "</div>")
+    elif f.get("counted"):  # only reachable with --allow-unreviewed
+        rev = (f'<div class="review"><p>{badge("unreviewed", "Not yet reviewed")}</p><p>Nobody has read this '
+               "finding yet. It is what the static rule matched, not a finding that the package is harmful.</p></div>")
     sev = f.get("severity") or ""
     return f"""<article class="card">
 <h3><code>{t(f.get('rule'), 80)}</code>: {e(title)} <span class="badge b-{'low' if not f.get('counted') else ('malicious' if sev == 'critical' else 'suspicious')}">{e(sev)}</span></h3>
@@ -578,7 +612,7 @@ def target_page(v: View, repo: str, tax: dict | None = None) -> str:
         meta.append(("Scanned as", e(res["artifact_type"])))
     dl = "".join(f"<dt>{k}</dt><dd>{val}</dd>" for k, val in meta)
     parts = [f"<h1>{t(tg['name'], 160)}</h1>",
-             f"<p>{badge(v.state)} {'' if v.state in ('clean', 'not-verified') else e(v.outcome)}</p>",
+             f"<p>{badge(v.state)} {'' if v.state in ('clean', 'not-verified') else (badge('unreviewed', v.outcome) if v.outcome == UNREVIEWED else e(v.outcome))}</p>",
              f"<p>{e(VERDICT_NOTE[v.state])}</p>", why_section(v), f'<dl class="meta">{dl}</dl>']
     if v.summary:
         parts.append(f'<div class="note"><strong>Review note:</strong> {e(v.summary)}</div>')
@@ -657,13 +691,14 @@ def md_to_html(md: str) -> str:
 # ---------------------------------------------------------------- build
 
 def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, repo: str = DEFAULT_REPO,
-          method_path: Path | None = None, taxonomy_path: Path | None = None) -> tuple[list[View], list[str]]:
+          method_path: Path | None = None, taxonomy_path: Path | None = None,
+          allow_unreviewed: bool = False) -> tuple[list[View], list[str]]:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         raise ValueError("repo must be OWNER/NAME")
     targets = load_targets(targets_path)
     rdoc = json.loads(results_path.read_text()) if results_path.exists() else {"results": {}}
     review = load_review(review_path)
-    views, problems, warnings = plan(targets, rdoc.get("results") or {}, review)
+    views, problems, warnings = plan(targets, rdoc.get("results") or {}, review, allow_unreviewed)
     if problems:
         raise PublishRefused(problems)
     scanned = [r.get("scanned_at") or "" for r in (rdoc.get("results") or {}).values()]
@@ -691,15 +726,17 @@ def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, 
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build the static report site (refuses unreviewed findings).")
+    ap = argparse.ArgumentParser(description="Build the static report site (refuses unreviewed findings by default).")
     ap.add_argument("--targets", type=Path, default=REPORT / "targets.json")
     ap.add_argument("--results", type=Path, default=REPORT / "out" / "results.json")
     ap.add_argument("--review", type=Path, default=REPORT / "review.json")
     ap.add_argument("--out", type=Path, default=REPORT / "out" / "site")
     ap.add_argument("--repo", default=DEFAULT_REPO, help="GitHub OWNER/NAME that receives dispute issues")
+    ap.add_argument("--allow-unreviewed", action="store_true",
+                    help="publish unreviewed findings, labelled 'Not yet reviewed' (the weekly CI build)")
     a = ap.parse_args(argv)
     try:
-        views, warnings = build(a.targets, a.results, a.review, a.out, a.repo)
+        views, warnings = build(a.targets, a.results, a.review, a.out, a.repo, allow_unreviewed=a.allow_unreviewed)
     except PublishRefused as ex:
         print(f"REFUSING TO PUBLISH: {len(ex.problems)} finding(s) on non-clean targets are not reviewed.\n"
               "Add an entry for each to report/review.json (status + note), then rebuild:", file=sys.stderr)
@@ -709,7 +746,9 @@ def main(argv: list[str] | None = None) -> int:
     for w in warnings:
         print("warning: " + w, file=sys.stderr)
     c = counts(views)
-    print(f"wrote {a.out}: {len(views)} targets {c}", file=sys.stderr)
+    awaiting = sum(1 for v in views if v.outcome == UNREVIEWED)
+    print(f"wrote {a.out}: {len(views)} targets {c}" + (f", {awaiting} awaiting review" if awaiting else ""),
+          file=sys.stderr)
     return 0
 
 
