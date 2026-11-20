@@ -175,43 +175,117 @@ def _referenced(rel: str, launchers: list[ScanFile]) -> bool:
     return any(rx.search(f.text) for f in launchers)
 
 
-# Keys whose subtree runs something. Any ancestor key in this set makes a reference an execution one.
-_EXEC_KEYS = {
-    "command", "commands", "args", "arguments", "hooks", "hook", "bin", "main", "module", "scripts", "script",
-    "entry", "entrypoint", "entry_point", "entrypoints", "exec", "execute", "run", "cmd", "server", "servers",
-    "mcpservers", "install", "postinstall", "preinstall", "prepare", "prepublish", "start", "launch", "shell",
-    "binary", "executable", "program", "runtime", "cwd", "env", "build", "setup", "init", "browser", "exports",
+# JSON keys that only describe the package. A string counts as a display asset only when the key
+# that holds it is one of these and every enclosing key is one of these or a plain container. Any other
+# key (apiKeyHelper, lint-staged, an unknown hook name...) gives MED: unknown means "may run".
+_DESC_KEYS = {
+    "logo", "icon", "icons", "image", "images", "screenshot", "screenshots", "banner", "avatar", "thumbnail",
+    "favicon",
 }
+_CONTAINER_KEYS = {"interface", "ui", "display", "branding", "metadata", "assets"}
+
+_PNG_CHUNKS = {
+    b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"sBIT", b"bKGD", b"hIST",
+    b"pHYs", b"sPLT", b"tIME", b"acTL", b"fcTL", b"fdAT",
+}
+_PRINTABLE_RUN = re.compile(rb"[\x20-\x7e\t\r\n]{24}")
 
 
-def _display_asset(head: bytes) -> bool:
-    """An image or font by magic (never an executable, archive or document)."""
-    return head.startswith((
-        b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"wOFF", b"wOF2", b"\x00\x01\x00\x00\x00", b"OTTO",
-        b"\x00\x00\x01\x00", b"II*\x00", b"MM\x00*",
-    )) or (head.startswith((b"GIF87a", b"GIF89a")) and _media_magic(head)) or (
-        head.startswith(b"RIFF") and head[8:12] == b"WEBP" and _media_magic(head)
-    ) or (head.startswith(b"BM") and _media_magic(head))
+def _clean_png(d: bytes) -> bool:
+    """Chunks tile the file exactly and end with IEND; only standard chunks, no text chunks, and no run of
+    printable text in any chunk (a polyglot's shell line has to live somewhere)."""
+    if not d.startswith(b"\x89PNG\r\n\x1a\n") or len(d) < 33:
+        return False
+    o = 8
+    while o + 12 <= len(d):
+        n = int.from_bytes(d[o : o + 4], "big")
+        t = d[o + 4 : o + 8]
+        if t not in _PNG_CHUNKS or o + 12 + n > len(d) or _PRINTABLE_RUN.search(d[o + 8 : o + 8 + n]):
+            return False
+        o += 12 + n
+        if t == b"IEND":
+            return o == len(d) and n == 0
+    return False
 
 
-def _json_refs(node: object, rx: re.Pattern[str], under_exec: bool = False):
-    """Yield, for each string mentioning the file, whether it sits under an execution key."""
+def _clean_jpeg(d: bytes) -> bool:
+    """Ends with EOI and carries no comment segment before the scan."""
+    if not d.startswith(b"\xff\xd8\xff") or not d.endswith(b"\xff\xd9"):
+        return False
+    o = 2
+    while o + 4 <= len(d) and d[o] == 0xFF:
+        m = d[o + 1]
+        if m == 0xFE:
+            return False
+        if m == 0xDA:
+            break
+        o += 2 + int.from_bytes(d[o + 2 : o + 4], "big")
+    return True
+
+
+def _clean_gif(d: bytes) -> bool:
+    return d.startswith((b"GIF87a", b"GIF89a")) and d.endswith(b";") and b"\x21\xfe" not in d
+
+
+def _display_asset(d: bytes) -> bool:
+    """A structurally clean PNG, JPEG or GIF. Every other format (fonts, ICO, WEBP...) gets no exemption,
+    and so does an image with anything odd in it: a forged header can carry a runnable tail."""
+    return _clean_png(d) or _clean_jpeg(d) or _clean_gif(d)
+
+
+def _json_refs(node: object, match, path: tuple = ()):
+    """Yield, for each string (or key) mentioning the file, whether it counts as a run (True) or only
+    as a description (False)."""
     if isinstance(node, str):
-        if rx.search(node):
-            yield under_exec
+        if match(node):
+            keys = [str(k).lower() for k in path]
+            yield not (
+                keys and keys[-1] in _DESC_KEYS and all(k in _DESC_KEYS or k in _CONTAINER_KEYS for k in keys[:-1])
+            )
     elif isinstance(node, dict):
         for k, v in node.items():
-            yield from _json_refs(v, rx, under_exec or str(k).lower() in _EXEC_KEYS)
-            if isinstance(k, str) and rx.search(k):
+            if isinstance(k, str) and match(k):
                 yield True  # a name used as a key (e.g. a bin map) is never descriptive
+            yield from _json_refs(v, match, path + (k,))
     elif isinstance(node, list):
         for v in node:
-            yield from _json_refs(v, rx, under_exec)
+            yield from _json_refs(v, match, path)
 
 
-def _reference_kind(rel: str, launchers: list[ScanFile], display: bool) -> str | None:
-    """"exec" when a launcher names the file in an execution position (or in any way we cannot
-    classify), "display" when it is only an image/font named in a descriptive field, else None."""
+def _active_shell_scripts(files: list[ScanFile]) -> set[str]:
+    """Shell scripts something runs on its own: hook scripts, install-style scripts, anything a manifest or
+    another active script names. A script nothing mentions (a stray tests/*.sh) is not a launcher."""
+    shells = [f for f in files if f.rel.endswith(SHELL_EXT)]
+    others = [f for f in files if _is_launcher(f.rel) and not f.rel.endswith(SHELL_EXT)]
+
+    def named_in(f: ScanFile, texts: list[str]) -> bool:
+        base = f.rel.rsplit("/", 1)[-1]
+        rx = re.compile(r"(?<![\w.-])" + re.escape(base) + r"(?![\w-])")
+        return any(rx.search(t) for t in texts)
+
+    active = {
+        f.rel for f in shells
+        if re.search(r"(?:^|/)hooks/", f.rel)
+        or re.search(r"install|setup|bootstrap|prepare|init|hook", f.rel.rsplit("/", 1)[-1], re.I)
+        or named_in(f, [o.text for o in others])
+    }
+    changed = True
+    while changed:
+        changed = False
+        texts = [f.text for f in shells if f.rel in active]
+        for f in shells:
+            if f.rel not in active and named_in(f, texts):
+                active.add(f.rel)
+                changed = True
+    return active
+
+
+def _reference_kind(
+    rel: str, launchers: list[ScanFile], display: bool, active: set[str] | None = None
+) -> str | None:
+    """"exec" when a launcher names the file in any way that is not clearly a description (or in a way we
+    cannot classify), "display" when a clean image is named only in a descriptive JSON field or by scripts
+    nothing runs, else None."""
     if "/" in rel:
         rx = re.compile(r"(?<![\w.-])(?:\./)?" + re.escape(rel) + r"(?![\w./-])")
     else:
@@ -221,34 +295,33 @@ def _reference_kind(rel: str, launchers: list[ScanFile], display: bool) -> str |
         )
         if display:  # in a JSON manifest a bare "logo.png" value is a path
             rx = re.compile(r"(?<![\w.-])(?:\./|/)?" + re.escape(rel) + r"(?![\w./-])")
-    found = None
+
+    def match(t: str) -> bool:
+        return bool(rx.search(t) or rx.search(t.replace("/./", "/")))
+
+    result = None
     for f in launchers:
-        if not rx.search(f.text):
+        if display and f.rel.endswith(SHELL_EXT) and f.rel not in (active or set()):
             continue
         if display and f.rel.endswith(".json"):
             try:
                 data = json.loads(f.text)
             except ValueError:
-                return "exec"
-            for under_exec in _json_refs(data, rx):
-                if under_exec:
+                if match(f.text):
                     return "exec"
-                found = "display"
-            if found is None:
+                continue
+            seen = False
+            for is_run in _json_refs(data, match):
+                if is_run:
+                    return "exec"
+                seen = True
+            if not seen and match(f.text):
                 return "exec"  # matched only in text we could not place: fail closed
-        elif display and f.rel.endswith(SHELL_EXT):
-            # A shell script merely mentioning an image path (tests, packaging) does not run it.
-            body = re.escape(rel)
-            cmd = re.compile(
-                r"""(?:^[ \t]*(?:[^\s'"`;&|$]*/)?""" + body + r"""|(?:[;&|(`]|\$\()[ \t]*['"]?(?:[^\s'"`;&|]*/)?"""
-                + body + r"""['"]?)(?![\w./-])""", re.M,
-            )
-            if cmd.search(re.sub(r"\\\r?\n", " ", f.text)):
-                return "exec"
-            found = "display"
-        else:
+            if seen:
+                result = "display"
+        elif match(f.text):
             return "exec"
-    return found
+    return result
 
 
 def _binary_unscanned(n: int) -> list[Finding]:
@@ -282,10 +355,11 @@ def load_files(
     # (rel, evidence, kind): kind "exec" (plausible executable), "forged" (executable magic with an
     # implausible header), "media" (counted as binary when left alone) or "quiet" (small media).
     pending: list[tuple[str, str, str]] = []
-    display_assets: set[str] = set()  # images/fonts by magic: a descriptive manifest field is not a run
+    display_assets: set[str] = set()  # clean PNG/JPEG/GIF: a descriptive manifest field is not a run
 
     def finish() -> tuple[list[ScanFile], list[Finding]]:
         launchers = [f for f in files if _is_launcher(f.rel)]
+        active = _active_shell_scripts(files) if display_assets else set()
         binaries = 0
         for rel, evidence, kind in pending:
             interpreted = _interpreted(rel, files)
@@ -294,7 +368,7 @@ def load_files(
             elif kind in ("exec", "forged") or interpreted:
                 findings.append(_truncated(evidence, rel))
             else:
-                ref = _reference_kind(rel, launchers, rel in display_assets)
+                ref = _reference_kind(rel, launchers, rel in display_assets, active)
                 if ref == "exec":
                     findings.append(_truncated(evidence, rel))
                 elif ref == "display" or kind == "media":
@@ -323,8 +397,6 @@ def load_files(
                     if _is_binary(head) and not _is_code_name(rel, head):
                         kind = exec_kind(head) if _is_executable(head) else "media"
                         pending.append((rel, f"{rel} is {size} bytes (limit {max_file_bytes}); not scanned", kind))
-                        if kind == "media" and _display_asset(head):
-                            display_assets.add(rel)
                     elif (b"\x00" in head or _is_binary(head) or _is_executable(head)
                           or rel.endswith(SHELL_EXT) or _shell_shebang(head)):
                         # NUL bytes, a script under a forged binary/media header (R27 round 3), or a
@@ -364,7 +436,7 @@ def load_files(
                     pending.append((rel, f"{rel} contains NUL bytes; not scanned", exec_kind(head)))
                 else:  # small images/archives stay silent unless a launcher runs them
                     pending.append((rel, f"{rel} contains NUL bytes; not scanned", "quiet"))
-                    if _display_asset(head):
+                    if _display_asset(data):
                         display_assets.add(rel)
                 continue
             files.append(ScanFile(rel, data.decode("utf-8", errors="replace")))
