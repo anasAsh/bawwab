@@ -1,0 +1,5 @@
+{
+  "expected": "malicious",
+  "category": "hidden-unicode",
+  "adversarial": false
+}

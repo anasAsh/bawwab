@@ -1,0 +1,5 @@
+{
+  "expected": "malicious",
+  "category": "obfuscation",
+  "adversarial": true
+}

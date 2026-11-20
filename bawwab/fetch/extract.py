@@ -23,12 +23,15 @@ def _bad_name(name: str) -> str | None:
     return None
 
 
-def extract_archive(file: Path, dest: Path) -> list[Finding]:
-    """Extract file into dest without ever writing outside it. Unsafe members are skipped."""
+def extract_archive(file: Path, dest: Path, password: bytes | None = None) -> list[Finding]:
+    """Extract file into dest without ever writing outside it. Unsafe members are skipped.
+
+    password decrypts a ZipCrypto-encrypted zip (the benchmark's malware samples); tar ignores it.
+    """
     findings: list[Finding] = []
     try:
         if zipfile.is_zipfile(file):
-            _extract_zip(file, dest, findings)
+            _extract_zip(file, dest, findings, password)
         elif tarfile.is_tarfile(file):
             _extract_tar(file, dest, findings)
         else:
@@ -64,10 +67,12 @@ def _extract_tar(file: Path, dest: Path, findings: list[Finding]) -> None:
                 findings.append(unsafe(f"could not extract {member.name}: {type(e).__name__}: {e}", file=member.name))
 
 
-def _extract_zip(file: Path, dest: Path, findings: list[Finding]) -> None:
+def _extract_zip(file: Path, dest: Path, findings: list[Finding], password: bytes | None = None) -> None:
     real_dest = dest.resolve()
     total = 0
     with zipfile.ZipFile(file) as zf:
+        if password:
+            zf.setpassword(password)
         infos = zf.infolist()
         if len(infos) > MAX_MEMBERS:
             findings.append(unsafe(f"archive has more than {MAX_MEMBERS} members; extraction stopped"))

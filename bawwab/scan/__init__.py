@@ -319,6 +319,9 @@ def _cacheable(r: ScanReport) -> bool:
     return not needs_recheck(r) and not any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
 
 
+STATIC_KEY_SUFFIX = "~static"  # scans made without the judge (judge=False)
+
+
 def _fetch_key(t: Target) -> str:
     return f"{t.kind}:{t.name or t.url or t.path or t.raw}@unfetched"
 
@@ -333,7 +336,14 @@ def scan_target(
     sandbox: SandboxRunner | None = None,
     no_cache: bool = False,
     store: Store | None = None,
+    judge: bool = True,
 ) -> ScanReport:
+    """Fetch (never execute) and scan a target.
+
+    judge=False skips the AI judge entirely (static rules only, e.g. the benchmark's --static-only run).
+    Such a report is filed under its own key (suffix "~static") so it is never served from cache to a
+    judged scan, and it never baselines trust.
+    """
     cfg = cfg or load_config(Path.cwd())
     mode = mode or cfg.mode
     store = store or open_store()
@@ -346,12 +356,12 @@ def scan_target(
         return r
     ctx = None
     try:
-        ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox)
+        ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox, judge=judge)
         child_material = _prefetch_children(f, ctx)
         chash = f.content_hash
         if child_material:
             chash = hashlib.sha256(f"{chash}\n{child_material}".encode()).hexdigest()
-        key = target_key(t, f.resolved_version, chash)
+        key = target_key(t, f.resolved_version, chash) + ("" if judge else STATIC_KEY_SUFFIX)
         if not no_cache and not ctx.no_cache:
             cached = store.get_cached(key)
             if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
@@ -385,7 +395,7 @@ def scan_target(
             key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
         )
         store.put_report(report, snapshot=snap)
-        if verdict == Verdict.CLEAN and not unread and (prev is None or prev[1] != snap):
+        if judge and verdict == Verdict.CLEAN and not unread and (prev is None or prev[1] != snap):
             store.put_snapshot(tname, key, snap)
         store.audit("scan", key=key, verdict=verdict.value, mode=mode.value)
         return report

@@ -1,0 +1,9 @@
+{
+  "expected": "suspicious",
+  "category": "cross-server",
+  "adversarial": false,
+  "servers": [
+    "tracker",
+    "weather"
+  ]
+}

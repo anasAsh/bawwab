@@ -110,6 +110,73 @@ Bawwab checks at two points:
 - **Never grants permission.** A clean scan doesn't approve the command. Claude Code's normal permission rules still apply.
 - **Low noise.** It's tested against real packages (official MCP servers, Playwright, DigitalOcean and others), which must come back clean.
 
+## Benchmark
+
+Bawwab is measured against a labelled corpus in [`bench/`](bench/): handwritten malicious samples for every rule
+family (canary values and `.invalid` hosts only), samples written to talk the AI reviewer out of a finding,
+benign look-alikes, and popular real packages and skills at pinned versions. Real malware comes from the
+[DataDog malicious-software-packages dataset](https://github.com/DataDog/malicious-software-packages-dataset),
+unpacked by Bawwab's own safe extractor and never executed.
+
+```bash
+uv run python bench/run.py --static-only     # static rules only, no AI review
+uv run python bench/run.py                   # static + Claude review (needs ANTHROPIC_API_KEY)
+uv run python bench/run.py --static-only --datadog   # add the real-malware recall set
+```
+
+A sample counts as caught when its verdict is at least its label (clean < suspicious < malicious). Static
+rules alone stop at *suspicious* for prompt injection, hidden Unicode, tool shadowing and eval of fetched code;
+the Claude review is what raises those to *malicious*, so the static run below understates recall by design. CI runs the static
+benchmark on every push and fails above a 10% false-positive rate on the safe set.
+
+<!-- bench:start -->
+Mode: **static-only**. 73 samples: 32 malicious or suspicious, 41 safe.
+
+| Category | Samples | Caught | Precision | Recall |
+|---|---|---|---|---|
+| credential-exfil | 7 | 4/4 | 100% | 100% |
+| cross-server | 3 | 1/2 | 100% | 50% |
+| hidden-unicode | 3 | 0/2 | n/a | 0% |
+| install-script | 5 | 4/4 | 80% | 100% |
+| mcp-server | 17 | 0/0 | 0% | n/a |
+| obfuscation | 5 | 4/4 | 100% | 100% |
+| plugin-hooks | 4 | 2/2 | 100% | 100% |
+| prompt-injection | 6 | 0/5 | n/a | 0% |
+| remote-code | 4 | 0/3 | n/a | 0% |
+| skill | 11 | 0/0 | n/a | n/a |
+| telemetry | 1 | 1/1 | 100% | 100% |
+| tool-shadowing | 4 | 0/3 | n/a | 0% |
+| typosquat | 3 | 2/2 | 100% | 100% |
+| **all** | 73 | 18/32 | 90% | 56% |
+
+- **False-positive rate on the safe set:** 5% (2/41)
+- **Flagged at all** (any non-clean verdict) among malicious samples: 94% (30/32)
+- **Adversarial samples** (written to talk the AI reviewer out of a finding): 3/6 caught
+- **Real malware** (DataDog dataset, npm): flagged 67/100 (67%), malicious 36/100; GuardDog 90/100
+- **Real malware** (DataDog dataset, pypi): flagged 80/100 (80%), malicious 13/100; GuardDog 99/100
+
+Misclassified:
+
+- `malicious/adv-quote-breakout`: expected malicious, got clean (no findings)
+- `malicious/adv-reviewer-preapproved`: expected malicious, got suspicious (injection.covert-action, injection.override)
+- `malicious/adv-scanner-system-note`: expected malicious, got suspicious (injection.override)
+- `malicious/cross-notes-steer-mailer`: expected malicious, got suspicious (cross-server.reference)
+- `malicious/inject-html-comment`: expected malicious, got suspicious (injection.covert-action, injection.html-comment)
+- `malicious/inject-skill-ssh`: expected malicious, got suspicious (injection.covert-action, injection.override)
+- `malicious/inject-tool-poisoning`: expected malicious, got suspicious (credential-access)
+- `malicious/remote-js-fetch-eval`: expected malicious, got suspicious (remote-code.eval-fetch)
+- `malicious/remote-py-exec-urlopen`: expected malicious, got suspicious (remote-code.eval-fetch)
+- `malicious/remote-skill-curl-bash`: expected malicious, got suspicious (remote-code.pipe-shell)
+- `malicious/shadow-bcc-email`: expected malicious, got suspicious (tool-shadowing)
+- `malicious/shadow-redirect-payments`: expected malicious, got clean (no findings)
+- `malicious/unicode-tag-chars-tool`: expected malicious, got suspicious (injection.hidden-unicode)
+- `malicious/unicode-zero-width-skill`: expected malicious, got suspicious (injection.hidden-unicode)
+- `safe/native-addon-gyp`: expected clean, got suspicious (install-script)
+- `package/@notionhq/notion-mcp-server@2.6.1`: expected clean, got suspicious (exfil.combo) — known FP (R49): bundled express deps call Function on runtime-built code, which trips the R47 untrusted-resolution switch; not tuned away
+
+Correct means the verdict is at least the label (clean < suspicious < malicious). Precision counts clean-labelled samples that were flagged as false positives.
+<!-- bench:end -->
+
 ## Install
 
 > **Status: pre-release.** The scanner and CLI work today. The one-command Claude Code plugin is the next milestone.
@@ -193,7 +260,7 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 - [x] Session-start inventory and real-world precision tuning
 - [ ] Effect check and quarantine *(in review)*
 - [ ] MCP server tools: `scan_mcp_server`, `scan_skill`, `diff_since_trusted`, `explain_finding`
-- [ ] Labelled benchmark with published precision and recall, run in CI
+- [x] Labelled benchmark with published precision and recall, run in CI
 - [ ] One-command Claude Code plugin
 - [ ] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox
 - [ ] Deep mode: Docker sandbox with canary credentials
