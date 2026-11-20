@@ -1,0 +1,87 @@
+# Weekly refresh of the top-100 report on GitHub Pages: re-rank, pin, scan with the static rules, republish.
+#
+# `scan` downloads and reads untrusted packages (never runs them) with a read-only token and no secrets.
+# `deploy` only receives the built site. If any scan step fails, deploy does not run and the live site
+# stays as it was. Unreviewed findings are published labelled "Not yet reviewed" (--allow-unreviewed);
+# add entries to report/review.json and re-run to publish the reviews.
+name: report
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: report
+  cancel-in-progress: false
+
+env:
+  # The code that builds the report. Change to main once feat/bawwab is merged.
+  SOURCE_REF: feat/bawwab
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          # No cache: this job handles hostile downloads, so it saves nothing other runs restore.
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked
+      - name: Re-rank and pin the top 100
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run python report/collect.py --refresh
+      - name: Check the collect
+        # An empty or short list (rate limit, API change) must not replace the live site.
+        run: |
+          uv run python -c '
+          import collections, sys
+          from report import collect
+          ts = collect.load_targets(collect.OUT)
+          n = collections.Counter(t["kind"] for t in ts)
+          print(f"{len(ts)} targets: {dict(n)}")
+          sys.exit(0 if len(ts) == 100 and n == {"mcp": 50, "skill": 30, "plugin": 20} else 1)
+          '
+      - name: Scan (download only, throwaway HOME)
+        run: REPORT_PYTHON=.venv/bin/python REPORT_WORK="$RUNNER_TEMP/rw" report/run_scan.sh
+      - name: Build the site
+        run: uv run python report/build_site.py --allow-unreviewed
+      - name: List findings awaiting review
+        run: |
+          uv run python report/needs_review.py
+          cat report/out/needs-review.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: report-data
+          path: |
+            report/targets.json
+            report/out/results.json
+          if-no-files-found: error
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: report/out/site
+
+  deploy:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
