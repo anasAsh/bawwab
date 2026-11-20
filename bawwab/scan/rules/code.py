@@ -129,6 +129,53 @@ def _config_index(rel: str, raw: str) -> tuple[int, str] | None:
             for u in PIP_URL_RE.finditer(seg[:end.start()] if end else seg):
                 if _foreign_url(u.group(1)):
                     return m.start(), u.group(1)
+    if base in ("uv.toml", "pyproject.toml"):
+        return _uv_index(raw, base == "uv.toml")
+    return None
+
+
+_UV_INDEX_HEADER_RE = re.compile(r"^[ \t]*\[\[[ \t]*(?:tool\.uv\.)?index[ \t]*\]\][ \t]*$", re.M)
+_TABLE_HEADER_RE = re.compile(r"^[ \t]*\[", re.M)
+_URL_KEY_RE = re.compile(r"^[ \t]*url[ \t]*=", re.M)
+
+
+def _uv_index(raw: str, uv_toml: bool) -> tuple[int, str] | None:
+    """(position, url) of a non-PyPI uv index (M16): uv.toml `[[index]] url = …` or pyproject.toml
+    `[[tool.uv.index]] url = …`, and `[tool.uv]` index-url/extra-index-url/find-links in pyproject.toml.
+    Read with tomllib; a file it can't parse falls back to the `[[index]]` tables' url lines."""
+    import tomllib
+
+    urls: list[str] = []
+    try:
+        data = tomllib.loads(raw)
+    except (tomllib.TOMLDecodeError, ValueError):
+        data = None
+    if data is not None:
+        uv = data if uv_toml else data.get("tool", {}).get("uv", {}) if isinstance(data.get("tool"), dict) else {}
+        if not isinstance(uv, dict):
+            return None
+        for sect in (uv, uv.get("pip") if isinstance(uv.get("pip"), dict) else {}):
+            idx = sect.get("index")
+            for e in idx if isinstance(idx, list) else []:
+                if isinstance(e, dict) and isinstance(e.get("url"), str):
+                    urls.append(e["url"])
+            if not uv_toml or sect is not uv:  # uv.toml's top-level legacy keys are read above
+                for k in ("index-url", "extra-index-url", "find-links"):
+                    v = sect.get(k)
+                    urls += [v] if isinstance(v, str) else [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+    else:
+        for h in _UV_INDEX_HEADER_RE.finditer(raw):
+            nxt = _TABLE_HEADER_RE.search(raw, h.end())
+            body = raw[h.end():nxt.start() if nxt else len(raw)]
+            for m in _URL_KEY_RE.finditer(body):
+                u = PIP_URL_RE.search(body, m.end())
+                if u:
+                    urls.append(u.group(1))
+    for url in urls:
+        u = PIP_URL_RE.match(url.strip())
+        if u and _foreign_url(u.group(1)):
+            pos = raw.find(url)
+            return max(pos, 0), u.group(1)
     return None
 
 

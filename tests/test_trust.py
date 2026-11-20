@@ -19,6 +19,10 @@ from bawwab.trust import (
 )
 from bawwab.types import Mode, Severity, Target, ToolInfo, Verdict
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 class Fake:
     def complete(self, system, user, schema, timeout_s):
@@ -244,7 +248,7 @@ def test_escape_sequences_rendered_as_markers():
 def test_truncation_message():
     findings, _ = _diff_lines("a", "\n".join(f"l{i}" for i in range(100)))
     lines = findings[0].evidence.splitlines()
-    assert len(lines) == 40 and lines[-1].startswith("… (") and "! bawwab diff <name>)" in lines[-1]
+    assert len(lines) == 40 and lines[-1].startswith("… (") and f"! {B} diff <name>)" in lines[-1]
 
 
 def test_duplicate_labels_not_overwritten():

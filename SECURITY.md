@@ -36,6 +36,15 @@ Static analysis can be dodged by determined obfuscation. Bawwab's defence in dep
 a "never below suspicious" floor for credential-plus-network code, and an effect check on what actually changed) raises the bar
 but does not promise perfection. Reports that show a way past *all* layers are especially valuable.
 
+Bawwab and Claude's tool shell run as the same OS user. Bawwab defends against an agent that has been steered (for
+example by prompt injection) into approving, rejecting or skipping by ordinary means: under bawwab's name, through a
+renamed symlink or copy of its launcher or console script, through `python -m bawwab` or `python -c`, or by writing to
+its store, its plugin data dir or its venv from the shell. It cannot fully stop an agent that *deliberately*
+reverse-engineers its own state as the same user, for example code that opens bawwab's SQLite store without naming
+it, or a wrapper whose target is computed at run time. Isolating bawwab's state from Claude (a separate OS user or
+a sandbox) is the only full answer. Ordinary-route bypasses of the gate are in scope; deliberate same-user state
+forgery is a known limitation.
+
 ## Bypass Hall of Fame
 
 *Be the first.*

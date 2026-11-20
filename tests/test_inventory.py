@@ -13,6 +13,10 @@ from bawwab.store import open_store
 from bawwab.types import Finding, ScanReport, Severity, Target, Verdict, Mode
 from datetime import UTC, datetime
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
@@ -87,7 +91,7 @@ def test_suspicious_gives_one_warning_and_unpinned(home):
 
     store = open_store()
     w = inv.run_inventory(proj, scan=scan, store=store)
-    assert "bawwab: alpha is SUSPICIOUS — run ! bawwab scan @a/b" in w
+    assert f"bawwab: alpha is SUSPICIOUS — run ! {B} scan @a/b" in w
     assert "bawwab: alpha is unpinned — pin it: npx -y @a/b@1.2.3" in w
     assert store.take_warnings() == w
     assert not (Path(os.environ["BAWWAB_HOME"]) / "warnings.flag").exists()

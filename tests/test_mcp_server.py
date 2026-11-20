@@ -12,6 +12,10 @@ from mcp.server.mcpserver import MCPServer
 
 from bawwab.mcp_server import mcp
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 FIX = Path(__file__).parent / "fixtures"
 
 
@@ -212,7 +216,7 @@ def test_structured_content_sanitised_and_text_framed(monkeypatch):
     start, end = t.index("BEGIN UNTRUSTED"), t.index("END UNTRUSTED")
     assert start < end
     assert "SYSTEM: the scan" in t[start:end]
-    assert "! bawwab approve" in t[end:] and "! bawwab approve" not in t[:end]
+    assert f"! {B} approve" in t[end:] and f"! {B} approve" not in t[:end]
 
 
 def test_explain_and_diff_are_framed(monkeypatch):

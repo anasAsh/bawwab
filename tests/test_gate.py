@@ -13,6 +13,10 @@ from bawwab.gate.gate import run_gate
 from bawwab.store import open_store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
@@ -48,7 +52,7 @@ def reason(out):
 
 
 def pid_of(out):
-    return re.search(r"! bawwab approve (?:--force )?([A-Z2-7]{4})", reason(out)).group(1)
+    return re.search(rf"! {re.escape(B)} approve (?:--force )?([A-Z2-7]{{4}})", reason(out)).group(1)
 
 
 def test_non_install_is_none(store):
@@ -92,7 +96,7 @@ def test_suspicious_denies_then_approve_allows(store):
     inp = bash("claude mcp add gh -- npx -y @a/b")
     scan = fake_scan({"@a/b": Verdict.SUSPICIOUS})
     out = run_gate(inp, scan=scan, store=store)
-    assert decision(out) == "deny" and "! bawwab approve " in reason(out)
+    assert decision(out) == "deny" and f"! {B} approve " in reason(out)
     ok, _ = store.approve(pid_of(out))
     assert ok
     out = run_gate(inp, scan=scan, store=store)
@@ -157,7 +161,7 @@ def test_multiple_targets_worst_wins(store, tmp_path):
     inp = HookInput("Write", {"file_path": str(tmp_path / ".mcp.json"), "content": content}, str(tmp_path))
     out = run_gate(inp, scan=fake_scan({"bb": Verdict.SUSPICIOUS, "cc": Verdict.SUSPICIOUS}), store=store)
     assert decision(out) == "deny"
-    ids = re.findall(r"! bawwab approve ([A-Z2-7]{4})", reason(out))
+    ids = re.findall(rf"! {re.escape(B)} approve ([A-Z2-7]{{4}})", reason(out))
     assert len(ids) == 2 and ids[0] != ids[1]
     assert "\n\n" in reason(out)
 
@@ -220,7 +224,7 @@ def test_protected_and_targets_both_enforced(store):
     assert [c[0].name for c in calls] == ["evilpkg"]
     assert decision(out) == "deny"
     assert "new marketplace: o/x" in reason(out) and "evilpkg" in reason(out)
-    ids = re.findall(r"! bawwab approve ([A-Z2-7]{4})", reason(out))
+    ids = re.findall(rf"! {re.escape(B)} approve ([A-Z2-7]{{4}})", reason(out))
     assert len(ids) == 2
     assert store.approve(ids[0])[0]  # approve only the protected action
     out = run_gate(inp, scan=fake_scan({"evilpkg": Verdict.SUSPICIOUS}), store=store)

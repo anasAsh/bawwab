@@ -17,6 +17,10 @@ from bawwab.gate.gate import run_gate
 from bawwab.store import open_store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 def _w(p: Path, data) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -61,7 +65,7 @@ def test_fresh_install_asks_and_spawns_nothing(proj, capsys):
     ctx = out["hookSpecificOutput"]["additionalContext"]
     assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert "2 MCP servers, 1 skills, 0 plugins (3 items)" in ctx
-    assert "about 1 min" in ctx and "bawwab init --scan" in ctx and "! bawwab init --skip" in ctx
+    assert "about 1 min" in ctx and f"{B} init --scan" in ctx and f"! {B} init --skip" in ctx
     store = open_store()
     assert store.init_state() == "none"
     rows = store.all_effect_rows()

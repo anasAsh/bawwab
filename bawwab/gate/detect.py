@@ -16,10 +16,11 @@ import os
 import posixpath
 import re
 import shlex
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bawwab.gate.prefilter import bash_install_like, context as _prefilter_context
+from bawwab.gate.prefilter import bash_install_like, bawwab_exe_file, context as _prefilter_context
 from bawwab.fetch.target import runner_extras, target_from_command, target_from_url
 from bawwab.paths import bawwab_home, claude_home, claude_json
 from bawwab.types import Target
@@ -100,6 +101,7 @@ class _Acc:
         self.budget = budget  # bytes of shell text we may still analyse in this detect_install call
         self.scanned: set[tuple[str, str]] = set()  # (text, cwd) already run through _bash
         self.root = ""  # the top-level command text (the raw backstop skips nested text that is part of it)
+        self.prose = 0  # >0 while scanning heredoc bodies only as a fail-safe (text that may be prose, R55)
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -169,7 +171,7 @@ _MARKER = ".bawwab-initialised"  # bawwab's install marker (~/.claude, $CLAUDE_P
 # Interpreter code that drives bawwab's own state from inside (approve, init --skip, quarantine...).
 _BAWWAB_CODE = re.compile(
     r"\bimport\s+bawwab\b|\bfrom\s+bawwab\b|\bbawwab\.[a-z_]+|\binit_skip\b|bawwab\.db\b"
-    r"|quarantine\.flag|\.bawwab-initialised"
+    r"|quarantine\.flag|\.bawwab-initialised|/bin/bawwab\b"
 )
 
 
@@ -194,7 +196,7 @@ def _state_targets() -> list[str]:
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd:
         out.append(os.path.join(os.path.normpath(pd), _MARKER))
-    return out
+    return out + _bawwab_data_dirs()
 
 
 def _comp_match(pat: str, name: str, icase: bool = False) -> bool:
@@ -253,8 +255,39 @@ def _bawwab_path(p: str) -> bool:
     return _bawwab_path1(p)
 
 
+_PLUGIN_DATA_RE = re.compile(r"(?:^|/)plugins/data/bawwab[^/]*(?:/|$)")
+
+
+def _env_data_dirs() -> tuple[str, ...]:
+    return tuple(os.path.normpath(v) for v in (os.environ.get("CLAUDE_PLUGIN_DATA"), os.environ.get("BAWWAB_VENV"))
+                 if v and os.path.isabs(v))
+
+
+def _bawwab_data_dirs() -> list[str]:
+    """R55: bawwab's plugin data dir (bootstrap markers, its venv) and a venv set by BAWWAB_VENV."""
+    return list(_data_dirs(os.environ.get("CLAUDE_PLUGIN_DATA"), os.environ.get("BAWWAB_VENV"), str(claude_home())))
+
+
+@functools.lru_cache(maxsize=16)
+def _data_dirs(plugin_data: str | None, venv: str | None, chome: str) -> tuple[str, ...]:  # args: the cache key
+    out = [os.path.normpath(v) for v in (plugin_data, venv) if v and os.path.isabs(v)]
+    base = os.path.join(chome, "plugins", "data")
+    try:
+        out += [os.path.join(base, n) for n in os.listdir(base) if n.startswith("bawwab")]
+    except OSError:
+        pass
+    return tuple(out)
+
+
 def _bawwab_path1(p: str) -> bool:
     if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER or _under(p, _xdg_bawwab()):
+        return True
+    if "/data/bawwab" in p and _PLUGIN_DATA_RE.search(p):  # <claude home>/plugins/data/bawwab*: data dir, venv
+        return True
+    env_dirs = _RESOLVED.get(("env-dirs",))
+    if env_dirs is None:
+        env_dirs = _cached(("env-dirs",), _env_data_dirs)
+    if env_dirs and any(_under(p, d) for d in env_dirs):
         return True
     if _GLOB_CHARS.search(p) and _glob_hits_state(os.path.normpath(p)):
         return True
@@ -1108,6 +1141,8 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
         dest, srcs = pos[-1], pos[:-1]
     else:
         return
+    if any(_copies_bawwab(exe, src, dest, cwd) for src in srcs):
+        acc.protect("copies or links a bawwab executable")
     removes_src = exe == "mv" or (exe == "rsync" and any(
         a.startswith(("--remove-source-files", "--remove-sent-files")) for a in args))
     if removes_src:
@@ -1140,6 +1175,35 @@ def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
             acc.protect(f"unresolvable glob: {s}")
         for p in matches:
             acc.add(Target("local", s, name=p, path=p))
+
+
+def _copies_bawwab(exe: str, src: str, dest: str, cwd: str) -> bool:
+    """R55: the source of cp/mv/ln/install/rsync is a bawwab executable (the launcher, a console script such as
+    <data>/venv/bin/bawwab, or a copy of one): a renamed copy or link would run approve under another name."""
+    if os.path.basename(src.rstrip("/")) in _BAWWAB_EXES and not os.path.isdir(_abspath(src, cwd)):
+        return True
+    cands = _expand(src, cwd) or [_abspath(src, cwd)]
+    if exe == "ln" and not src.startswith(("/", "~", "$")):  # a relative symlink target is read from the link's dir
+        d = _abspath(dest, cwd)
+        cands.append(os.path.normpath(os.path.join(d if os.path.isdir(d) else os.path.dirname(d), src)))
+    return any(_exe_file(c, exec_only=True) for c in cands)  # a doc that mentions bin/bawwab is no exe
+
+
+# R55: a script that runs bawwab (and passes it arguments or a protected subcommand) is a renamed bawwab.
+_RUNS_BAWWAB = re.compile(
+    r"(?:^|[\s;&|('\"`=])(?:[^\s;&|('\"`]*/)?bawwab(?:\.cli)?['\"]?(?=[\s;&|)'\",\]]|$)"
+    r"|bawwab\.cli\b|(?:from|import)\s+bawwab\b|-m\s+bawwab\b|bawwab_hook", re.M)
+_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects)\b")
+
+
+_SHEBANG = re.compile(r"\s*#!")
+_IS_ENTRY = re.compile(r"bawwab\.cli\b|bawwab_hook\b|-m\s+bawwab\b")  # bawwab's own entry points: run its argv
+
+
+def _execs_bawwab(text: str) -> bool:
+    if not _SHEBANG.match(text):
+        return False
+    return bool(_IS_ENTRY.search(text)) or (bool(_RUNS_BAWWAB.search(text)) and bool(_PASSES_ARGS.search(text)))
 
 
 def _download(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
@@ -1204,21 +1268,115 @@ def _bawwab_vars(cmd: str) -> set[str]:
             if os.path.basename(m.group(2)) in _BAWWAB_EXES}
 
 
-def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset()) -> bool:
+# Where a known, non-bawwab program lives (R55): a command word that resolves here (and doesn't run bawwab)
+# may take an `approve <id>` argv (git approve, make approve) without being denied.
+_SYSTEM_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/libexec", "/usr/lib", "/usr/local/bin",
+                "/usr/local/sbin", "/usr/local/Cellar", "/opt/homebrew", "/nix/store", "/run/current-system",
+                "/snap", "/Library/Developer/CommandLineTools", "/Applications/Xcode.app")
+# shell builtins: the shell never runs a file for these (`source`/`.` do run one, so they are not here)
+_BUILTINS = {"echo", "printf", "test", "[", "[[", "cd", "pushd", "popd", "export", "read", "set", "unset",
+             "local", "declare", "typeset", "readonly", "alias", "unalias", "type", "hash", "help", "history",
+             "jobs", "kill", "wait", "true", "false", ":", "shift", "return", "exit", "trap", "ulimit", "umask",
+             "getopts", "let", "bg", "fg", "disown", "complete", "shopt"}
+
+
+_RESOLVED: dict[tuple, object] = {}  # per detect_install call: PATH lookups and bawwab-executable checks
+
+
+def _cached(key: tuple, fn):
+    if key not in _RESOLVED:
+        if len(_RESOLVED) > 4096:
+            _RESOLVED.clear()
+        _RESOLVED[key] = fn()
+    return _RESOLVED[key]
+
+
+def _resolve_word(w: str, cwd: str, bare: bool) -> str | None:
+    """The file a command word names: a path (relative to cwd), or with `bare` a PATH lookup. Never runs it."""
+    if not w or "$" in w or "`" in w or "\0" in w:
+        return None
+    if "/" in w or w.startswith("~"):
+        return _abspath(w, cwd)
+    return _cached(("which", w), lambda: shutil.which(w)) if bare else None
+
+
+def _exe_file(p: str, exec_only: bool = False) -> bool:
+    return bool(_cached(("exe", p, exec_only), lambda: bawwab_exe_file(p, exec_only)))
+
+
+def _is_bawwab_word(words: list[str], i: int, cwd: str, interp: bool) -> bool:
+    """words[i] runs bawwab: by name (bawwab, bawwab.cli), or (R55) by what it resolves to: the command word,
+    an executable path later in the words (setsid /tmp/bw), or the script an interpreter runs (sh /tmp/bw).
+    interp: words[0] is an interpreter (sh, python3, ...)."""
+    w = words[i]
+    if "bawwab" in w and os.path.basename(w) in _BAWWAB_EXES:
+        return True
+    if i == 0:
+        p = _resolve_word(w, cwd, True)
+        return bool(p) and _exe_file(p)
+    if w.startswith("-"):
+        return False
+    if "/" in w or w.startswith("~"):
+        return _exe_file(_abspath(w, cwd), exec_only=not interp)
+    if interp and all(a.startswith("-") for a in words[1:i]):
+        return _exe_file(_abspath(w, cwd))  # sh bw / python3 bw: the script is read from cwd
+    return False
+
+
+def _known_system(w: str, cwd: str, bare: bool) -> bool:
+    """words[0] (bare) or a path word is a known non-bawwab program: a shell builtin, or a file under a system
+    dir that doesn't run bawwab. Unresolvable is unknown (fail closed)."""
+    if bare and w in _BUILTINS:
+        return True
+    p = _resolve_word(w, cwd, bare)
+    if not p:
+        return False
+    try:
+        real = os.path.realpath(p)
+    except (OSError, ValueError):
+        return False
+    if not os.path.isfile(real) or _exe_file(real):
+        return False
+    return any(_under(real, d) for d in _SYSTEM_DIRS)
+
+
+def _protected_tail(args: list[str]) -> bool:
+    """args read as bawwab's: `approve <id>`, `reject <id>`, `init --skip`, `effects --retry`."""
+    j = next((k for k, a in enumerate(args) if not a.startswith("-")), None)
+    if j is None:
+        return False
+    sub, rest = args[j], args[j + 1:]
+    if sub in ("approve", "reject"):
+        return any(not a.startswith("-") for a in rest)
+    if sub == "init":
+        return any(a.startswith("--sk") for a in rest)
+    if sub == "effects":
+        return any(a.startswith("--re") for a in rest)
+    return False
+
+
+def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd: str = "",
+                     tail: bool = True) -> bool:
     """A user-only bawwab command: approve, reject, init without --scan (init --skip trusts everything),
     effects --retry; also a bawwab call whose subcommand can't be read ($var, $(...), `...` split off by
-    the parser into a bare `bawwab`)."""
+    the parser into a bare `bawwab`).
+    R55: bawwab is recognised by name and also by what the word resolves to (a renamed symlink or copy of
+    the launcher or a console script); and with `tail`, any command word that isn't a known system program
+    is refused when its argv reads as a protected bawwab subcommand (fail closed)."""
     if not words:
         return False
     w0 = words[0]
     if w0.startswith("$") and re.sub(r"^\$\{?(\w+)\}?$", r"\1", w0) in bawwab_vars:
         words = ["bawwab", *words[1:]]
-    if len(words) == 1 and os.path.basename(words[0]) in _BAWWAB_EXES:
-        return True
+    if len(words) == 1 and (os.path.basename(words[0]) in _BAWWAB_EXES or _is_bawwab_word(words, 0, cwd, False)):
+        return True  # its subcommand may have been split off ($(...), `...`): fail closed
+    if not any(w in _SUBCOMMANDS or "$" in w or "`" in w for w in words[1:]):
+        return False  # no protected subcommand (or unreadable word) for any bawwab here to run
     seen = None
+    interp = bool(_INTERPRETER.fullmatch(os.path.basename(w0)))
     for i, w in enumerate(words):
         if seen is None:
-            if os.path.basename(w) in _BAWWAB_EXES:
+            if i < _MAX_RESOLVE and _is_bawwab_word(words, i, cwd, interp):
                 seen = i
             continue
         if w.startswith("-"):
@@ -1234,7 +1392,17 @@ def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset()) -> b
         if w == "effects":
             return any(a.startswith("--re") for a in rest)
         return False
+    if not tail:
+        return False
+    for j, w in enumerate(words[:_MAX_RESOLVE]):
+        if (j == 0 or ("/" in w and not w.startswith("-"))) and _protected_tail(words[j + 1:]) \
+                and not _known_system(w, cwd, j == 0):
+            return True
     return False
+
+
+_MAX_RESOLVE = 8  # words examined for a bawwab executable before the subcommand
+_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects"})
 
 
 _INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")
@@ -1505,7 +1673,7 @@ def _raw_seg(redirs: list[str], words: list[str], cwd: str, acc: _Acc, xargs: bo
         return
     exe = os.path.basename(words[0])
     args = words[1:]
-    if exe in _BAWWAB_EXES and _bawwab_decision(words):
+    if exe in _BAWWAB_EXES and _bawwab_decision(words, cwd=cwd, tail=False):
         acc.protect("bawwab approval via tool call")
     ci = _claude_index(words)
     if ci is not None:
@@ -1662,9 +1830,19 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
                 written[p] = stdin_text
         words = _strip_prefix(raw_words)
         up_words, prev_words = (prev_words if seg.piped else []), words
+        exe0 = os.path.basename(words[0]) if words else ""
+        if redirs or exe0 == "tee":  # R55: writing a script that runs bawwab, or a copy of a bawwab executable
+            texts = (stdin_text, _literal_output(words), _literal_output(up_words) if exe0 == "tee" else "")
+            if any(t and _execs_bawwab(t) for t in texts):
+                acc.protect("writes a script that runs bawwab")
+            srcs = words[1:] if redirs else [a for a in up_words[1:]]
+            if any(not a.startswith("-") and _exe_file(_abspath(a, cwd), exec_only=True)
+                   for a in srcs[:_MAX_RESOLVE]):
+                acc.protect("copies or links a bawwab executable")
         if not words:
             continue
-        if _bawwab_decision(words, _bawwab_vars(cmd) if words[0].startswith("$") else frozenset()):
+        if _bawwab_decision(words, _bawwab_vars(cmd) if words[0].startswith("$") else frozenset(), cwd,
+                            tail=not acc.prose):
             acc.protect("bawwab approval via tool call")
         exe = os.path.basename(words[0])
         args = words[1:]
@@ -1740,6 +1918,8 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
                     if install_dir(p):
                         acc.protect("shell write into install dir")
                     _check_dest(p, acc)
+                elif a.startswith("if=") and _exe_file(_abspath(a[3:], cwd), exec_only=True):
+                    acc.protect("copies or links a bawwab executable")
             continue
         if exe in _READ_ONLY or (exe in ("sed", "gsed", "awk", "gawk") and not _is_interpreter(exe, args)):
             continue
@@ -1753,7 +1933,11 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
     # fail-safe: every terminated heredoc body is also scanned as commands, from the command's start cwd
     for body in dict.fromkeys(bodies):
         if body.strip():  # _bash skips it if this (body, cwd) pair was already scanned
-            _bash(body, start_cwd, acc, depth + 1)
+            acc.prose += 1  # may be prose (a commit message): no argv-tail guess on unknown words, R55
+            try:
+                _bash(body, start_cwd, acc, depth + 1)
+            finally:
+                acc.prose -= 1
 
 
 # ------------------------------------------------------------------ write / edit
@@ -1902,6 +2086,13 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
     if any(_bawwab_path(c) for c in cands):
         acc.protect("bawwab state change")
         return
+    if "bawwab" in json.dumps(inp.tool_input):  # R55: a script that runs bawwab under another name
+        try:
+            new = _new_content(inp, p)
+        except _Unevaluable:
+            new = ""
+        if _execs_bawwab(new):
+            acc.protect("writes a script that runs bawwab")
     for c in cands:
         kind = _config_kind(c)
         if kind:
@@ -2028,6 +2219,7 @@ def _whole_command_checks(cmd: str, acc: _Acc) -> None:
 
 
 def detect_install(inp: HookInput) -> Targets | Protected | None:
+    _RESOLVED.clear()  # files may have changed since the last call
     acc = _Acc()
     ti = inp.tool_input if isinstance(inp.tool_input, dict) else {}
     inp = HookInput(inp.tool_name, ti, inp.cwd or "/")

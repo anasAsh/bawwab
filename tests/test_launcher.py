@@ -123,9 +123,10 @@ def test_setup_running_text_names_working_commands(fresh):
     _no_lock()
 
 
-def test_setup_failed_texts_use_bare_name_when_on_path(fresh):
-    proj, env = _failed_setup(fresh)  # the dev venv's `bawwab` is on PATH
-    _assert_recovery(_deny_reason(_gate(env, "Bash", proj, command="ls")), "bawwab")
+def test_setup_failed_texts_use_the_launcher_even_when_bawwab_is_on_path(fresh):
+    """M17: another `bawwab` on PATH (here the dev venv's) never replaces the plugin's own launcher."""
+    proj, env = _failed_setup(fresh)
+    _assert_recovery(_deny_reason(_gate(env, "Bash", proj, command="ls")), QUOTED)
 
 
 def _launch(args: list[str], env: dict, cwd: Path | None = None, exe: str | None = None):
@@ -248,23 +249,24 @@ def test_build_ships_the_launcher(tmp_path):
 # ------------------------------------------------------------------ the one helper
 
 
-def test_helper_bare_name_when_on_path(monkeypatch, tmp_path):
+def test_helper_launcher_path_even_when_another_bawwab_is_on_path(monkeypatch, tmp_path):
+    """M17: a plugin tree always renders its own launcher; a planted `bawwab` on PATH can't stand in for it."""
     other = tmp_path / "bin" / "bawwab"
     other.parent.mkdir()
     other.write_text("#!/bin/sh\n")
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: str(other))
-    assert clicmd.cmd("approve AB12") == "bawwab approve AB12"
-
-
-def test_helper_launcher_path_when_not_on_path(monkeypatch):
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: None)
+    other.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{other.parent}:{os.environ.get('PATH', '')}")
     assert clicmd.cmd("approve AB12") == f"{QUOTED} approve AB12"
 
 
-def test_helper_launcher_path_when_only_the_launcher_itself_is_on_path(monkeypatch):
-    """The hook's PATH may hold the plugin bin/ while the user's `!` shell does not: the absolute path is safe."""
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: str(LAUNCHER))
-    assert clicmd.cmd("x") == f"{QUOTED} x"
+def test_helper_launcher_path_when_not_on_path(monkeypatch):
+    monkeypatch.setenv("PATH", "/nonexistent")
+    assert clicmd.cmd("approve AB12") == f"{QUOTED} approve AB12"
+
+
+def test_helper_bare_name_in_a_pure_cli_install(monkeypatch, tmp_path):
+    monkeypatch.setattr(clicmd, "LAUNCHER", str(tmp_path / "site-packages" / "bin" / "bawwab"))
+    assert clicmd.cmd("approve AB12") == "bawwab approve AB12"
 
 
 def test_helper_quotes_the_path(monkeypatch, tmp_path):
@@ -272,7 +274,6 @@ def test_helper_quotes_the_path(monkeypatch, tmp_path):
     (root / "bin").mkdir(parents=True)
     (root / "bin" / "bawwab").write_text("#!/bin/sh\n")
     monkeypatch.setattr(clicmd, "LAUNCHER", str(root / "bin" / "bawwab"))
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: None)
     got = clicmd.cmd("approve AB12")
     assert shlex.split(got) == [str(root / "bin" / "bawwab"), "approve", "AB12"]
 
@@ -282,7 +283,6 @@ def test_block_text_uses_the_helper(monkeypatch):
 
     from bawwab.report import format_report
 
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: None)
     out = format_report(mk(), "A7F3")
     assert f"! {QUOTED} approve A7F3" in out and f"! {QUOTED} explain F3a91c" in out
     assert "! bawwab " not in out
@@ -291,7 +291,6 @@ def test_block_text_uses_the_helper(monkeypatch):
 def test_quarantine_and_first_run_texts_use_the_helper(monkeypatch):
     from bawwab import effects as fx
 
-    monkeypatch.setattr(clicmd.shutil, "which", lambda name: None)
     assert QUOTED in fx.lost_fix() and "! bawwab" not in fx.lost_fix()
     assert f"! {QUOTED} init --skip" in fx.ask_context(Path.cwd())
 

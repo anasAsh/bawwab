@@ -347,3 +347,38 @@ def test_custom_index_in_shipped_config_files(rel, text):
 ])
 def test_custom_index_config_negatives(rel, text):
     assert not _ci(rel, text), (rel, text)
+
+
+# ------------------------------------------------------------------ fix round 5 (M16): uv's [[index]] tables
+
+@pytest.mark.parametrize("rel,text", [
+    ("uv.toml", '[[index]]\nname = "evil"\nurl = "https://pypi.evil.example/simple"\n'),
+    ("uv.toml", '[[index]]\nurl = "https://pypi.org/simple"\n\n[[index]]\nurl = "https://10.0.0.5/simple"\ndefault = true\n'),
+    ("pyproject.toml", '[project]\nname = "x"\n\n[[tool.uv.index]]\nname = "corp"\nurl = "https://evil.example/simple"\n'),
+    ("sub/pyproject.toml", '[tool.uv]\nextra-index-url = ["https://evil.example/simple"]\n'),
+    ("pyproject.toml", '[tool.uv]\nfind-links = ["https://evil.example/wheels"]\n'),
+    ("uv.toml", '[[index]]\nurl = "https://evil.example/simple"\nbroken = [\n'),  # not valid TOML: regex fallback
+])
+def test_custom_index_uv_index_tables(rel, text):
+    got = _ci(rel, text)
+    assert got and got[0].severity == Severity.MED and got[0].file == rel, (rel, text)
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("uv.toml", '[[index]]\nname = "pypi"\nurl = "https://pypi.org/simple"\n'),
+    ("pyproject.toml", '[[tool.uv.index]]\nurl = "https://pypi.org/simple"\n[project.urls]\nHome = "https://evil.example"\n'),
+    ("pyproject.toml", '[project]\nname = "x"\n[project.urls]\nurl = "https://example.com/x"\n'),
+    ("pyproject.toml", '[tool.uv]\nfind-links = ["./wheels"]\n'),
+    ("pyproject.toml", '[tool.other]\nindex = [{url = "https://evil.example/simple"}]\n'),  # not uv's
+    ("settings.toml", '[[index]]\nurl = "https://evil.example/simple"\n'),  # neither uv.toml nor pyproject.toml
+])
+def test_custom_index_uv_index_negatives(rel, text):
+    assert not _ci(rel, text), (rel, text)
+
+
+def test_custom_index_not_on_bawwab_itself():
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("pyproject.toml", "uv.toml"):
+        p = root / rel
+        if p.exists():
+            assert not _ci(rel, p.read_text()), rel

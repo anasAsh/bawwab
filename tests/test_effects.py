@@ -16,6 +16,10 @@ from bawwab.paths import bawwab_home
 from bawwab.store import open_store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 def _w(p: Path, data) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -109,7 +113,7 @@ def test_suspicious_server_quarantined_then_approved(env):
     deny = fx.pre_tool_decision("Bash", proj, scan=scan)
     reason = deny["hookSpecificOutput"]["permissionDecisionReason"]
     assert deny["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert f"! bawwab approve {ids[0]}" in reason and f"! bawwab reject {ids[0]}" in reason
+    assert f"! {B} approve {ids[0]}" in reason and f"! {B} reject {ids[0]}" in reason
     assert "MCP server evil" in reason and "x.rule" in reason
     assert fx.pre_tool_decision("Read", proj, scan=scan) is None
     assert fx.pre_tool_decision("Grep", proj, scan=scan) is None
@@ -288,7 +292,7 @@ def test_post_tool_blocks_on_new_quarantine(env):
     assert fx.post_tool_decision(proj, scan=FakeScan()) is None
     _add_server(home)
     out = fx.post_tool_decision(proj, scan=FakeScan(Verdict.SUSPICIOUS))
-    assert out["decision"] == "block" and "! bawwab approve" in out["reason"]
+    assert out["decision"] == "block" and f"! {B} approve" in out["reason"]
     assert fx.post_tool_decision(proj, scan=FakeScan(Verdict.SUSPICIOUS)) is None  # nothing new
 
 
@@ -331,7 +335,7 @@ def test_cli_effects_lists(env, monkeypatch, capsys):
     _add_server(home)
     monkeypatch.setattr(fx, "scan_target", FakeScan(Verdict.SUSPICIOUS))
     assert main(["effects", "--cwd", str(proj)]) == 1
-    assert "! bawwab approve" in capsys.readouterr().out
+    assert f"! {B} approve" in capsys.readouterr().out
 
 
 def test_fingerprint_speed_50_skills(env):
@@ -377,4 +381,4 @@ def test_malicious_shows_force(env):
     fx.refresh(proj, scan=FakeScan(Verdict.MALICIOUS))
     reason = fx.pre_tool_decision("Bash", proj)["hookSpecificOutput"]["permissionDecisionReason"]
     qid = fx.quarantined()[0]["id"]
-    assert f"! bawwab approve {qid} --force" in reason
+    assert f"! {B} approve {qid} --force" in reason

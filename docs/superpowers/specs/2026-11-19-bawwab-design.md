@@ -217,6 +217,26 @@ scanning on its own.
     transcript rule holds and `bootstrap-complete` exists, so a slow first
     setup is never a false alarm. A wipe that also removes both data-dir
     markers (and the transcripts' evidence) reads as a fresh install.
+  - **Same-OS-user boundary (fix round 5, R55).** Bawwab and Claude's tool
+    shell run as the same OS user, so Bawwab defends against an agent that
+    has been steered into a protected action by ordinary means, not against
+    one that deliberately reverse-engineers Bawwab's own state. The gate
+    refuses `approve`, `reject`, `init --skip` and `effects --retry` by
+    bawwab's name, by what a command word resolves to (a renamed symlink or
+    copy of `bin/bawwab` or of a venv console script, by realpath or by
+    content), on any command word that isn't a known system program when its
+    argv reads as one of those subcommands, and through `python -m bawwab…` /
+    `python -c` code that imports bawwab. Copying or linking a bawwab
+    executable (`ln`, `cp`, `install`, `mv`, `rsync`, `cat … >`), and writing
+    a script that runs one, are protected; so are shell writes to bawwab's
+    home, its XDG state dir, its plugin data dir (`plugins/data/bawwab*`) and
+    its venv. Residual: a same-user agent that deliberately engineers around
+    this (a wrapper whose path is computed at run time, code that opens
+    bawwab's SQLite store without naming it, forging the data-dir markers or
+    the store's rows) can still approve or reset state. The CLI does not
+    refuse under Claude's tool shell: Claude Code sets `CLAUDECODE=1` in its
+    own process, so the user's `!` shell is not shown to lack it (not
+    verified either way; for the smoke test).
 
 ### 1b. Effect check (added during build, user-approved 2026-11-19)
 
