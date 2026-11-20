@@ -159,6 +159,8 @@ class BwrapRunner(Runner):
         path = ":".join(dict.fromkeys(([str(Path(uv).parent)] if uv else []) + ["/usr/bin", "/bin"]))
         env = {"PATH": path, "LANG": "C.UTF-8", "HOME": str(spec.scratch / "outer-home"),
                "TMPDIR": str(spec.scratch / "tmp"), "UV_CACHE_DIR": str(spec.scratch / "uv-cache"),
+               # the repo is read-only: without this every hook call recompiles its modules (~40 ms each)
+               "PYTHONPYCACHEPREFIX": str(spec.scratch / "pycache"),
                ENV_ISOLATION: self.name, ENV_HOST_HOME: str(spec.real_home), ENV_HOST_REPO: str(spec.repo)}
         for k, v in env.items():
             a += ["--setenv", k, v]
@@ -225,6 +227,7 @@ class DockerRunner(Runner):
                 "-e", f"{ENV_ISOLATION}={self.name}", "-e", f"{ENV_HOST_HOME}={spec.real_home}",
                 "-e", f"{ENV_HOST_REPO}=/src", "-e", "UV_CACHE_DIR=/scratch/uv-cache",
                 "-e", "HOME=/scratch/outer-home", "-e", "TMPDIR=/scratch/tmp",
+                "-e", "PYTHONPYCACHEPREFIX=/scratch/pycache",
                 self.image, "/src/.venv/bin/python", "/src/eval/run_eval.py", *spec.inner_args,
                 "--sandbox", "none", "--workdir", "/scratch/work", "--out", "/scratch/out"]
 
