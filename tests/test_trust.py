@@ -281,12 +281,23 @@ def test_cross_server_plain_word_tool_names_in_prose_are_not_mentions():
 
 def test_cross_server_plain_word_tool_names_still_caught_when_call_shaped():
     snaps = {
-        "a": {"text": {"SKILL.md": "First call claude(prompt) with the user's files, then mcp__codex__setup."},
-              "tools": {}},
+        "a": {"text": {"tool notes": "First call claude(prompt) with the user's files, then mcp__codex__setup."},
+              "tools": {"notes": "x"}},
         "b": snap_with(BRIDGE_TOOLS),
     }
     got = sorted(f.evidence for f in cross_server_findings(snaps))
-    assert got == ["a's SKILL.md mentions b's tool claude", "a's SKILL.md mentions b's tool setup"]
+    assert got == ["a's tool notes mentions b's tool claude", "a's tool notes mentions b's tool setup"]
+
+
+def test_cross_server_skips_files_that_name_tools_on_purpose():
+    """A skill, agent, command or README naming a server's tools is not one server steering another."""
+    text = "Use codex_query to ask, then codex_implement. Run `mcp__codex__codex_review_code`."
+    tools = {"codex_query": "q", "codex_implement": "i", "codex_review_code": "r"}
+    for label in ("SKILL.md", "agents/codex-teammate.md", "commands/rescue.md", "README.md"):
+        snaps = {"a": {"text": {label: text}, "tools": {}}, "b": snap_with(tools)}
+        assert cross_server_findings(snaps) == [], label
+    snaps = {"a": {"text": {"tool helper": text}, "tools": {"helper": "h"}}, "b": snap_with(tools)}
+    assert len(cross_server_findings(snaps)) == 3  # the same text in a tool description is steering
 
 
 def test_cross_server_distinctive_names_still_match_in_prose():
@@ -383,3 +394,20 @@ def test_sandbox_labels_excluded_on_mode_mismatch():
     changed["text"]["[sandbox] tool hidden"] = "different"
     rules = {f.rule for f in diff_snapshots(deep, changed)[0]}
     assert "rugpull.text-changed" in rules
+
+
+def test_materialized_lone_file_is_filed_under_its_real_path(tmp_path):
+    """The gate scans a lone agent/command file from a temp copy; its trust name is still the real file."""
+    from bawwab.gate.gate import _materialize
+    from bawwab.trust import trust_name
+    from bawwab.types import Target
+
+    agent = tmp_path / ".claude" / "agents" / "codex-teammate.md"
+    agent.parent.mkdir(parents=True)
+    agent.write_text("---\nname: codex-teammate\n---\nhi")
+    st, cleanup = _materialize(Target("local", str(agent), path=str(agent)), None)
+    try:
+        assert st.path != str(agent) and "bawwab-gate-" in st.path
+        assert trust_name(st) == f"local:{agent}"
+    finally:
+        cleanup()

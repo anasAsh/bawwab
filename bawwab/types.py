@@ -77,6 +77,7 @@ class Target:
     version: str | None = None
     url: str | None = None
     path: str | None = None
+    origin: str | None = None  # a scannable temp copy's real path (gate._materialize): trust and labels use it
 
 
 @dataclass

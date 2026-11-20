@@ -114,6 +114,7 @@ def report_to_dict(r: ScanReport) -> dict:
         "target": {
             "kind": r.target.kind, "raw": r.target.raw, "name": r.target.name,
             "version": r.target.version, "url": r.target.url, "path": r.target.path,
+            **({"origin": r.target.origin} if r.target.origin else {}),
         },
         "resolved_version": r.resolved_version,
         "mode": r.mode.value,

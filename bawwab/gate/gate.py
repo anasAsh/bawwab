@@ -130,7 +130,8 @@ def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Cal
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     name = t.name or str(src)
-    return Target("local", t.raw, name=name, path=str(top)), lambda: shutil.rmtree(tmp, ignore_errors=True)
+    return (Target("local", t.raw, name=name, path=str(top), origin=t.origin or str(src)),
+            lambda: shutil.rmtree(tmp, ignore_errors=True))
 
 
 def _label(r: ScanReport) -> str:

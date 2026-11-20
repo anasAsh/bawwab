@@ -39,7 +39,7 @@ def trust_name(t: Target) -> str:
         return f"{t.kind}:{t.name}"
     if t.kind in ("git", "remote"):
         return f"{t.kind}:{t.url or t.raw}"
-    return f"local:{t.path or t.raw}"
+    return f"local:{t.origin or t.path or t.raw}"
 
 
 def _target_from_trust_name(name: str) -> Target | None:
@@ -222,14 +222,22 @@ def _mention_pattern(tool: str) -> re.Pattern[str]:
     return re.compile(rf"{qualified}|(?i:(?<!\w){t}(?!\w))")
 
 
+# Labels of a server's model-facing text (its tool, prompt and resource descriptions). Files (SKILL.md, agents,
+# commands, READMEs) are instructions that name tools on purpose, so they are not cross-server evidence (user
+# decision 2026-11-21); the injection and steering rules still read them.
+_SERVER_TEXT = ("tool ", "prompt ", "resource ")
+
+
 def cross_server_findings(snapshots: dict[str, dict]) -> list[Finding]:
-    """One high finding per (A, B, tool) where A's model-facing text mentions B's tool by name
-    (see _mention_pattern for what counts as a mention)."""
+    """One high finding per (A, B, tool) where A's server text (tool, prompt or resource descriptions) mentions
+    B's tool by name (see _mention_pattern for what counts as a mention): one server steering another."""
     out: list[Finding] = []
     names = sorted(snapshots)
     for a in names:
         a_snap = snapshots[a]
-        a_texts = a_snap.get("text", {})
+        a_texts = {k: v for k, v in a_snap.get("text", {}).items() if k.startswith(_SERVER_TEXT)}
+        if not a_texts:
+            continue
         a_tools = set(a_snap.get("tools", {}))
         for b in names:
             if a == b:
