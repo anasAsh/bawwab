@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from bawwab.agents.claude_code_watch import is_in_use_marker
 from bawwab.types import Finding, Severity
 
 SKIP_DIRS = {".git"}
@@ -377,7 +378,7 @@ def load_files(
         for name in sorted(filenames):
             path = Path(dirpath) / name
             try:
-                if path.is_symlink() or not path.is_file():
+                if path.is_symlink() or not path.is_file() or is_in_use_marker(str(path), str(root)):
                     continue
                 size = path.stat().st_size
             except OSError:

@@ -121,6 +121,18 @@ def _bfs(top: str, h, budget: int, seen: set, skip) -> int:
     return n
 
 
+def _in_use(h, d: str, item: str, seen: set, skip, t) -> list:
+    """An item root's .in_use dir: Claude Code's per-process markers (and the dir's own stat, which they
+    move) are left out; every other entry is recorded as usual. Returns the subdirs to descend into."""
+    out = []
+    for e in _entries(d, h):
+        if not t.is_in_use_marker(e.path, item):
+            sub = _entry(h, e, seen, skip, "D\0")
+            if sub:
+                out.append(sub)
+    return out
+
+
 def _walk(root: str, h, item_root: bool = False) -> None:
     """Feed a watched root into h. Every item root (each child dir of a skills/commands/agents dir, or the
     root itself for a plugin install path) gets its direct entries and its ALWAYS_FILES statted whatever
@@ -153,7 +165,13 @@ def _walk(root: str, h, item_root: bool = False) -> None:
             pkg = t.package_dir(it, ref)
             if pkg:
                 _bfs(pkg, h, t.PKG_BUDGET, set(), frozenset())
-        subtrees += [p for p in (_entry(h, e, seen, skip, "D\0") for e in _entries(it, h)) if p]
+        for e in _entries(it, h):
+            if e.name == t.IN_USE_DIR and e.is_dir(follow_symlinks=False):
+                subtrees += _in_use(h, e.path, it, seen, skip, t)
+            else:
+                sub = _entry(h, e, seen, skip, "D\0")
+                if sub:
+                    subtrees.append(sub)
     left = ROOT_BUDGET
     for sub in subtrees:
         if left <= 0:

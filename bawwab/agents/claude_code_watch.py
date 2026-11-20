@@ -38,6 +38,24 @@ SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".git", "
                        ".pytest_cache"})
 ALWAYS_FILES = ("SKILL.md", "hooks/hooks.json", ".mcp.json", ".claude-plugin/plugin.json", "package.json",
                 "pyproject.toml", "setup.py")
+# Claude Code writes <plugin root>/.in_use/<pid> for each running process and removes it on exit: churn, not
+# content. Only that exact shape is ignored; anything else under .in_use counts like any other file.
+IN_USE_DIR = ".in_use"
+_IN_USE_TEXT = re.compile(rb'\{"pid":([1-9][0-9]{0,9}),"procStart":"[0-9]{1,20}"\}')
+
+
+def is_in_use_marker(path: str, item_root: str) -> bool:
+    """A regular file <item_root>/.in_use/<pid> whose whole text is {"pid":<pid>,"procStart":"<digits>"}."""
+    if os.path.dirname(os.path.normpath(path)) != os.path.join(os.path.normpath(item_root), IN_USE_DIR):
+        return False
+    try:
+        if os.path.islink(path) or not os.path.isfile(path) or os.path.getsize(path) > 64:
+            return False
+        with open(path, "rb") as f:
+            m = _IN_USE_TEXT.fullmatch(f.read(65))
+    except OSError:
+        return False
+    return m is not None and m.group(1).decode() == os.path.basename(path)
 
 USER_DIRS = ("{home}/.claude/skills", "{home}/.claude/commands", "{home}/.claude/agents")
 PROJECT_DIRS = ("{proj}/.claude/skills", "{proj}/.claude/commands", "{proj}/.claude/agents")

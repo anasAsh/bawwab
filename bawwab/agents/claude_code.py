@@ -130,8 +130,9 @@ def _load(p: Path) -> object:
 _SUBTREE_FILES = 1000
 
 
-def _subtree_files(top: Path, out: list, skipped: list) -> None:
-    """Files under top (breadth-first by os.walk order), at most _SUBTREE_FILES; SKIP_DIRS not entered."""
+def _subtree_files(top: Path, out: list, skipped: list, item_root: Path | None = None) -> None:
+    """Files under top (breadth-first by os.walk order), at most _SUBTREE_FILES; SKIP_DIRS not entered;
+    item_root's Claude Code .in_use markers left out."""
     n = 0
     for dp, dns, fns in os.walk(top):
         keep = []
@@ -148,6 +149,8 @@ def _subtree_files(top: Path, out: list, skipped: list) -> None:
             if n >= _SUBTREE_FILES:
                 skipped.append(Path(dp))
                 return
+            if item_root is not None and watch.is_in_use_marker(os.path.join(dp, fn), str(item_root)):
+                continue
             out.append(Path(dp) / fn)
             n += 1
 
@@ -200,7 +203,7 @@ def _tree_hash(root: Path) -> str:
                 files.append(p)
         always = set(files)
         for sub in subtrees:
-            _subtree_files(sub, files, skipped)
+            _subtree_files(sub, files, skipped, root)
         files = list(dict.fromkeys(files))
     budget = _MAX_HASH_BYTES
     for i, p in enumerate(files):
