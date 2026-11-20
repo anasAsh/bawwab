@@ -68,11 +68,12 @@ async def _session_dump(url: str, kind: str) -> tuple[str, list[ToolInfo]]:
     async with _transport(url, kind) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()
-            version = getattr(getattr(init, "serverInfo", None), "version", None) or "unversioned"
+            info = getattr(init, "server_info", None) or getattr(init, "serverInfo", None)  # mcp 2.x / 1.x
+            version = getattr(info, "version", None) or "unversioned"
             tools: list[ToolInfo] = []
             try:
                 for t in (await session.list_tools()).tools:
-                    tools.append(ToolInfo(t.name, t.description or "", t.inputSchema))
+                    tools.append(ToolInfo(t.name, t.description or "", getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)))
             except Exception:
                 pass
             try:
