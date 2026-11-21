@@ -173,7 +173,7 @@ Status key: **M** mitigated (for the stated scope), **P** partial, **R** accepte
 |---|---|---|---|---|
 | S | A new item is disguised as an already-trusted one (same name, different content). | Items compared by semantic state + content hash, not name; only a scan that was CLEAN or approved for that exact hash is accepted (SPEC-1B). | M | — |
 | T | Install executes code at install time before the effect check runs (npx postinstall). | Gate is the first line; the effect check acts after the fact. | R | SPEC-1B "Limit"; README-LIM ("acts after the command has run"). |
-| T | Agent changes config outside the watched set (a new agent config path, another agent's config). | Watched set covers Claude Code's documented paths. | R | v1 protects Claude Code only: README-LIM last bullet; other agents are v1.1 (spec Roadmap). |
+| T | Agent changes config outside the watched set (a new agent config path, another agent's config). | Watched set covers Claude Code's documented paths; v1.1's watcher (`bawwab/watch.py`) also watches Cursor, Codex CLI, Claude Desktop and VS Code and holds what isn't clean. | P | Only Claude Code is gated: a hold in another agent is report-only, after the fact, and the watcher can be stopped (spec "v1.1 as built"; README-LIM). |
 | T | State wiped to make Bawwab think it is a fresh install, then `init --skip` grants trust. | Lost-state detection from `installed_plugins.json` and transcripts (R37–R39); data-dir markers `bootstrap-complete`/`state-created` (R53 I4); `init --skip` refused while any `effects.error` is open; `init --skip` is protected. | P | SPEC-1A "Residuals": non-plugin install has no anchor; rewriting/backdating `installed_plugins.json` or transcripts; wipe inside the first session; resumed sessions; reinstall resets `installedAt`; wiping both markers. |
 | R | — | Quarantine items keep the report; `reject` moves skill dirs to `~/.bawwab/quarantine/` with a backup. | M | — |
 | D | Effect check errors or times out → silently off. | Failure leaves a marker → `effects.error` quarantine; every non-read-only tool call denied until `effects --retry` (`hooks/bawwab_hook.py` `_mark_effects_error`). | M | Before init, the effect check uses the pre-install state as a provisional baseline (spec §1a). |
@@ -230,7 +230,7 @@ Every limitation listed in README-LIM and SEC-LIM, and where it appears above:
 | Forging Bawwab's state directly (SEC-LIM, SPEC-1A) | 5.2 S, 5.6 T/R, 5.7 T |
 | Plain deny vs approvable block is best-effort (README-LIM, SEC-LIM) | 5.1 S (R57); this affects UX, not whether the call is denied |
 | Server `env` `PATH` not checked (README-LIM) | 5.1 E |
-| v1 protects Claude Code only (README-LIM) | 5.5 T |
+| Only Claude Code is gated; other agents' holds are report-only (README-LIM, spec "v1.1 as built") | 5.5 T |
 | Bawwab's own deps checked against OSV, not scanned (README Install) | 5.7 T |
 | Lost-state anchors (SPEC-1A residuals) | 5.5 T, 5.6 D |
 | Effect check acts after install-time code ran (SPEC-1B) | 5.5 T |

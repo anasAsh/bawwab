@@ -1,7 +1,10 @@
 """Agent adapters: where each coding agent keeps its servers, skills, plugins and hooks.
 
-Only Claude Code is implemented (v1). Inventory, the effect check and hooks/fingerprint.py iterate over
-ADAPTERS; each adapter module also has a stdlib-only `<name>_watch.py` table that the hook loads by path.
+ADAPTERS are the gated agents (Claude Code: bawwab's hooks block before and after an install, and its quarantine
+blocks tool calls). Inventory, the effect check and the hook's fingerprint iterate over them only.
+WATCHED are the agents bawwab has no blocking hook in (Cursor, Codex CLI, Claude Desktop, VS Code, v1.1): the
+background watcher (bawwab/watch.py) checks them and records holds, which never block anything.
+Every adapter has a stdlib-only `<name>_watch.py` table, loaded by path (the hook loads the gated ones).
 """
 from __future__ import annotations
 
@@ -90,9 +93,14 @@ class AgentAdapter(Protocol):
 
 
 def adapter_for(ident: str) -> AgentAdapter | None:
-    return next((a for a in ADAPTERS if ident.startswith(a.name + ":")), None)
+    return next((a for a in ALL_ADAPTERS if ident.startswith(a.name + ":")), None)
 
 
 from bawwab.agents.claude_code import ClaudeCodeAdapter  # noqa: E402 - needs InstalledItem/EffectItem above
 
 ADAPTERS: list[AgentAdapter] = [ClaudeCodeAdapter()]
+
+from bawwab.agents.generic import watched_adapters  # noqa: E402
+
+WATCHED: list[AgentAdapter] = watched_adapters()
+ALL_ADAPTERS: list[AgentAdapter] = [*ADAPTERS, *WATCHED]

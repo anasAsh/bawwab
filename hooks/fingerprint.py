@@ -27,20 +27,39 @@ MARKER = ".bawwab-initialised"
 _tables = None
 
 
-def _watch_tables() -> list:
-    """Every adapter's stdlib-only watch table (bawwab/agents/*_watch.py), loaded by path once per process."""
+# The tables the hook uses: the agents bawwab gates with hooks (Claude Code). The others (cursor, codex, ...) are
+# loaded only when asked for by name, by the background watcher (bawwab/watch.py): the hot path never pays for them.
+HOOK_TABLES = ("claude_code_watch.py",)
+
+
+def _load_table(path: str):
+    mod = _loaded.get(path)
+    if mod is None:
+        spec = importlib.util.spec_from_file_location(f"_bawwab_watch_{len(_loaded)}", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _loaded[path] = mod
+    return mod
+
+
+_loaded: dict = {}
+
+
+def _watch_tables(agents=None) -> list:
+    """Adapters' stdlib-only watch tables (bawwab/agents/*_watch.py), loaded by path once per process.
+    agents=None: the hook's tables (HOOK_TABLES; the first is Claude Code's, whose walking rules every table
+    shares). Else the tables whose NAME is in agents, in file order."""
     global _tables
-    if _tables is None:
-        mods = []
-        for i, path in enumerate(sorted(glob.glob(_WATCH_GLOB))):
-            spec = importlib.util.spec_from_file_location(f"_bawwab_watch_{i}", path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            mods.append(mod)
-        if not mods:
-            raise RuntimeError("no watch tables found")
-        _tables = mods
-    return _tables
+    if agents is None:
+        if _tables is None:
+            mods = [_load_table(os.path.join(os.path.dirname(_WATCH_GLOB), n)) for n in HOOK_TABLES
+                    if os.path.isfile(os.path.join(os.path.dirname(_WATCH_GLOB), n))]
+            if not mods:
+                raise RuntimeError("no watch tables found")
+            _tables = mods
+        return _tables
+    mods = [_load_table(p) for p in sorted(glob.glob(_WATCH_GLOB))]
+    return [m for m in mods if m.NAME in agents]
 
 
 def _stat(path: str) -> str:
@@ -138,7 +157,7 @@ def _walk(root: str, h, item_root: bool = False) -> None:
     root itself for a plugin install path) gets its direct entries and its ALWAYS_FILES statted whatever
     the budgets; then each top-level subtree is walked breadth-first within SUBTREE_BUDGET, the whole root
     within ROOT_BUDGET, never descending into SKIP_DIRS. Symlinks are followed (loops cut)."""
-    t = _watch_tables()[0]
+    t = _watch_tables()[0]  # Claude Code's walking rules, shared by every adapter
     skip, always = t.SKIP_DIRS, t.ALWAYS_FILES
     try:
         st = os.stat(root)
@@ -180,19 +199,20 @@ def _walk(root: str, h, item_root: bool = False) -> None:
         left -= _bfs(sub, h, min(SUBTREE_BUDGET, left), seen, skip)
 
 
-def _paths(cwd: str, home: str) -> tuple[list, list, list]:
+def _paths(cwd: str, home: str, agents=None) -> tuple[list, list, list]:
     files, dirs = [], []
-    for t in _watch_tables():
-        files += t.json_files(cwd, home)
+    tables = _watch_tables(agents)
+    for t in tables:
+        files += [(p, k, t) for p, k in t.json_files(cwd, home)]
         dirs += [(d, False) for d in t.dirs(cwd, home)] + [(d, True) for d in t.plugin_dirs(cwd, home)]
-    return files, dirs, _watch_tables()
+    return files, dirs, tables
 
 
-def fingerprint(cwd: str, home: str) -> str:
+def fingerprint(cwd: str, home: str, agents=None) -> str:
     cwd, home = str(cwd), str(home)
-    files, dirs, _ = _paths(cwd, home)
+    files, dirs, _ = _paths(cwd, home, agents)
     h = hashlib.sha256()
-    for p, _k in files:
+    for p, _k, _t in files:
         h.update(f"J\0{p}\0{_stat(p)}\n".encode())
     for d, item in dirs:
         _walk(d, h, item)
@@ -204,7 +224,8 @@ def _pick(data: object, keypath: tuple, cwd: str, home: str, tables: list) -> ob
         if k == "{project}":
             keys = []
             for t in tables:
-                keys += t.project_keys(data, cwd, home)
+                pk = getattr(t, "project_keys", None)
+                keys += pk(data, cwd, home) if pk else []
             return {pk: _pick(data[pk], keypath[i + 1:], cwd, home, tables) for pk in sorted(set(keys))}
         if not isinstance(data, dict) or k not in data:
             return None
@@ -212,14 +233,20 @@ def _pick(data: object, keypath: tuple, cwd: str, home: str, tables: list) -> ob
     return data
 
 
-def semantic_digest(cwd: str, home: str) -> str:
+def _parse(t, raw: bytes, path: str) -> object:
+    """A watched config file's data: the table's own reader (TOML, JSON with comments) or plain JSON."""
+    load = getattr(t, "load", None)
+    return load(raw, path) if load is not None else json.loads(raw)
+
+
+def semantic_digest(cwd: str, home: str, agents=None) -> str:
     cwd, home = str(cwd), str(home)
-    files, dirs, tables = _paths(cwd, home)
+    files, dirs, tables = _paths(cwd, home, agents)
     h = hashlib.sha256()
-    for p, keypaths in files:
+    for p, keypaths, t in files:
         try:
             with open(p, "rb") as f:
-                data = json.loads(f.read())
+                data = _parse(t, f.read(), p)
             part = [_pick(data, kp, cwd, home, tables) for kp in keypaths]
         except FileNotFoundError:
             part = "-"
