@@ -11,7 +11,8 @@ import stat
 
 _NEEDLES = ("claude", "bawwab", ".mcp.json", "BAWWAB_", "disableAllHooks")
 _FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
-_FILE_TOOLS = ("Write", "Edit", "MultiEdit")
+_FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+_PATH_KEY = {"NotebookEdit": "notebook_path"}  # NotebookEdit's input: notebook_path, new_source, cell_id, ...
 # A shell glob or brace may hide ".claude" from the substring check (cp x ~/.c*/skills/, rm -rf ~/.baw{a..z}ab).
 # claude reached through $(…), `…` or $VAR: detected by its subcommand.
 _CLAUDE_SUBCMD = re.compile(
@@ -109,7 +110,7 @@ def prefilter(data: dict) -> bool:
         s = _unquote(cmd)
         return bash_install_like(cmd, cwd, home, extra) or _path_words_bawwab(s, cwd) or _runs_file(s, cwd)
     if tool in _FILE_TOOLS:
-        fp = ti.get("file_path")
+        fp = ti.get(_PATH_KEY.get(tool, "file_path"))
         if not isinstance(fp, str) or not fp:
             return False
         p = os.path.normpath(os.path.join(cwd or "/", fp))
@@ -122,7 +123,7 @@ def _write_text(tool: str, ti: dict, p: str, cwd: str) -> bool:
     """R55/R56: the write's result may hold a bawwab call (a script that runs bawwab, or a protected bawwab
     invocation in any file): its new text, plus for an edit the file's current text, names bawwab, or has a
     protected subcommand next to a path that is a bawwab executable."""
-    parts = [ti.get("content"), ti.get("new_string")]
+    parts = [ti.get("content"), ti.get("new_string"), ti.get("new_source")]
     edits = ti.get("edits")
     if isinstance(edits, list):
         parts += [e.get("new_string") for e in edits if isinstance(e, dict)]

@@ -34,6 +34,7 @@ _KEY_FIELDS = {
     "Write": ("file_path", "content"),
     "Edit": ("file_path", "old_string", "new_string", "replace_all"),
     "MultiEdit": ("file_path", "edits"),
+    "NotebookEdit": ("notebook_path", "cell_id", "new_source", "cell_type", "edit_mode"),
 }
 
 
