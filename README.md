@@ -119,6 +119,7 @@ project's `.claude/bawwab.json` can only raise it.
 | 🔍 **Static rules** | install scripts, `curl \| sh`, eval of decoded or fetched code, credential access (`~/.ssh`, `.env`, `~/.aws`), exfiltration hosts, obfuscation, hidden Unicode, prompt-injection phrasing, tool shadowing, risky plugin hooks, typosquats |
 | ☣️ **Known malware** | npm and PyPI packages listed as malicious (`MAL-*`) in [OSV](https://osv.dev), from the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed. A failed lookup is a note, not a block. |
 | 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
+| 🧭 **Claude's recommendation** | on anything not clean: Claude reads the flagged code (and more of the package if it needs to), assesses each finding as false alarm, expected or real, and recommends *keep*, *keep with care*, *don't install* or *can't tell*. Every claim must quote a real line, which Bawwab checks; it can never recommend keeping something rated malicious, and it never changes the verdict or who approves. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
 | 🕸️ **Cross-server check** | server A's tool, prompt or resource descriptions steering server B's tools (skills, agents and READMEs that name tools on purpose are left to the injection rules) |
 | 📦 **Deep mode** *(opt-in, `--deep`)* | runs the server in a locked-down Docker sandbox with decoy credentials and a network trap: flags reads of the decoys, decoys leaving, network attempts, shells and writes outside its folder ([details](#deep-mode)) |
@@ -379,6 +380,7 @@ Reports come back framed as untrusted data, with bawwab's own instructions kept 
 ```json
 {
   "level": "high",
+  "review": { "enabled": true },
   "mode": "standard",
   "llm": { "backend": "claude-cli", "model": "claude-sonnet-5-5" },
   "thresholds": { "malicious": "critical", "suspicious": "med" },
@@ -523,6 +525,14 @@ changes to Claude's configuration, with approval kept for the user.
 Yes, as a watcher: `bawwab watch` scans new or changed MCP servers, skills and extensions in Cursor, Codex CLI,
 Claude Desktop and VS Code, notifies you and records a hold. It can only block installs in Claude Code, the one
 agent whose hooks it uses today.
+
+### Can Bawwab tell me whether to install something it flagged?
+
+Yes: every result that isn't clean comes with "Claude's recommendation (advice, not a verdict)": keep, keep with
+care, don't install or can't tell, with each finding assessed against a quoted line of the code. Bawwab checks
+every quote and falls back to "can't tell" if anything doesn't hold up. The recommendation is advice: it never
+recommends keeping an item rated malicious, it never changes the verdict, and approving stays your own command.
+Turn it off with `"review": {"enabled": false}` in `~/.bawwab/config.json`.
 
 ### Is it free and open source?
 

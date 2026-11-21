@@ -21,7 +21,7 @@ from bawwab.scan.review import prompt as P
 from bawwab.types import ASSESSMENTS, RECOMMENDATIONS, Advice, Assessment, Finding, ScanReport, Severity, Verdict
 
 MIN_QUOTE = 20  # as the judge's grounding rule
-MIN_WHOLE_LINE = 6  # a shorter quote must be a whole source line (e.g. `'.env',`), never a fragment
+MIN_WHOLE_LINE = 6  # a shorter quote must be a whole source line (e.g. one file name in a list), never a fragment
 QUOTE_WINDOW = 5  # a quote must be within this many lines of its cited line
 CONTEXT_LINES = 20  # about 40 lines of code around each finding
 MAX_SUMMARY = MAX_WHY = MAX_QUOTE = 300
@@ -259,7 +259,7 @@ def serve_reads(root: _Root, reqs: list, reads_left: int, bytes_left: int) -> tu
 
 def _check_quote(root: _Root, file: str, line: int, quote: str) -> None:
     """Verbatim, within QUOTE_WINDOW lines of the cited line. At least MIN_QUOTE characters, or (for a short line,
-    such as `'.env',` in a list of file names) the whole stripped line, at least MIN_WHOLE_LINE characters."""
+    such as one file name in a list) the whole stripped line, at least MIN_WHOLE_LINE characters."""
     q = _LINE_PREFIX.sub("", quote.strip(), count=1).strip()
     if len(q) < MIN_WHOLE_LINE:
         raise _CantTell(f"a quote is shorter than {MIN_WHOLE_LINE} characters")

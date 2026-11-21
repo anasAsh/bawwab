@@ -167,6 +167,15 @@ Status key: **M** mitigated (for the stated scope), **P** partial, **R** accepte
 | D | Cost/latency abuse: many large targets burn the user's Claude quota. | Byte cap; scan cache keyed by content hash. | P | No per-session budget. Not stated in README; identified here. |
 | E | Judge prompt injection reaches Claude Code's tools through the judge process. | No tools, no MCP, no settings sources in the judge call. | M | — |
 
+### 5.4a Reviewer (`bawwab/scan/review/*`, spec §4a)
+
+| STRIDE | Threat | Mitigation now | Status | Residual |
+|---|---|---|---|---|
+| T | Scanned text talks the reviewer into "keep" so the user approves a malicious item (A6). | Advice only: the verdict, findings, blocking and approval are unchanged; MALICIOUS caps to dont-install/cant-tell; a `real` assessment rules out keep; every finding must be covered with a quote Bawwab finds verbatim near the cited line; text aimed at "the reviewer" is named as an attack in the prompt; any failed check is cant-tell. Live runs (2026-11-21): two reviewer-aimed fixtures came back "don't install" and named the steering attempt. | P | A convincing misreading of real code can still win `keep` on a SUSPICIOUS item: grounding proves the quote exists, not that the reading is right. Measured by eval/RESULTS.md §7 (reviewer metrics), not yet run in full. |
+| T | The reviewer reads outside the target (secrets on disk) through its read requests. | Paths relative, no `..`/`~`/NUL, resolved under the fetched root with `lstat` on every part (no symlinks), `O_NOFOLLOW`, regular files only, 8 reads / 60 KB / 3 calls / 240 s. | M | — |
+| I | Advice text carries instructions to the in-session Claude that relays it. | Sanitised; inside the MCP tools' untrusted frame; labelled "advice, not a verdict"; the skill says the user still decides and runs approve/reject. | P | The relaying Claude reads model output derived from hostile code; the same frame and skill rules as reports apply. |
+| D | Extra model calls on every non-clean scan. | Clean scans skip it; cached with the report; `review.enabled: false` turns it off. | P | Up to 3 calls (≤ 240 s) per non-clean scan. |
+
 ### 5.5 Effect check (`bawwab/effects.py`, `bawwab/agents/claude_code*.py`)
 
 | STRIDE | Threat | Mitigation now | Status | Residual |
