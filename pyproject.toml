@@ -1,0 +1,42 @@
+[project]
+name = "bawwab"
+version = "0.1.2"
+description = "Scan MCP servers, skills and plugins for malicious behaviour before Claude Code installs them"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+dependencies = [
+    "anthropic>=2.10.0",
+    "httpx>=0.28.1",
+    "mcp>=2.3.0",
+    "rapidfuzz>=3.14.6",
+    "tree-sitter>=0.26.1",
+    "tree-sitter-language-pack>=1.25.2",
+]
+
+[project.scripts]
+bawwab = "bawwab.cli:main"
+bawwab-mcp = "bawwab.mcp_server:main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "real_spawn: allow the test to spawn the real background inventory",
+    "real_osv: use the real OSV client (against a fake server) instead of the no-network stub",
+    "timing: asserts an absolute time limit (run separately in CI, not blocking)",
+    "real_docker: let the test reach the real Docker daemon (deep-mode sandbox)",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pyyaml>=6.0.3",
+]

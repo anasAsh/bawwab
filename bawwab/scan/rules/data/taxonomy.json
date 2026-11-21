@@ -1,0 +1,754 @@
+{
+  "about": "Maps each Bawwab rule id (bawwab/scan/rules/catalog.py) to public threat taxonomies. Reference data only: nothing loads it at scan time. Every id below was checked against the source named in 'sources' on the retrieved date; known_ids copies the titles from those sources. An empty list means no entry in that scheme fits cleanly, not that the mapping was forgotten. Coverage-note rules (a part of the target was not checked) are left unmapped on purpose. owasp_agentic uses the ASI01-ASI10 ids of the OWASP Top 10 for Agentic Applications 2026 (Version 2026, December 2025), which OWASP publishes as stable ids. The T-numbered threats of OWASP's 'Agentic AI - Threats and Mitigations' guide are not used: the Top 10 document itself cites them with differing names (T6 as both Goal Manipulation and Broken Goals, T4 as both Resource Overload and Memory Overload), so they are not treated as stable here. CWE mappings are given only where a weakness applies cleanly; CWE-200 is avoided because MITRE marks it Discouraged for mapping.",
+  "sources": [
+    {
+      "name": "OWASP Top 10 for LLM Applications",
+      "url": "https://genai.owasp.org/llm-top-10/",
+      "version": "2025",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "name": "OWASP Top 10 for Agentic Applications",
+      "url": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/",
+      "version": "2026 (published 2025-12-09)",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "name": "MITRE ATLAS",
+      "url": "https://github.com/mitre-atlas/atlas-data/blob/main/dist/v6/ATLAS-2026.10.yaml",
+      "version": "2026.10",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "name": "MITRE CWE",
+      "url": "https://cwe-api.mitre.org/api/v1/cwe/weakness/",
+      "version": "4.21",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "known_ids": {
+    "owasp_llm": {
+      "LLM01": "Prompt Injection",
+      "LLM02": "Sensitive Information Disclosure",
+      "LLM03": "Supply Chain",
+      "LLM04": "Data and Model Poisoning",
+      "LLM05": "Improper Output Handling",
+      "LLM06": "Excessive Agency",
+      "LLM07": "System Prompt Leakage",
+      "LLM08": "Vector and Embedding Weaknesses",
+      "LLM09": "Misinformation",
+      "LLM10": "Unbounded Consumption"
+    },
+    "owasp_agentic": {
+      "ASI01": "Agent Goal Hijack",
+      "ASI02": "Tool Misuse and Exploitation",
+      "ASI03": "Identity and Privilege Abuse",
+      "ASI04": "Agentic Supply Chain Vulnerabilities",
+      "ASI05": "Unexpected Code Execution (RCE)",
+      "ASI06": "Memory & Context Poisoning",
+      "ASI07": "Insecure Inter-Agent Communication",
+      "ASI08": "Cascading Failures",
+      "ASI09": "Human-Agent Trust Exploitation",
+      "ASI10": "Rogue Agents"
+    },
+    "atlas": {
+      "AML.T0010.001": "Supply Chain Compromise: Software",
+      "AML.T0010.005": "Supply Chain Compromise: AI Agent Tool",
+      "AML.T0011.001": "User Execution: Malicious Package",
+      "AML.T0011.002": "User Execution: Poisoned AI Agent Tool",
+      "AML.T0025": "Exfiltration via Cyber Means",
+      "AML.T0037": "Data from Local System",
+      "AML.T0050": "Command and Scripting Interpreter",
+      "AML.T0051.001": "LLM Prompt Injection: Indirect",
+      "AML.T0055": "Unsecured Credentials",
+      "AML.T0068": "LLM Prompt Obfuscation",
+      "AML.T0069.002": "Discover LLM System Information: System Prompt",
+      "AML.T0074": "Masquerading",
+      "AML.T0081": "Modify AI Agent Configuration",
+      "AML.T0083": "Credentials from AI Agent Configuration",
+      "AML.T0086": "Exfiltration via AI Agent Tool Invocation",
+      "AML.T0109": "AI Supply Chain Rug Pull",
+      "AML.T0110.000": "AI Agent Tool Poisoning: Definition and Instructions",
+      "AML.T0110.001": "AI Agent Tool Poisoning: Implementation",
+      "AML.T0111": "AI Supply Chain Reputation Inflation",
+      "AML.T0123": "Obfuscated Files or Information",
+      "AML.T0142": "Event Triggered Execution"
+    },
+    "cwe": {
+      "CWE-22": "Improper Limitation of a Pathname to a Restricted Directory",
+      "CWE-59": "Improper Link Resolution Before File Access",
+      "CWE-409": "Improper Handling of Highly Compressed Data (Data Amplification)",
+      "CWE-494": "Download of Code Without Integrity Check",
+      "CWE-506": "Embedded Malicious Code",
+      "CWE-829": "Inclusion of Functionality from Untrusted Control Sphere",
+      "CWE-912": "Hidden Functionality",
+      "CWE-1427": "Improper Neutralization of Input Used for LLM Prompting"
+    }
+  },
+  "rules": {
+    "files.truncated": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "files.analysis-degraded": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was analysed with less precision. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "files.binary-unscanned": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "rules.error": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "install-script": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0010.001",
+        "AML.T0011.001"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Install hooks run code with the user's privileges before review (ASI05)."
+    },
+    "install-script.remote": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0010.001",
+        "AML.T0011.001"
+      ],
+      "cwe": [
+        "CWE-494"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). The hook downloads what it runs, with no integrity check (CWE-494)."
+    },
+    "install.custom-index": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0010.001"
+      ],
+      "cwe": [
+        "CWE-829"
+      ],
+      "note": "Packages come from an index outside the scanned source (CWE-829)."
+    },
+    "remote-code.pipe-shell": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0050"
+      ],
+      "cwe": [
+        "CWE-494"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Downloaded text runs in a shell interpreter."
+    },
+    "remote-code.eval-fetch": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0050"
+      ],
+      "cwe": [
+        "CWE-494"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Fetched code is evaluated at runtime and can change after review."
+    },
+    "obfuscation.eval-decoded": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0123"
+      ],
+      "cwe": [
+        "CWE-912"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Decoded-then-evaluated payloads hide functionality from review."
+    },
+    "obfuscation.blob": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0123"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). An encoded literal may hide a payload; no CWE fits a mere blob."
+    },
+    "credential-access": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0055",
+        "AML.T0083"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Reading key, token or agent-config files. LLM02 is not used: the model is not the one disclosing."
+    },
+    "install-dir-access": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [
+        "AML.T0081"
+      ],
+      "cwe": [],
+      "note": "Writing Claude's agents/skills/commands/plugins folders modifies agent configuration. Often legitimate (installers)."
+    },
+    "exfil.host": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0025"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). A destination commonly used to receive stolen data."
+    },
+    "exfil.combo": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0037",
+        "AML.T0055",
+        "AML.T0025"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Credential read plus outbound call in one file: collection then exfiltration."
+    },
+    "deps.unpinned": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0010.001",
+        "AML.T0109"
+      ],
+      "cwe": [],
+      "note": "A floating version lets a later malicious release in (rug pull). No CWE fits cleanly."
+    },
+    "injection.override": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM07"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "atlas": [
+        "AML.T0051.001",
+        "AML.T0110.000",
+        "AML.T0069.002"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "Model-facing text that overrides instructions or asks for the system prompt (LLM07)."
+    },
+    "injection.covert-action": {
+      "owasp_llm": [
+        "LLM01",
+        "LLM02"
+      ],
+      "owasp_agentic": [
+        "ASI01",
+        "ASI02"
+      ],
+      "atlas": [
+        "AML.T0051.001",
+        "AML.T0110.000",
+        "AML.T0086"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "Injected text that makes the agent read secrets and send them out with its own tools."
+    },
+    "injection.hidden-unicode": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "atlas": [
+        "AML.T0051.001",
+        "AML.T0068"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "Invisible characters hide injected instructions from the human reader."
+    },
+    "injection.html-comment": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "atlas": [
+        "AML.T0051.001",
+        "AML.T0068"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "Instructions hidden where rendering hides them but the model still reads them."
+    },
+    "tool-shadowing": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI02",
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0110.000",
+        "AML.T0011.002"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "A tool description steering another tool: ASI04 lists tool-descriptor injection as an example."
+    },
+    "plugin.hook-broad": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [
+        "AML.T0142"
+      ],
+      "cwe": [],
+      "note": "A hook on every tool call is an event-triggered execution point. No OWASP or CWE entry fits a configuration property."
+    },
+    "plugin.hook-network": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0142",
+        "AML.T0025"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). An event-triggered command that reaches the network."
+    },
+    "plugin.bundled-mcp": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0010.005"
+      ],
+      "cwe": [],
+      "note": "A plugin that brings more agent tools into the supply chain."
+    },
+    "rugpull.text-changed": {
+      "owasp_llm": [
+        "LLM03",
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0109",
+        "AML.T0110.000"
+      ],
+      "cwe": [],
+      "note": "Trusted component's model-facing definition changed after approval."
+    },
+    "rugpull.tools-added": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0109"
+      ],
+      "cwe": [],
+      "note": "Trusted component gained unreviewed tools."
+    },
+    "rugpull.files-changed": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0109",
+        "AML.T0110.001"
+      ],
+      "cwe": [],
+      "note": "Trusted component's implementation changed after approval."
+    },
+    "cross-server.reference": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI02"
+      ],
+      "atlas": [
+        "AML.T0110.000",
+        "AML.T0051.001"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "One server's definition steering another server's tool."
+    },
+    "identity.typosquat": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0074"
+      ],
+      "cwe": [],
+      "note": "ASI04 names typo squatting as an example; ATLAS Masquerading covers look-alike names."
+    },
+    "identity.new-package": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "Lack of track record is a risk signal, not a technique; no ATLAS technique or CWE fits cleanly."
+    },
+    "identity.known-malicious": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0011.001",
+        "AML.T0010.001"
+      ],
+      "cwe": [
+        "CWE-506"
+      ],
+      "note": "Listed in an OSV MAL- advisory: confirmed malicious package."
+    },
+    "identity.osv-unavailable": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "identity.repo-mismatch": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0111",
+        "AML.T0074"
+      ],
+      "cwe": [],
+      "note": "Borrowing another project's repository as a trust signal."
+    },
+    "fetch.unsafe-entry": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [
+        "CWE-22",
+        "CWE-59",
+        "CWE-409"
+      ],
+      "note": "Archive attacks on the extractor: traversal, links out of the tree, decompression bombs. No AI-specific technique."
+    },
+    "fetch.docker-unscanned": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "fetch.failed": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "fetch.auth-required": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "judge.unavailable": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "judge.truncated": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "plugin.unresolved-server": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose. (The unscanned part is the package-manager start-up, a supply-chain gap.)"
+    },
+    "plugin.deps-unverified": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "sandbox.unavailable": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "sandbox.canary-read": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0055",
+        "AML.T0083",
+        "AML.T0037"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: the code opened a decoy credential file (keys, tokens, an agent config with an API key) in the sandbox's decoy home."
+    },
+    "sandbox.canary-leak": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0037",
+        "AML.T0055",
+        "AML.T0025"
+      ],
+      "cwe": [
+        "CWE-506"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: a decoy credential left the sandbox's decoy home (sent over the network, returned in a tool result, printed or copied into a file): collection then exfiltration. Code that does this on its own is embedded malicious code (CWE-506)."
+    },
+    "sandbox.network-attempt": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0025"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: an outbound connection, proxy request or DNS lookup, refused by the sandbox. The channel exfiltration needs; often legitimate (update checks, the tool's own API)."
+    },
+    "sandbox.shell-spawn": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0050"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: the code started a shell interpreter (an install script, or the server itself)."
+    },
+    "sandbox.write-outside": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0081"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: a write outside the sandbox's workdir. AML.T0081 fits writes to agent configuration (~/.claude, ~/.mcp.json); shell profiles and ~/.ssh are persistence, which the listed schemes have no closer id for."
+    },
+    "sandbox.incomplete": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "sandbox.no-entrypoint": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "gate.error": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "judge": {
+      "owasp_llm": [
+        "LLM01"
+      ],
+      "owasp_agentic": [
+        "ASI01"
+      ],
+      "atlas": [
+        "AML.T0051.001",
+        "AML.T0110.000"
+      ],
+      "cwe": [
+        "CWE-1427"
+      ],
+      "note": "The AI review flags model-facing text that steers the agent or hides something from the user."
+    },
+    "effects.hook": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A hook (code run on Claude's events) added or changed outside a scanned install."
+    },
+    "effects.setting": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A code-running or config-steering setting changed outside a scanned install."
+    },
+    "effects.toggle": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "A plugin or server enabled outside a scanned install."
+    },
+    "effects.unscannable": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "An item changed outside a scanned install and could not be scanned."
+    }
+  }
+}

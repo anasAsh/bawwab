@@ -1,0 +1,32 @@
+{
+  "name": "bawwab",
+  "version": "0.1.2",
+  "description": "Bawwab (بوّاب, gatekeeper): scans MCP servers, skills and plugins for malicious behaviour before Claude Code installs them, and quarantines unscanned changes to Claude's configuration.",
+  "author": {
+    "name": "Anas Al-Hamdan"
+  },
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "mcp",
+    "supply-chain",
+    "prompt-injection",
+    "scanner"
+  ],
+  "mcpServers": {
+    "bawwab": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "--frozen",
+        "--quiet",
+        "bawwab-mcp"
+      ],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
+      }
+    }
+  }
+}
