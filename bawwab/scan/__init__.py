@@ -460,6 +460,27 @@ def _cacheable(r: ScanReport) -> bool:
 STATIC_KEY_SUFFIX = "~static"  # scans made without the judge (judge=False)
 
 
+def _under_current_policy(f: Fetched, cached: ScanReport, cfg: Config) -> ScanReport:
+    """A cache hit judged by today's settings: the cache holds what was found, never the decision.
+
+    The verdict is recomputed from the cached findings with the current trusted list and thresholds, exactly
+    as a fresh scan would (no rescan: the findings depend on the content, which the key pins). If that
+    changes the verdict, the cached recommendation was made for a different verdict (and a keep-with-care for
+    SUSPICIOUS must never ride along on a now-MALICIOUS result, spec §4a), so it is replaced: by nothing when
+    the result is now clean, else by cant-tell saying why. The reviewer is not re-run on a hit: it would
+    need the judge's per-part inputs that only a full scan builds, and an LLM call per cache hit; a
+    `--no-cache` scan gives a fresh recommendation. The stored report is left as it was.
+    """
+    verdict = compute_verdict(_apply_trust(f, cached.findings, cfg), cfg.malicious, cfg.suspicious)
+    if verdict == cached.verdict:
+        return cached
+    advice = None
+    if verdict != Verdict.CLEAN and cfg.review_enabled:
+        advice = Advice.cant_tell(f"verdict changed from {cached.verdict.value} to {verdict.value} under the "
+                                  f"current settings since the review; `bawwab scan --no-cache` gives a new one")
+    return dataclasses.replace(cached, verdict=verdict, advice=advice)
+
+
 def _fetch_key(t: Target) -> str:
     return f"{t.kind}:{t.name or t.url or t.path or t.raw}@unfetched"
 
@@ -507,6 +528,7 @@ def scan_target(
         if not no_cache and not ctx.no_cache:
             cached = store.get_cached(key)
             if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
+                cached = _under_current_policy(f, cached, cfg)
                 if judge and cached.verdict == Verdict.CLEAN:  # an unjudged scan never baselines trust
                     _baseline_cached(f, t, key, store)
                 return cached

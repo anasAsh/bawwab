@@ -566,6 +566,11 @@ report reviews did, built in. Config `"review": {"enabled": true}` (default on).
   (`ScanReport.advice`) and cached with it, and shown labelled **"Claude's recommendation (advice, not a
   verdict)"**: in the gate's block, as a column of the quarantine table, in `bawwab scan` and the MCP tools
   (inside the untrusted frame), and in the question the skill has Claude ask.
+- **Cache hits use today's settings** (fix after external review, 2026-11-22). The cache keeps findings, not
+  the decision: on a hit the verdict is recomputed from the cached findings with the current trusted list and
+  thresholds. If that changes the verdict, the cached recommendation is not shown (it was made for another
+  verdict); a non-clean result gets `cant-tell` saying so, and `bawwab scan --no-cache` gives a fresh one.
+  The reviewer is not re-run on a hit.
 - **Limit.** The quote check stops fabricated evidence, not a convincing misreading of real code: a
   well-built package could still win `keep` on a SUSPICIOUS item. The asymmetric rule bounds the damage;
   the threat model records the residual, and the red-team set adds attacks aimed at the reviewer, with the
