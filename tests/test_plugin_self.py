@@ -64,9 +64,11 @@ def test_build_refuses_source_tree():
 # What Bawwab really does, and so must be reported: it reads Claude's config (~/.claude.json, ~/.claude/...)
 # and hooks every tool call. Exact counts per (rule, severity), LOW included: any change is a regression to look at.
 EXPECTED = {
-    ("credential-access", "high"): 8,      # .claude paths: paths.py, prefilter.py, detect.py + docstrings/comments
+    ("credential-access", "high"): 12,     # .claude paths: paths.py, prefilter.py, detect.py + docstrings/comments;
+                                           # deep mode's decoys and offline npm config (bawwab/sandbox/)
     ("credential-access", "low"): 2,       # catalog regexes in text.py (credential paths) and code.py (dotenv)
-    ("install-dir-access", "low"): 10,
+    ("install-dir-access", "low"): 11,     # + sandbox/observe.py's list of paths a target must not write
+    ("judge.truncated", "low"): 1,         # Bawwab's model-facing text is now over the judge's 60 KB window
     ("plugin.bundled-mcp", "low"): 1,
     ("plugin.hook-broad", "med"): 2,       # gate and post: matcher "*"
     ("plugin.unresolved-server", "med"): 1,  # R53: `uv run` downloads its deps at first start, unscanned
@@ -84,8 +86,8 @@ def test_bawwab_scans_itself_suspicious_never_malicious(tmp_path, store, osv_ok)
     assert r.verdict == Verdict.SUSPICIOUS, sorted(got.items())
     assert dict(got) == EXPECTED, sorted(got.items())
     for f in r.findings:
-        if f.rule == "credential-access" and f.severity != Severity.LOW:
-            assert ".claude" in f.evidence, (f.file, f.evidence)
+        if f.rule == "credential-access" and f.severity != Severity.LOW:  # Claude's config, or deep mode's decoys
+            assert ".claude" in f.evidence or (f.file or "").startswith("bawwab/sandbox/"), (f.file, f.evidence)
     assert any(u.endswith("/v1/querybatch") for u, _ in osv_ok["bodies"])  # its locked deps were checked
     assert took < 120
 

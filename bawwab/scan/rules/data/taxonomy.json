@@ -596,6 +596,93 @@
       "cwe": [],
       "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
     },
+    "sandbox.canary-read": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI03",
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0055",
+        "AML.T0083",
+        "AML.T0037"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: the code opened a decoy credential file (keys, tokens, an agent config with an API key) in the sandbox's decoy home."
+    },
+    "sandbox.canary-leak": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0037",
+        "AML.T0055",
+        "AML.T0025"
+      ],
+      "cwe": [
+        "CWE-506"
+      ],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: a decoy credential left the sandbox's decoy home (sent over the network, returned in a tool result, printed or copied into a file): collection then exfiltration. Code that does this on its own is embedded malicious code (CWE-506)."
+    },
+    "sandbox.network-attempt": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0025"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: an outbound connection, proxy request or DNS lookup, refused by the sandbox. The channel exfiltration needs; often legitimate (update checks, the tool's own API)."
+    },
+    "sandbox.shell-spawn": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0050"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: the code started a shell interpreter (an install script, or the server itself)."
+    },
+    "sandbox.write-outside": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04"
+      ],
+      "atlas": [
+        "AML.T0081"
+      ],
+      "cwe": [],
+      "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Observed at runtime: a write outside the sandbox's workdir. AML.T0081 fits writes to agent configuration (~/.claude, ~/.mcp.json); shell profiles and ~/.ssh are persistence, which the listed schemes have no closer id for."
+    },
+    "sandbox.incomplete": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
+    "sandbox.no-entrypoint": {
+      "owasp_llm": [],
+      "owasp_agentic": [],
+      "atlas": [],
+      "cwe": [],
+      "note": "Coverage note: says part of the target was not checked. It names no attack technique, so it is left unmapped on purpose."
+    },
     "gate.error": {
       "owasp_llm": [],
       "owasp_agentic": [],

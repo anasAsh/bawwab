@@ -121,15 +121,57 @@ project's `.claude/bawwab.json` can only raise it.
 | 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
 | 🕸️ **Cross-server check** | server A's tool, prompt or resource descriptions steering server B's tools (skills, agents and READMEs that name tools on purpose are left to the injection rules) |
-| 📦 **Deep mode** *(coming)* | runs the server in a locked-down Docker sandbox with decoy credentials and a network trap |
+| 📦 **Deep mode** *(opt-in, `--deep`)* | runs the server in a locked-down Docker sandbox with decoy credentials and a network trap: flags reads of the decoys, decoys leaving, network attempts, shells and writes outside its folder ([details](#deep-mode)) |
 
 ### Design rules
 
-- **Never executes what it scans.** It downloads over registry APIs and extracts archives safely. No `npm install`, no imports.
+- **Never executes what it scans** outside the sandbox. It downloads over registry APIs and extracts archives safely. No `npm install`, no imports. Only deep mode runs code, and only inside the Docker sandbox; no Docker means *suspicious*, never a pass.
 - **Fails closed.** If a scan errors, times out, or Claude's review returns garbage, the result is *suspicious*, never *clean*.
 - **Can't be talked out of a finding.** A static red flag always reaches you, whatever the scanned text says to the reviewer.
 - **Never grants permission.** A clean scan doesn't approve the command. Claude Code's normal permission rules still apply.
 - **Low noise.** It's tested against real packages (official MCP servers, Playwright, DigitalOcean and others), which must come back clean.
+
+### Deep mode
+
+`bawwab scan --deep <target>` (or `"mode": "deep"` in the config) adds a sandbox run to the standard scan.
+
+```bash
+bawwab sandbox build    # once: builds the sandbox image from this package and records its id
+bawwab sandbox check    # Docker reachable and the recorded image present?
+bawwab scan --deep @someone/some-mcp@1.2.0
+```
+
+Each run creates an `--internal` Docker network whose only other host is a **network trap**: it logs every
+HTTP request, HTTPS `CONNECT` and DNS lookup and refuses all of them. The target runs in a second container:
+read-only root, a non-root user, every capability dropped, `no-new-privileges`, pid, memory and CPU limits, the
+package mounted read-only, and tmpfs only for its workdir, `/tmp` and a **decoy home** holding canary
+credentials (`~/.ssh`, `~/.aws`, `gh`, `.npmrc`, `.git-credentials`, a `.claude.json` API key; decoy tokens in
+the environment too). Every canary is random per run and is not a working credential.
+
+Inside, a harness installs the package offline (`npm install --offline`, `pip install --no-index`), starts it,
+runs `initialize` and the tool/prompt/resource lists, and calls each tool once with placeholder arguments,
+with every process under `strace -f`. Afterwards it diffs the writable folders. Findings:
+
+| Rule | Severity |
+|---|---|
+| `sandbox.canary-leak` | a decoy left: over the network (CRITICAL, unless sent to its own service, e.g. a GitHub token to api.github.com), in a tool result or a copied file (HIGH), in its output (MED) |
+| `sandbox.canary-read` | a decoy credential file was opened (HIGH) |
+| `sandbox.network-attempt` | while installing or starting (MED), during a tool call (LOW), to an exfiltration-style host (HIGH) |
+| `sandbox.shell-spawn` | a shell started while installing or starting (MED), during a tool call (LOW) |
+| `sandbox.write-outside` | shell profiles, `~/.ssh`, agent config, system paths (HIGH); the rest of the home (MED); `/tmp` and caches (LOW) |
+| `sandbox.incomplete` | the run wasn't fully observed: no known way to start it, install or start failed, a limit was hit, the monitor stopped (MED) |
+| `sandbox.unavailable` | no Docker, daemon unreachable, image missing (MED: fail closed) |
+
+The tools the server lists at runtime go through the same injection rules and Claude review as static text,
+and into the trusted snapshot. Deep-mode limits:
+
+- The sandbox is offline, so a package whose dependencies aren't bundled fails to install and comes back
+  `sandbox.incomplete` (suspicious). Most npm MCP servers depend on the MCP SDK, so expect this often.
+- HTTPS is refused at `CONNECT`, so only the destination host is seen, not what would have been sent.
+  Plain HTTP, URLs and DNS names are checked for canaries in full.
+- Code that detects the sandbox and behaves well there passes; deep mode adds evidence, it can't prove absence.
+- The runner, the image record (`~/.bawwab/sandbox-image.json`) and the `docker` binary are trusted; an agent
+  running as your user can replace them (the same-user limit below).
 
 ## Benchmark
 
@@ -450,7 +492,7 @@ or labelled "Not yet reviewed".
 - [x] Labelled benchmark with published precision and recall, run in CI
 - [ ] One-command Claude Code plugin
 - [x] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox (bwrap; Docker runner untested, see `eval/RESULTS.md`)
-- [ ] Deep mode: Docker sandbox with canary credentials
+- [ ] Deep mode: Docker sandbox with canary credentials (built and unit-tested; not yet run against a live Docker daemon)
 - [x] **v1.1:** Cursor, Codex CLI, Claude Desktop and VS Code adapters, plus a background watcher
 - [ ] Blocking hooks in other agents (Codex CLI's `PreToolUse` is comparable; Cursor's partly)
 

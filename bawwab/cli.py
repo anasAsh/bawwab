@@ -71,6 +71,8 @@ def _build() -> argparse.ArgumentParser:
     wg.add_argument("--uninstall", action="store_true", help="stop and remove the user service")
     w.add_argument("--unit-dir", help=argparse.SUPPRESS)  # tests: write the unit here, never start it
     sub.add_parser("status", help="what is quarantined or on hold, across every agent, and the watcher's state")
+    sb = sub.add_parser("sandbox", help="deep mode: build the Docker sandbox image, or check that it can run")
+    sb.add_argument("action", choices=("build", "check"))
     st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
     st.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
     return p
@@ -486,6 +488,23 @@ def _setup(args) -> int:
     return rc
 
 
+def _sandbox(args) -> int:
+    from bawwab.sandbox.docker import DockerRunner, SandboxUnavailable, build_image
+
+    try:
+        if args.action == "build":
+            print("bawwab: building the sandbox image (this downloads the base image the first time)...")
+            iid = build_image()
+            print(f"bawwab: sandbox image built and recorded: {iid}")
+        else:
+            iid = DockerRunner().check()
+            print(f"bawwab: Docker is reachable and the sandbox image is ready: {iid}")
+        return 0
+    except SandboxUnavailable as e:
+        print(f"bawwab: sandbox not ready: {sanitise(e, 300)}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     from bawwab.limits import apply_memory_limit
 
@@ -519,6 +538,8 @@ def main(argv: list[str] | None = None) -> int:
             return _watch(args)
         if args.cmd == "status":
             return _status()
+        if args.cmd == "sandbox":
+            return _sandbox(args)
         from bawwab.store import open_store
 
         if args.cmd == "diff":
