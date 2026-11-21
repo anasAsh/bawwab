@@ -478,20 +478,29 @@ def index_page(views: list[View], meta: dict, repo: str, tax: dict | None = None
     awaiting = sum(1 for v in flagged if v.outcome == UNREVIEWED)
     commit = e(meta.get("bawwab_commit", "unknown"))
     dirty = " (with uncommitted changes)" if meta.get("bawwab_dirty") else ""
+    entries = [[r for _, r in v.findings if r] for v in flagged]
+    ai = sum(1 for es in entries if any("AI-assisted" in str(r.get("reviewer", "")) for r in es))
+    spot = sum(1 for es in entries if any("AI-assisted" in str(r.get("reviewer", "")) for r in es)
+               and any(r.get("spot_check") for r in es))
+    who = "hand-review" if not ai else "review"
+    how = "" if not ai else (f" Reviews were AI-assisted for {ai} of the {len(flagged)} flagged targets (Claude reading the "
+                             f"pinned code); {spot} of them were also checked by a maintainer. Each finding names its reviewer.")
     if awaiting:
         banner = (f'\n<div class="note" role="note"><strong>Scanned {e(meta.get("scan_date", "unknown"))}. {awaiting} flagged '
-                  "targets are awaiting hand-review:</strong> their labels are what the static rules said before anyone "
+                  f"targets are awaiting {who}:</strong> their labels are what the static rules said before anyone "
                   "read the code.</div>")
         headline = (f"{len(flagged)} flagged by static rules · {len(flagged) - awaiting} reviewed · "
                     f"{confirmed} confirmed harmful · {awaiting} awaiting review.")
-        checked = (f"{len(flagged) - awaiting} of the {len(flagged)} flagged targets have been checked by hand; the other "
-                   f"{awaiting} are marked &ldquo;{e(UNREVIEWED)}&rdquo;.")
+        checked = (f"{len(flagged) - awaiting} of the {len(flagged)} flagged targets have been "
+                   f"{'checked by hand' if not ai else 'reviewed'}; the other {awaiting} are marked "
+                   f"&ldquo;{e(UNREVIEWED)}&rdquo;.{how}")
         hand = ("Each flagged finding carries a reviewer's status (confirmed, known false alarm, or expected for what "
                 "the tool does), or is marked &ldquo;Not yet reviewed&rdquo; until someone has read it.")
     else:
         banner = ""
-        headline = f"{len(flagged)} flagged by static rules · {confirmed} confirmed harmful after hand-review."
-        checked = "Every target that was not clean was checked by hand before publication."
+        headline = f"{len(flagged)} flagged by static rules · {confirmed} confirmed harmful after {who}."
+        checked = (f"Every target that was not clean was {'checked by hand' if not ai else 'reviewed'} before "
+                   f"publication.{how}")
         hand = "Each flagged finding carries a reviewer's status: confirmed, known false alarm, or expected for what the tool does."
     body = f"""
 <h1>Scanning the {len(views)} most popular MCP servers, skills and plugins</h1>{banner}
@@ -510,13 +519,13 @@ The rule verdicts below are what the scanner said before anyone read the code; e
 <li><strong>Pinned.</strong> Each target is scanned at an exact package version or git commit, listed on its page.</li>
 <li><strong>Download only.</strong> Packages are fetched with Bawwab's own fetchers and read as files. Nothing is installed or run.</li>
 <li><strong>Static rules only.</strong> The verdict comes from Bawwab's pattern and code-flow rules, without the AI review step Bawwab normally adds, and without running anything in a sandbox.</li>
-<li><strong>Hand-checked.</strong> {hand}</li>
+<li><strong>{'Hand-checked' if not ai else 'Reviewed'}.</strong> {hand}</li>
 </ul></section>
 {categories_section(tax or {})}
 <section aria-labelledby="h-limits"><h2 id="h-limits">Limits</h2>
 <ul>
 <li>Static rules see code patterns, not intent. "Not malicious, needs a look" means a pattern worth reading, not an accusation.</li>
-<li>No AI review was used, so findings that Bawwab's judge would normally clear are shown as raw rule hits with a human note instead.</li>
+<li>No AI review was used, so findings that Bawwab's judge would normally clear are shown as raw rule hits with a reviewer's note instead.</li>
 <li>Very large files are skipped by the scanner and reported as such; code that is downloaded or generated at run time is not seen.</li>
 <li>A clean result means no rule fired at this version. It is not a guarantee, and later versions may differ.</li>
 <li>Popularity numbers are a snapshot and can be inflated (bots, CI, star campaigns); they decide what was scanned, not how it scored.</li>

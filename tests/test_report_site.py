@@ -338,12 +338,27 @@ def test_resume_reuses_only_same_pin_commit_and_ruleset():
     assert not scan.is_done(None, "a@1", "c1", "r1")
 
 
-def test_index_leads_with_reviewed_outcome():
+def test_index_leads_with_reviewed_outcome(tmp_path):
     """User decision 2026-11-20: the overview leads with flagged-vs-confirmed, not the raw 'malicious' count."""
-    import re
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "report" / "build_site.py").read_text()
-    assert re.search(r"flagged by static rules · \{confirmed\} confirmed harmful after hand-review", html)
+    t, results, review = _malicious_fixture()
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], results, review), out)
+    index = (out / "index.html").read_text()
+    assert "1 flagged by static rules · 0 confirmed harmful after hand-review." in index
+    assert "checked by hand before publication" in index and "AI-assisted" not in index
+
+
+def test_ai_assisted_reviews_are_not_called_hand_review(tmp_path):
+    """User decision 2026-11-21: AI-assisted reviews say "review", with how many a maintainer also checked."""
+    t, results, review = _malicious_fixture()
+    for ent in review[t["id"]]["findings"]:
+        ent["reviewer"], ent["spot_check"] = "Claude (AI-assisted review)", "maintainer, 2026-11-21"
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], results, review), out)
+    index = (out / "index.html").read_text()
+    assert "0 confirmed harmful after review." in index and "hand-review" not in index and "by hand" not in index
+    assert "Reviews were AI-assisted for 1 of the 1 flagged targets" in index
+    assert "1 of them were also checked by a maintainer" in index
 
 
 # ------------------------------------------------------------------ why it was flagged
