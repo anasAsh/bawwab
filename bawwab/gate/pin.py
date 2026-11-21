@@ -281,6 +281,11 @@ def pin_changes(inp: HookInput, resolved: dict[Target, str]) -> tuple[dict | Non
     return ti, list(dict.fromkeys(changes))
 
 
+def pins_needed(resolved: dict[Target, str]) -> list[Change]:
+    """The (name, version) pins an unversioned registry target needs: what `pin_changes` would try to apply."""
+    return [(t.name, v) for t, v in _pins(resolved)]
+
+
 def pin_input(inp: HookInput, resolved: dict[Target, str]) -> dict | None:
     """The updated tool_input with unversioned npm/pypi specs pinned to the scanned version, or None."""
     return pin_changes(inp, resolved)[0]
