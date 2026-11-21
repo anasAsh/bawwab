@@ -531,7 +531,7 @@ def refresh(cwd: Path, scan=None, store: Store | None = None, force: bool = Fals
         return new + _fail_closed(store, problem)
     try:
         stored = fpm.load(bh, c)
-        fp = fpm.fingerprint(c, home)
+        fp = fpm.fingerprint(c, home, bawwab_home=bh)
         if not force and stored is not None and stored[0] == fp:
             return new
         digest = fpm.semantic_digest(c, home)

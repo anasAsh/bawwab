@@ -393,3 +393,38 @@ def test_plugin_roots_from_redirected_install_record(cfg):
         assert cli._plugin_roots() == [os.path.realpath(root)]
     finally:
         selfid.running_root = orig
+
+
+# ------------------------------------------------------------------ combined with the effect-bytes binding (merge)
+
+def test_redirected_local_server_code_change_is_quarantined(cfg, tmp_path):
+    """A server in the redirected .claude.json runs a local script; editing the script (entry unchanged) must be
+    quarantined, as for ~/.claude.json (both fixes together)."""
+    d, proj = cfg
+    srv = tmp_path / "srv" / "server.js"
+    _w(srv, "console.log('v1')\n")
+    _w(d / ".claude.json", {"numStartups": 1, "projects": {str(proj): {}},
+                            "mcpServers": {"local": {"command": "node", "args": [str(srv)]}}})
+    _baseline(proj)
+    assert fx.refresh(proj, scan=FakeScan()) == []
+    srv.write_text("console.log('v2')\n")
+    new = fx.refresh(proj, scan=FakeScan(Verdict.SUSPICIOUS))
+    assert len(new) == 1
+    idents = [q["ident"] for q in open_store().active_quarantine()]
+    assert any(i.startswith("claude-code:mcp:user[") and i.endswith(":local") for i in idents), idents
+
+
+def test_redirected_plugin_with_two_copies_gets_per_copy_items(cfg, tmp_path):
+    d, proj = cfg
+    a, b = tmp_path / "copyA", tmp_path / "copyB"
+    for c in (a, b):
+        _w(c / ".claude-plugin/plugin.json", {"name": "p1"})
+    _w(d / "plugins/installed_plugins.json", {"version": 2, "plugins": {"p1@mkt": [
+        {"scope": "user", "installPath": str(a), "version": "1"},
+        {"scope": "project", "projectPath": str(tmp_path / "other"), "installPath": str(b), "version": "1"}]}})
+    from bawwab.agents.claude_code import ClaudeCodeAdapter
+
+    idents = {it.ident for it in ClaudeCodeAdapter().effect_items(proj)}
+    lab = [i for i in idents if i.startswith("claude-code:plugin[") and i.endswith(":p1@mkt")]
+    copies = [i for i in idents if i.startswith("claude-code:plugin[") and ":p1@mkt:copy:" in i]
+    assert len(lab) == 1 and len(copies) == 2, sorted(idents)

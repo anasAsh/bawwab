@@ -132,19 +132,35 @@ def _load(p: Path) -> object:
 _SUBTREE_FILES = 1000
 
 
-def _subtree_files(top: Path, out: list, skipped: list, item_root: Path | None = None) -> None:
+def _new_dir(p: Path, seen: set) -> bool:
+    """p (a dir, links followed) not walked yet in this tree: loops and repeats are cut by (device, inode)."""
+    try:
+        st = os.stat(p)
+    except OSError:
+        return False
+    key = (st.st_dev, st.st_ino)
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
+
+
+def _subtree_files(top: Path, out: list, skipped: list, item_root: Path | None = None,
+                   seen: set | None = None) -> None:
     """Files under top (breadth-first by os.walk order), at most _SUBTREE_FILES; SKIP_DIRS not entered;
-    item_root's Claude Code .in_use markers left out."""
+    item_root's Claude Code .in_use markers left out. A linked dir is followed (its link text hashed too), as
+    the fingerprint does; seen (device, inode) cuts loops."""
     n = 0
-    for dp, dns, fns in os.walk(top):
+    seen = set() if seen is None else seen
+    for dp, dns, fns in os.walk(top, followlinks=True):
         keep = []
         for d in sorted(dns):
             full = Path(dp) / d
+            if os.path.islink(full):
+                out.append(full)  # a nested link: its text is hashed, and it is followed below
             if d in watch.SKIP_DIRS:
                 skipped.append(full)
-            elif os.path.islink(full):
-                out.append(full)  # a nested link: its text is hashed, not followed
-            else:
+            elif _new_dir(full, seen):
                 keep.append(d)
         dns[:] = keep
         for fn in sorted(fns):
@@ -160,8 +176,10 @@ def _subtree_files(top: Path, out: list, skipped: list, item_root: Path | None =
 def _package_files(pkg: Path) -> list[Path]:
     """Files of a referenced file's package (breadth-first, at most watch.PKG_BUDGET)."""
     out: list[Path] = []
-    for dp, dns, fns in os.walk(pkg):
-        dns.sort()
+    seen: set = set()
+    _new_dir(pkg, seen)
+    for dp, dns, fns in os.walk(pkg, followlinks=True):
+        dns[:] = [d for d in sorted(dns) if _new_dir(Path(dp) / d, seen)]
         for fn in sorted(fns):
             out.append(Path(dp) / fn)
             if len(out) >= watch.PKG_BUDGET:
@@ -173,7 +191,9 @@ def _tree_hash(root: Path) -> str:
     """Content hash of a directory (or file), resolving a symlinked root. The files that decide what runs
     (ALWAYS_FILES and every file directly in the root) are always hashed in full; each top-level subtree
     contributes at most _SUBTREE_FILES files; SKIP_DIRS (node_modules...) count by their own stat only;
-    past the overall caps, files count by stat data. Nested link texts are hashed."""
+    past the overall caps, files count by stat data. Symlinks follow the fingerprint's rule: a link's text is
+    hashed and a linked file or dir is followed (dirs once each, by device and inode), so whatever moves the
+    fingerprint's walk moves this hash too."""
     h = hashlib.sha256()
     if root.is_symlink():
         try:
@@ -196,16 +216,21 @@ def _tree_hash(root: Path) -> str:
             entries = sorted(root.iterdir(), key=lambda p: p.name)
         except OSError:
             entries = []
+        seen: set = set()
+        _new_dir(root, seen)
         for p in entries:
-            if p.is_symlink() and p.is_dir():
-                files.append(p)
-            elif p.is_dir():
-                (skipped if p.name in watch.SKIP_DIRS else subtrees).append(p)
-            else:
+            if p.is_symlink():
+                files.append(p)  # its link text; a linked dir is also walked below
+            if p.is_dir():
+                if p.name in watch.SKIP_DIRS:
+                    skipped.append(p)
+                elif _new_dir(p, seen):
+                    subtrees.append(p)
+            elif not p.is_symlink():
                 files.append(p)
         always = set(files)
         for sub in subtrees:
-            _subtree_files(sub, files, skipped, root)
+            _subtree_files(sub, files, skipped, root, seen)
         files = list(dict.fromkeys(files))
     budget = _MAX_HASH_BYTES
     for i, p in enumerate(files):
@@ -258,8 +283,40 @@ def _local(p: Path) -> Target:
     return Target("local", str(p), name=str(p), path=str(p))
 
 
+def _file_hash(p: Path) -> str:
+    """A single payload file: its content (and link text), or its stat data past _MAX_HASH_BYTES (a large local
+    binary: re-read on every check would be slow; ctime can't be set back by the user)."""
+    try:
+        st = os.stat(p)
+    except OSError:
+        return "missing"
+    if st.st_size > _MAX_HASH_BYTES:
+        link = os.readlink(p) if os.path.islink(p) else ""
+        return hashlib.sha256(f"S\0{link}\0{st.st_size}\0{st.st_mtime_ns}\0{st.st_ctime_ns}\0{st.st_ino}".encode()
+                              ).hexdigest()
+    return _tree_hash(p)
+
+
+def _payload(spec: object, base: Path, cwd: Path) -> dict:
+    """Content hashes of the local code a server entry runs (watch.server_payloads / payload_roots, the rules
+    the fingerprint stats by): {path: hash}. A missing file is left out (its creation moves the fingerprint and
+    then this); {} when the entry runs nothing local that can be resolved."""
+    out: dict = {}
+    paths = watch.server_payloads(spec, str(base))
+    stops = watch.stop_dirs(str(cwd), str(Path.home()), str(base)) if paths else set()
+    for path in paths:
+        for root, tree in watch.payload_roots(path, stops):
+            if root in out:
+                continue
+            if tree:
+                out[root] = _tree_hash(Path(root))
+            elif os.path.lexists(root):
+                out[root] = _file_hash(Path(root))
+    return out
+
+
 def _servers_items(scope_ident: str, scope: str, data: object, file: Path, prefix: tuple, src: str,
-                   base: Path) -> list[EffectItem]:
+                   base: Path, cwd: Path | None = None) -> list[EffectItem]:
     out = []
     for name, spec in _servers(data).items():
         t = _server_target(spec, base) if isinstance(spec, dict) else None
@@ -267,7 +324,11 @@ def _servers_items(scope_ident: str, scope: str, data: object, file: Path, prefi
         # user approves it (here, or this exact entry at the gate); the code is scanned either way
         hold = tuple(loader_keys(spec.get("env"))) if isinstance(spec, dict) else ()
         link = spec_entry_hash(spec, base) if hold else None
-        out.append(EffectItem(f"{_P}mcp:{scope_ident}:{name}", "servers", spec, scope,
+        # the decision is bound to the local code the entry runs, not only to its text: changed bytes under an
+        # unchanged entry are a changed item (an entry with nothing local keeps its text as its value)
+        pay = _payload(spec, base, cwd or base)
+        value = {"spec": spec, "payload": pay} if pay else spec
+        out.append(EffectItem(f"{_P}mcp:{scope_ident}:{name}", "servers", value, scope,
                               f"MCP server {name} ({src})", t, str(file), (*prefix, name), env_hold=hold, env_link=link))
     return out
 
@@ -284,7 +345,7 @@ def _json_src(cj_file: Path) -> str:
 def _project_entry_items(projects: dict, key: str, cwd: Path, cj_file: Path) -> list[EffectItem]:
     p = os.path.realpath(key)
     return _servers_items(f"project{_json_label(cj_file)}:{p}", p, projects.get(key), cj_file,
-                          ("projects", key, "mcpServers"), f"{_json_src(cj_file)} (project)", Path(p))
+                          ("projects", key, "mcpServers"), f"{_json_src(cj_file)} (project)", Path(p), cwd)
 
 
 def _hook_id(value: dict) -> str:
@@ -340,6 +401,32 @@ def _settings_items(label: str, scope: str, path: Path, data: object, projs: lis
     return out
 
 
+def _plugin_items(spec: str, entries: object, cwd: Path, cfg: Path, lab: str = "") -> list[EffectItem]:
+    """One item per plugin spec, its value bound to the content of every registered install path (the fingerprint
+    walks each of them), scanned at the copy this session runs. With more than one copy, each copy is also its own
+    item, scanned at that copy: the spec's item is accepted once for every project, so a copy other projects run
+    must reach a scan of its own bytes. One copy keeps the value it always had."""
+    ents = entries if isinstance(entries, list) else []
+    paths = list(dict.fromkeys(x["installPath"] for x in ents if isinstance(x, dict)
+                               and isinstance(x.get("installPath"), str) and x["installPath"]))
+    e = _plugin_entry(ents, cwd) or next((x for x in ents if isinstance(x, dict) and x.get("installPath") in paths),
+                                         None)
+    t = _local(Path(e["installPath"])) if e else None
+    hashes = {p: _tree_hash(Path(p)) for p in paths}
+    value = {"entries": [{k: x.get(k) for k in _PLUGIN_FIELDS} if isinstance(x, dict) else x for x in ents],
+             "content": (hashes[paths[0]] if len(paths) == 1 else hashes) if paths else None}
+    pfile = str(_plugins_file(cfg))
+    out = [EffectItem(f"{_P}plugin{lab}:{spec}", "plugins", value, "user", f"plugin {spec}" + (f" ({cfg})" if lab else ""),
+                      t, pfile, ("plugins", spec), t.path if t else None)]
+    if len(paths) > 1:
+        for p in paths:
+            tag = hashlib.sha256(p.encode()).hexdigest()[:12]
+            out.append(EffectItem(f"{_P}plugin{lab}:{spec}:copy:{tag}", "plugins",
+                                  {"installPath": p, "content": hashes[p]}, "user", f"plugin {spec} (copy at {p})",
+                                  _local(Path(p)), pfile, (), p))
+    return out
+
+
 class ClaudeCodeAdapter:
     name = NAME
 
@@ -382,12 +469,12 @@ class ClaudeCodeAdapter:
             lab, src = _json_label(cj_file), _json_src(cj_file)
             cj = _load(cj_file)
             projects = cj.get("projects") if isinstance(cj, dict) else None
-            out += _servers_items(f"user{lab}", "user", cj, cj_file, ("mcpServers",), src, Path(cwd))
+            out += _servers_items(f"user{lab}", "user", cj, cj_file, ("mcpServers",), src, Path(cwd), Path(cwd))
             for k in watch.project_keys(projects, str(cwd), home):
                 out += _project_entry_items(projects, k, Path(cwd), cj_file)
         for p in projs:
             out += _servers_items(f"mcpjson:{p}", p, _load(Path(p) / ".mcp.json"), Path(p) / ".mcp.json",
-                                  ("mcpServers",), ".mcp.json", Path(p))
+                                  ("mcpServers",), ".mcp.json", Path(p), Path(cwd))
         ip_data = [(cfg, lab, _load(_plugins_file(cfg))) for cfg, lab in cfgs]
         installed = {}  # plugin spec -> the plugin idents of the config dirs that install it
         for _cfg, lab, ip in ip_data:
@@ -418,17 +505,7 @@ class ClaudeCodeAdapter:
         for cfg, lab, ip in ip_data:
             plugins = ip.get("plugins") if isinstance(ip, dict) else None
             for spec, entries in (plugins.items() if isinstance(plugins, dict) else []):
-                ents = entries if isinstance(entries, list) else []
-                e = _plugin_entry(ents, Path(cwd)) or next((x for x in ents if isinstance(x, dict)
-                                                            and isinstance(x.get("installPath"), str)
-                                                            and x["installPath"]), None)
-                t = _local(Path(e["installPath"])) if e else None
-                value = {"entries": [{k: x.get(k) for k in _PLUGIN_FIELDS} if isinstance(x, dict) else x
-                                     for x in ents],
-                         "content": _tree_hash(Path(t.path)) if t else None}
-                out.append(EffectItem(f"{_P}plugin{lab}:{spec}", "plugins", value, "user",
-                                      f"plugin {spec}" + (f" ({cfg})" if lab else ""), t,
-                                      str(_plugins_file(cfg)), ("plugins", spec), t.path if t else None))
+                out += _plugin_items(str(spec), entries, Path(cwd), cfg, lab)
         bases = [(f"user{lab}", "user", cfg) for cfg, lab in cfgs] + \
             [(f"project:{p}", p, Path(p) / ".claude") for p in projs]
         for scope_ident, scope, base in bases:
