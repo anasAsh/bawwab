@@ -1,4 +1,5 @@
-"""Claude Code adapter: ~/.claude.json, settings*.json, .mcp.json, skills/commands/agents, plugins."""
+"""Claude Code adapter: ~/.claude.json, settings*.json, .mcp.json, skills/commands/agents, plugins (and the same
+under $CLAUDE_CONFIG_DIR when it is set: bawwab.paths.claude_config_dirs)."""
 from __future__ import annotations
 
 import dataclasses
@@ -15,7 +16,7 @@ from bawwab.envkeys import loader_keys, spec_entry_hash
 from bawwab.agents import claude_code_watch as watch
 from bawwab.fetch.target import target_from_command, target_from_url
 from bawwab.gate.detect import _read_json
-from bawwab.paths import bawwab_home, claude_home, claude_json
+from bawwab.paths import bawwab_home, claude_config_dir_label, claude_config_dirs, claude_json_files
 from bawwab.types import Target
 
 NAME = watch.NAME
@@ -92,22 +93,23 @@ def _plugin_entry(entries: object, cwd: Path) -> dict | None:
     return None
 
 
-def _plugins_file() -> Path:
-    return claude_home() / "plugins" / "installed_plugins.json"
+def _plugins_file(cfg: Path) -> Path:
+    return cfg / "plugins" / "installed_plugins.json"
 
 
 def _plugins(cwd: Path) -> list[InstalledItem]:
-    data = _read_json(_plugins_file())
-    plugins = data.get("plugins") if isinstance(data, dict) else None
     out: list[InstalledItem] = []
-    if not isinstance(plugins, dict):
-        return out
-    for spec, entries in plugins.items():
-        e = _plugin_entry(entries, cwd)
-        if e is not None:
-            p = e["installPath"]
-            t = Target("local", p, name=p, path=p)
-            out.append(InstalledItem("installed_plugins.json", str(spec), t, False, "plugin", f"{_P}plugin:{spec}"))
+    for cfg in claude_config_dirs():
+        lab = claude_config_dir_label(cfg)
+        data = _read_json(_plugins_file(cfg))
+        plugins = data.get("plugins") if isinstance(data, dict) else None
+        for spec, entries in plugins.items() if isinstance(plugins, dict) else ():
+            e = _plugin_entry(entries, cwd)
+            if e is not None:
+                p = e["installPath"]
+                t = Target("local", p, name=p, path=p)
+                out.append(InstalledItem(f"installed_plugins.json{lab}", str(spec), t, False, "plugin",
+                                         f"{_P}plugin{lab}:{spec}"))
     return out
 
 
@@ -270,10 +272,19 @@ def _servers_items(scope_ident: str, scope: str, data: object, file: Path, prefi
     return out
 
 
-def _project_entry_items(projects: dict, key: str, cwd: Path) -> list[EffectItem]:
+def _json_label(cj_file: Path) -> str:
+    """"" for ~/.claude.json (idents unchanged), "[<config dir>]" for $CLAUDE_CONFIG_DIR/.claude.json."""
+    return "" if cj_file == claude_json_files()[0] else claude_config_dir_label(cj_file.parent) or f"[{cj_file.parent}]"
+
+
+def _json_src(cj_file: Path) -> str:
+    return "~/.claude.json" if cj_file == claude_json_files()[0] else str(cj_file)
+
+
+def _project_entry_items(projects: dict, key: str, cwd: Path, cj_file: Path) -> list[EffectItem]:
     p = os.path.realpath(key)
-    return _servers_items(f"project:{p}", p, projects.get(key), claude_json(), ("projects", key, "mcpServers"),
-                          "~/.claude.json (project)", Path(p))
+    return _servers_items(f"project{_json_label(cj_file)}:{p}", p, projects.get(key), cj_file,
+                          ("projects", key, "mcpServers"), f"{_json_src(cj_file)} (project)", Path(p))
 
 
 def _hook_id(value: dict) -> str:
@@ -281,7 +292,8 @@ def _hook_id(value: dict) -> str:
 
 
 def _settings_items(label: str, scope: str, path: Path, data: object, projs: list[str],
-                    mcpjson: dict[str, EffectItem]) -> list[EffectItem]:
+                    mcpjson: dict[str, EffectItem], plugin_req=None) -> list[EffectItem]:
+    """plugin_req(spec): the plugin idents an enabledPlugins entry needs (default: ~/.claude's plugin)."""
     if not isinstance(data, dict):
         return []
     out: list[EffectItem] = []
@@ -307,7 +319,7 @@ def _settings_items(label: str, scope: str, path: Path, data: object, projs: lis
     for spec, on in (ep.items() if isinstance(ep, dict) else []):
         out.append(EffectItem(f"{_P}setting:{label}:enabledPlugins:{spec}", "toggles", on, scope,
                               f"enabledPlugins {spec}={json.dumps(on)} ({path})", None, str(path),
-                              ("enabledPlugins", spec), requires=(f"{_P}plugin:{spec}",)))
+                              ("enabledPlugins", spec), requires=plugin_req(spec) if plugin_req else (f"{_P}plugin:{spec}",)))
     # .mcp.json servers this setting switches on: the project's own (project settings) or every project dir's
     dirs = projs if scope == "user" else [scope]
     servers = [i for i, it in mcpjson.items() if it.scope in dirs]
@@ -339,17 +351,21 @@ class ClaudeCodeAdapter:
     def list_installed(self, cwd: Path) -> list[InstalledItem]:
         cwd = Path(cwd)
         items: list[InstalledItem | None] = []
-        cj = _read_json(claude_json())
-        projects = cj.get("projects") if isinstance(cj, dict) else None
-        proj = projects.get(str(cwd)) if isinstance(projects, dict) else None
-        for name, spec in _servers(cj).items():
-            items.append(_mcp_item("~/.claude.json", "user", name, spec, cwd))
-        for name, spec in _servers(proj).items():
-            items.append(_mcp_item("~/.claude.json (project)", f"project:{cwd}", name, spec, cwd))
+        for cj_file in claude_json_files():
+            lab, src = _json_label(cj_file), _json_src(cj_file)
+            cj = _read_json(cj_file)
+            projects = cj.get("projects") if isinstance(cj, dict) else None
+            proj = projects.get(str(cwd)) if isinstance(projects, dict) else None
+            for name, spec in _servers(cj).items():
+                items.append(_mcp_item(src, f"user{lab}", name, spec, cwd))
+            for name, spec in _servers(proj).items():
+                items.append(_mcp_item(f"{src} (project)", f"project{lab}:{cwd}", name, spec, cwd))
         for name, spec in _servers(_read_json(cwd / ".mcp.json")).items():
             items.append(_mcp_item(".mcp.json", f"mcpjson:{cwd}", name, spec, cwd))
         out = [i for i in items if i is not None]
-        out += _skills(claude_home() / "skills", "user", "~/.claude/skills")
+        for cfg in claude_config_dirs():
+            lab = claude_config_dir_label(cfg)
+            out += _skills(cfg / "skills", f"user{lab}", f"{cfg}/skills" if lab else "~/.claude/skills")
         out += _skills(cwd / ".claude" / "skills", f"project:{cwd}", ".claude/skills")
         out += _plugins(cwd)
         return out
@@ -359,41 +375,62 @@ class ClaudeCodeAdapter:
         home = str(Path.home())
         projs = watch.project_dirs(str(cwd), home)
         out: list[EffectItem] = []
-        cj = _load(claude_json())
-        projects = cj.get("projects") if isinstance(cj, dict) else None
-        out += _servers_items("user", "user", cj, claude_json(), ("mcpServers",), "~/.claude.json", Path(cwd))
-        for k in watch.project_keys(projects, str(cwd), home):
-            out += _project_entry_items(projects, k, Path(cwd))
+        # every user config dir and file (~/.claude, ~/.claude.json, and $CLAUDE_CONFIG_DIR's when it is set);
+        # the default's idents are unchanged, a redirected one's carry its "[<dir>]" label
+        cfgs = [(cfg, claude_config_dir_label(cfg)) for cfg in claude_config_dirs()]
+        for cj_file in claude_json_files():
+            lab, src = _json_label(cj_file), _json_src(cj_file)
+            cj = _load(cj_file)
+            projects = cj.get("projects") if isinstance(cj, dict) else None
+            out += _servers_items(f"user{lab}", "user", cj, cj_file, ("mcpServers",), src, Path(cwd))
+            for k in watch.project_keys(projects, str(cwd), home):
+                out += _project_entry_items(projects, k, Path(cwd), cj_file)
         for p in projs:
             out += _servers_items(f"mcpjson:{p}", p, _load(Path(p) / ".mcp.json"), Path(p) / ".mcp.json",
                                   ("mcpServers",), ".mcp.json", Path(p))
-        settings = [("user", "user", claude_home() / "settings.json"),
-                    ("user-local", "user", claude_home() / "settings.local.json")]
+        ip_data = [(cfg, lab, _load(_plugins_file(cfg))) for cfg, lab in cfgs]
+        installed = {}  # plugin spec -> the plugin idents of the config dirs that install it
+        for _cfg, lab, ip in ip_data:
+            plugins = ip.get("plugins") if isinstance(ip, dict) else None
+            for spec in plugins if isinstance(plugins, dict) else ():
+                installed.setdefault(spec, []).append(f"{_P}plugin{lab}:{spec}")
+        settings = []
+        for cfg, lab in cfgs:
+            settings += [(f"user{lab}", "user", cfg / "settings.json", lab),
+                         (f"user-local{lab}", "user", cfg / "settings.local.json", lab)]
         for p in projs:
-            settings += [(f"project:{p}", p, Path(p) / ".claude" / "settings.json"),
-                         (f"project-local:{p}", p, Path(p) / ".claude" / "settings.local.json")]
+            settings += [(f"project:{p}", p, Path(p) / ".claude" / "settings.json", None),
+                         (f"project-local:{p}", p, Path(p) / ".claude" / "settings.local.json", None)]
         mcpjson = {it.ident: it for it in out if it.ident.startswith(f"{_P}mcp:mcpjson:")}
-        for label, scope, path in settings:
-            out += _settings_items(label, scope, path, _load(path), projs, mcpjson)
-        km_file = claude_home() / "plugins" / "known_marketplaces.json"
-        km = _load(km_file)
-        for name, v in (km.items() if isinstance(km, dict) else []):
-            value = {k: x for k, x in v.items() if k != "lastUpdated"} if isinstance(v, dict) else v
-            out.append(EffectItem(f"{_P}marketplace:{name}", "exec_settings", value, "user",
-                                  f"marketplace {name} (known_marketplaces.json)", None, str(km_file), (name,)))
-        ip = _load(_plugins_file())
-        plugins = ip.get("plugins") if isinstance(ip, dict) else None
-        for spec, entries in (plugins.items() if isinstance(plugins, dict) else []):
-            ents = entries if isinstance(entries, list) else []
-            e = _plugin_entry(ents, Path(cwd)) or next((x for x in ents if isinstance(x, dict)
-                                                        and isinstance(x.get("installPath"), str)
-                                                        and x["installPath"]), None)
-            t = _local(Path(e["installPath"])) if e else None
-            value = {"entries": [{k: x.get(k) for k in _PLUGIN_FIELDS} if isinstance(x, dict) else x for x in ents],
-                     "content": _tree_hash(Path(t.path)) if t else None}
-            out.append(EffectItem(f"{_P}plugin:{spec}", "plugins", value, "user", f"plugin {spec}", t,
-                                  str(_plugins_file()), ("plugins", spec), t.path if t else None))
-        bases = [("user", "user", claude_home())] + [(f"project:{p}", p, Path(p) / ".claude") for p in projs]
+        for label, scope, path, lab in settings:
+            # a user settings file enables its own dir's plugin; a project's, every dir's copy of it
+            req = (lambda s, lab=lab: (f"{_P}plugin{lab}:{s}",)) if lab is not None else \
+                (lambda s: tuple(installed.get(s) or (f"{_P}plugin:{s}",)))
+            out += _settings_items(label, scope, path, _load(path), projs, mcpjson, req)
+        for cfg, lab in cfgs:
+            km_file = cfg / "plugins" / "known_marketplaces.json"
+            km = _load(km_file)
+            for name, v in (km.items() if isinstance(km, dict) else []):
+                value = {k: x for k, x in v.items() if k != "lastUpdated"} if isinstance(v, dict) else v
+                out.append(EffectItem(f"{_P}marketplace{lab}:{name}", "exec_settings", value, "user",
+                                      f"marketplace {name} ({'known_marketplaces.json' if not lab else km_file})",
+                                      None, str(km_file), (name,)))
+        for cfg, lab, ip in ip_data:
+            plugins = ip.get("plugins") if isinstance(ip, dict) else None
+            for spec, entries in (plugins.items() if isinstance(plugins, dict) else []):
+                ents = entries if isinstance(entries, list) else []
+                e = _plugin_entry(ents, Path(cwd)) or next((x for x in ents if isinstance(x, dict)
+                                                            and isinstance(x.get("installPath"), str)
+                                                            and x["installPath"]), None)
+                t = _local(Path(e["installPath"])) if e else None
+                value = {"entries": [{k: x.get(k) for k in _PLUGIN_FIELDS} if isinstance(x, dict) else x
+                                     for x in ents],
+                         "content": _tree_hash(Path(t.path)) if t else None}
+                out.append(EffectItem(f"{_P}plugin{lab}:{spec}", "plugins", value, "user",
+                                      f"plugin {spec}" + (f" ({cfg})" if lab else ""), t,
+                                      str(_plugins_file(cfg)), ("plugins", spec), t.path if t else None))
+        bases = [(f"user{lab}", "user", cfg) for cfg, lab in cfgs] + \
+            [(f"project:{p}", p, Path(p) / ".claude") for p in projs]
         for scope_ident, scope, base in bases:
             for d in _skill_dirs(base / "skills"):
                 out.append(EffectItem(f"{_P}skill:{scope_ident}:{d.name}", "skills", _tree_hash(d), scope,
@@ -410,11 +447,13 @@ class ClaudeCodeAdapter:
         """effect_items plus every project's ~/.claude.json servers: the install-time snapshot."""
         out = self.effect_items(cwd)
         seen = {it.ident for it in out}
-        cj = _load(claude_json())
-        projects = cj.get("projects") if isinstance(cj, dict) else None
-        for k in (projects if isinstance(projects, dict) else {}):
-            if isinstance(k, str):
-                out += [it for it in _project_entry_items(projects, k, Path(cwd)) if it.ident not in seen]
+        for cj_file in claude_json_files():
+            cj = _load(cj_file)
+            projects = cj.get("projects") if isinstance(cj, dict) else None
+            for k in (projects if isinstance(projects, dict) else {}):
+                if isinstance(k, str):
+                    out += [it for it in _project_entry_items(projects, k, Path(cwd), cj_file)
+                            if it.ident not in seen]
         return out
 
     def semantic_state(self, cwd: Path) -> dict:
