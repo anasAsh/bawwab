@@ -494,3 +494,40 @@ def test_allow_unreviewed_still_blocks_unsafe_ids(tmp_path):
     results = {t["id"]: _result(t, findings=[])}
     with pytest.raises(build_site.PublishRefused):
         build_site.build(*_write(tmp_path, [t], results, {}), tmp_path / "site", allow_unreviewed=True)
+
+
+# ------------------------------------------------------------------ discovery: meta tags, sitemap, robots, llms.txt
+
+def test_pages_carry_description_canonical_and_og_tags(tmp_path):
+    t = _npm_target()
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, verdict="clean", findings=[])}, {}), out)
+    base = "https://anasash.github.io/bawwab/"
+    for rel, url in (("index.html", base), ("targets.html", base + "targets.html"),
+                     ("method.html", base + "method.html"), (f"t/{t['id']}.html", f"{base}t/{t['id']}.html")):
+        page = (out / rel).read_text()
+        assert '<meta name="description" content="' in page, rel
+        assert f'<link rel="canonical" href="{url}">' in page and f'<meta property="og:url" content="{url}">' in page, rel
+    assert "MCP servers, Claude Code plugins and Agent Skills" in (out / "index.html").read_text()
+
+
+def test_hostile_name_is_escaped_in_meta_tags(tmp_path):
+    t = _npm_target(name='"><script>alert(9)</script>')
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, verdict="clean", findings=[])}, {}), out)
+    page = (out / "t" / f"{t['id']}.html").read_text()
+    assert "<script>alert(9)" not in page and "&lt;script&gt;alert(9)" in page
+
+
+def test_robots_sitemap_and_llms_txt(tmp_path):
+    t = _npm_target()
+    out = tmp_path / "site"
+    build_site.build(*_write(tmp_path, [t], {t["id"]: _result(t, verdict="clean", findings=[])}, {}), out,
+                     repo="Some-Owner/proj")
+    base = "https://some-owner.github.io/proj/"
+    assert (out / "robots.txt").read_text() == f"User-agent: *\nAllow: /\nSitemap: {base}sitemap.xml\n"
+    sm = (out / "sitemap.xml").read_text()
+    assert sm.count("<url>") == 4 and f"<loc>{base}t/{t['id']}.html</loc>" in sm
+    llms = (out / "llms.txt").read_text()
+    assert llms.startswith("# Bawwab: Top 1 scan\n") and f"]({base}targets.html)" in llms
+    assert "github.com/Some-Owner/proj" in llms

@@ -362,15 +362,28 @@ def _sha(s: str) -> str:
 SITE_N = 100  # targets in this build; build() sets it, so every page names the real count
 
 
+SITE_URL = "https://anasash.github.io/bawwab/"  # build() derives it from --repo (GitHub Pages)
+
+
 def site_name() -> str:
     return f"Bawwab: Top {SITE_N} scan"
 
 
-def page(title: str, body: str, depth: int = 0, script: str | None = None) -> str:
+def site_description() -> str:
+    return (f"Bawwab's security scan of the {SITE_N} most popular MCP servers, Claude Code plugins and Agent Skills: "
+            "static analysis for malware, prompt injection, tool poisoning and credential theft, with every flagged "
+            "finding reviewed.")
+
+
+def page(title: str, body: str, depth: int = 0, script: str | None = None, description: str = "",
+         path: str = "") -> str:
+    """path: the page's URL relative to SITE_URL ("" for the index), for the canonical and og:url tags."""
     up = "../" * depth
     csp = f"default-src 'none'; style-src '{_sha(CSS)}'; img-src 'self'; base-uri 'none'; form-action 'none'"
     if script:
         csp += f"; script-src '{_sha(script)}'"
+    desc = sanitise(description or site_description(), 300)
+    url = SITE_URL + path
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -379,6 +392,14 @@ def page(title: str, body: str, depth: int = 0, script: str | None = None) -> st
 <meta http-equiv="Content-Security-Policy" content="{e(csp)}">
 <meta name="referrer" content="no-referrer">
 <title>{e(title)}</title>
+<meta name="description" content="{e(desc)}">
+<link rel="canonical" href="{e(url)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{e(site_name())}">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(desc)}">
+<meta property="og:url" content="{e(url)}">
+<meta name="twitter:card" content="summary">
 <style>{CSS}</style>
 </head>
 <body>
@@ -552,7 +573,9 @@ def targets_page(views: list[View]) -> str:
 <th scope="col" class="hide-sm">After review</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 """
-    return page(f"All targets - {site_name()}", body, script=TABLE_JS)
+    return page(f"All targets - {site_name()}", body, script=TABLE_JS, path="targets.html",
+                description=f"All {SITE_N} MCP servers, Claude Code plugins and Agent Skills in Bawwab's scan, with the "
+                            "rule verdict, why each was flagged and the review outcome.")
 
 
 def finding_card(f: dict, r: dict | None, tax: dict | None = None) -> str:
@@ -638,7 +661,11 @@ def target_page(v: View, repo: str, tax: dict | None = None) -> str:
     parts.append(f'<h2 id="dispute">Dispute this result</h2><p>Maintainer and think this is wrong? '
                  f'<a href="{e(dispute_url(repo, v))}" rel="noopener noreferrer">Open a dispute on GitHub</a> '
                  f'with the target id <code>{e(v.id)}</code>.</p>')
-    return page(f"{sanitise(tg['name'], 80)} - {site_name()}", "\n".join(parts), depth=1)
+    desc = f"Bawwab security scan of {sanitise(tg['name'], 80)} ({KIND_LABEL[tg['kind']]}): {VERDICT_NOTE[v.state]}"
+    if v.summary:
+        desc += f" Review: {v.summary}"
+    return page(f"{sanitise(tg['name'], 80)} - {site_name()}", "\n".join(parts), depth=1,
+                description=desc, path=f"t/{v.id}.html")
 
 
 def md_to_html(md: str) -> str:
@@ -702,7 +729,9 @@ def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, 
           allow_unreviewed: bool = False) -> tuple[list[View], list[str]]:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         raise ValueError("repo must be OWNER/NAME")
-    global SITE_N
+    global SITE_N, SITE_URL
+    owner, name = repo.split("/", 1)
+    SITE_URL = f"https://{owner.lower()}.github.io/{name}/"
     targets = load_targets(targets_path)
     SITE_N = len(targets)
     rdoc = json.loads(results_path.read_text()) if results_path.exists() else {"results": {}}
@@ -727,11 +756,48 @@ def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, 
     (out / "targets.html").write_text(targets_page(views))
     method_path = method_path or (REPORT / "METHOD.md")
     method = md_to_html(method_path.read_text()) if method_path.exists() else "<p>METHOD.md is missing.</p>"
-    (out / "method.html").write_text(page(f"Method - {site_name()}", method))
+    (out / "method.html").write_text(page(f"Method - {site_name()}", method, path="method.html",
+                                          description="How Bawwab picked, pinned, scanned and reviewed the most popular "
+                                                      "MCP servers, Claude Code plugins and Agent Skills."))
     for v in views:
         (out / "t" / f"{v.id}.html").write_text(target_page(v, repo, tax))
     (out / ".nojekyll").write_text("")
+    write_discovery(out, views, repo, meta)
     return views, warnings
+
+
+def write_discovery(out: Path, views: list[View], repo: str, meta: dict) -> None:
+    """robots.txt, sitemap.xml and llms.txt (https://llmstxt.org): so search engines and LLM tools find the pages.
+    Target ids are checked safe by load_targets; nothing scanned goes in, only counts and fixed text."""
+    pages = ["", "targets.html", "method.html"] + [f"t/{v.id}.html" for v in views]
+    (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}sitemap.xml\n")
+    urls = "".join(f"<url><loc>{e(SITE_URL + p)}</loc></url>" for p in pages)
+    (out / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n'
+                                     f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n')
+    c = counts(views)
+    gh = f"https://github.com/{repo}"
+    (out / "llms.txt").write_text(f"""# {site_name()}
+
+> Bawwab is an open-source security scanner and Claude Code plugin that checks MCP servers, Claude Code plugins
+> and Agent Skills for malware, prompt injection, tool poisoning, rug-pulls and typosquats before an AI agent
+> installs them. This site is its public scan of the {SITE_N} most popular ones (scan date {meta.get('scan_date')}).
+
+Results: {c.get('clean', 0)} clean, {c.get('suspicious', 0)} flagged as needing a look, {c.get('malicious', 0)} flagged
+as possibly malicious by the static rules, {c.get('not-verified', 0)} not verified. Rule verdicts are what the
+scanner said before review; each target page shows the review outcome for every finding.
+
+## Report
+
+- [Overview]({SITE_URL}): headline counts and review outcomes
+- [All targets]({SITE_URL}targets.html): every scanned MCP server, plugin and skill with its verdict
+- [Method]({SITE_URL}method.html): how targets were picked, pinned, scanned and reviewed
+
+## Bawwab
+
+- [Repository and README]({gh}): install (`/plugin install bawwab@bawwab`), usage, FAQ
+- [Threat model]({gh}/blob/main/docs/threat-model.md): STRIDE per component
+- [Rule taxonomy]({gh}/blob/main/bawwab/scan/rules/data/taxonomy.json): rules mapped to OWASP LLM Top 10, OWASP Agentic Top 10, MITRE ATLAS and CWE
+""")
 
 
 def main(argv: list[str] | None = None) -> int:
