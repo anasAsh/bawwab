@@ -536,7 +536,10 @@ Semgrep-style patterns and manifest parsers. Covers:
 Reads tool descriptions and skill instructions for intent ("does this try
 to steer the agent or hide something from the user?"), plus code around
 static findings. Scanned content is passed strictly as quoted data. Fixed
-JSON output schema; anything else is a failed scan (fail closed). No tools,
+JSON output schema; anything else is a failed scan (fail closed). A HIGH or
+CRITICAL judge finding must quote the sent text verbatim (≥ 20 chars); one
+that doesn't is kept at LOW, so an unsupported claim adds no blocking weight
+(fix after external review, 2026-11-22; CRITICAL used to fall only to HIGH). No tools,
 network or secrets are available to the judge. Backend: `claude -p`
 (user's existing auth, all tools disabled) or the Anthropic API.
 
