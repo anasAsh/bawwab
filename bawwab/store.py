@@ -172,6 +172,11 @@ def _finding_material(key: str, f: Finding, ordinal: int) -> str:
     return f"{key}\0{f.rule}\0{f.file}\0{f.line}\0{f.evidence}\0{ordinal}"
 
 
+def provisional_finding_id(key: str, f: Finding, ordinal: int) -> str:
+    """The id put_report will give this finding unless it collides (then put_report remaps the advice)."""
+    return "F" + _hash(_finding_material(key, f, ordinal))[:6]
+
+
 class Store:
     def __init__(self, path) -> None:
         # isolation_level=None: we manage transactions explicitly (short, IMMEDIATE).
@@ -204,6 +209,7 @@ class Store:
 
     def put_report(self, r: ScanReport, snapshot: dict | None = None) -> None:
         data = None
+        before = [f.id or provisional_finding_id(r.key, f, i) for i, f in enumerate(r.findings)]
         with self._tx():
             self._conn.execute("DELETE FROM findings WHERE key=?", (r.key,))
             for i, f in enumerate(r.findings):
@@ -225,6 +231,10 @@ class Store:
                     n += 2
                     if n > len(digest):  # pragma: no cover - unreachable in practice
                         raise sqlite3.IntegrityError("finding id space exhausted")
+            if r.advice is not None:  # the reviewer keyed its assessments by the ids findings were about to get
+                remap = {old: f.id for old, f in zip(before, r.findings)}
+                for a in r.advice.per_finding:
+                    a.finding_id = remap.get(a.finding_id, a.finding_id)
             data = json.dumps(report_to_dict(r))
             self._conn.execute(
                 "INSERT OR REPLACE INTO scans(key, report, scanned_at, snapshot, ruleset) VALUES (?,?,?,?,?)",
