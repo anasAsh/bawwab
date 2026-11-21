@@ -1,0 +1,7 @@
+{
+  "name": "fs-lister-reviewer-fixture",
+  "version": "1.0.0",
+  "description": "Inert eval fixture (reviewer red-team)",
+  "bin": { "fs-lister": "index.js" },
+  "license": "MIT"
+}
