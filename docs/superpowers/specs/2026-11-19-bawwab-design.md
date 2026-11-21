@@ -540,6 +540,37 @@ JSON output schema; anything else is a failed scan (fail closed). No tools,
 network or secrets are available to the judge. Backend: `claude -p`
 (user's existing auth, all tools disabled) or the Anthropic API.
 
+### 4a. Reviewer — a recommendation, never a verdict (user request 2026-11-21)
+
+After the verdict is computed, a non-clean result (standard or deep mode) gets a **recommendation**: what
+a careful reviewer would advise after reading the flagged code. It is what the maintainer's AI-assisted
+report reviews did, built in. Config `"review": {"enabled": true}` (default on).
+
+- **Input.** The verdict; every counted finding (rule, severity, file:line, evidence); about 40 lines of
+  code around each; the target's file list and manifest. Scanned text is framed as data, as for the judge.
+- **Looking deeper, bounded.** The reviewer may answer `{"read": [{"path", "start", "end"}]}` to see more of
+  the downloaded target: paths inside the fetched root only (normalised, no symlinks), up to 8 reads and
+  about 60 KB in total, over at most 3 rounds. A plain JSON exchange, so both judge backends work. Then it
+  answers with the recommendation.
+- **Output.** One of `keep` / `keep-with-care` / `dont-install` / `cant-tell`, a summary (≤ 300 chars),
+  and per counted finding: an assessment (`false-alarm` / `expected` / `real`), a reason, and a quoted
+  line with its file and line.
+- **Checked by Bawwab; any failure is `cant-tell`.** Valid JSON; every counted finding covered; every quote
+  (≥ 20 chars) appears verbatim in the cited file within 5 lines of the cited line; any `real` assessment
+  rules out `keep`; a timeout, a garbled answer or a failed check gives `cant-tell` with the reason.
+- **Asymmetric (user decision).** `keep` and `keep-with-care` are allowed only for SUSPICIOUS. For MALICIOUS
+  (a critical static finding) the result can only be `dont-install` or `cant-tell` ("read these lines"):
+  the strongest signals can't be talked down.
+- **Never changes anything else.** Verdict, findings, blocking, the security level and approval are as
+  before; approve stays a user-only `!` command. The recommendation is stored on the report
+  (`ScanReport.advice`) and cached with it, and shown labelled **"Claude's recommendation (advice, not a
+  verdict)"**: in the gate's block, as a column of the quarantine table, in `bawwab scan` and the MCP tools
+  (inside the untrusted frame), and in the question the skill has Claude ask.
+- **Limit.** The quote check stops fabricated evidence, not a convincing misreading of real code: a
+  well-built package could still win `keep` on a SUSPICIOUS item. The asymmetric rule bounds the damage;
+  the threat model records the residual, and the red-team set adds attacks aimed at the reviewer, with the
+  rate of `keep` on malicious samples rated only SUSPICIOUS reported in `eval/RESULTS.md`.
+
 ### 5. Deep mode — sandbox run
 
 Docker, non-root, read-only target mount, resource limits, no network
