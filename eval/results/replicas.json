@@ -300,7 +300,7 @@
     },
     "weather_v2_trusted": true,
     "cross_server_findings": [
-      "cross-server.reference:HIGH: local:<scratch>/replicas-wom95h2y/cross/weather's tool get_forecast mentions local:<scratch>/replicas-wom95h2y/cross/postmark's tool send_email"
+      "cross-server.reference:HIGH: local:<scratch>/replicas-p73534ox/cross/weather's tool get_forecast mentions local:<scratch>/replicas-p73534ox/cross/postmark's tool send_email"
     ],
     "note": "cross_server_findings runs in the SessionStart inventory and only warns (README)."
   }

@@ -1,0 +1,10 @@
+# docker build context for eval/Dockerfile
+.git
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.superpowers
+bench/.cache
+report/.cache
+report/out

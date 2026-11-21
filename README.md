@@ -441,7 +441,7 @@ or labelled "Not yet reviewed".
 - [x] MCP server tools: `scan_mcp_server`, `scan_skill`, `scan_plugin`, `diff_since_trusted`, `explain_finding`
 - [x] Labelled benchmark with published precision and recall, run in CI
 - [ ] One-command Claude Code plugin
-- [ ] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox
+- [x] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox (bwrap; Docker runner untested, see `eval/RESULTS.md`)
 - [ ] Deep mode: Docker sandbox with canary credentials
 - [ ] **v1.1:** Cursor, Codex CLI, Claude Desktop and VS Code adapters, plus a background watcher
 
@@ -451,6 +451,7 @@ or labelled "Not yet reviewed".
 uv sync
 uv run pytest -q                                   # the test suite
 uv run python bench/run.py --markdown              # the benchmark (rewrites the README block)
+uv run python eval/run_eval.py --compare           # the effectiveness evaluation, in a bwrap/Docker sandbox
 python3 scripts/build_plugin.py /tmp/bawwab-plugin # build the runtime-only plugin tree
 claude --plugin-dir /tmp/bawwab-plugin             # try that tree in Claude Code without a marketplace
 ```

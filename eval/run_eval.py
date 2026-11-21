@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Bawwab effectiveness evaluation (Task 15): incident replicas, hook-replay red-team, false positives, latency.
 
-Run:  uv run python eval/run_eval.py            (everything; writes eval/results/*.json)
+Run:  uv run python eval/run_eval.py            (everything, in an OS sandbox; writes eval/results/*.json)
+      uv run python eval/run_eval.py --compare  (also check decisions/outcomes/findings against the committed run)
       uv run python eval/run_eval.py --only attacks --ids heredoc-bash,plain-typosquat-local
+      --sandbox auto|bwrap|docker|none  (default auto: bwrap, else docker, else refuse; see eval/isolation.py)
 
-Method (see eval/RESULTS.md): no live Claude and no container. Each red-team entry is the tool call Claude would
+Method (see eval/RESULTS.md): no live Claude. Each red-team entry is the tool call Claude would
 make, as PreToolUse JSON, piped through the real hook (`python3 hooks/bawwab_hook.py gate`), which runs the real
 `bawwab gate` child. The attack command itself is NEVER executed: its effect (the config or file change it would
 make) is written by this script inside a scratch HOME, and then the real `post` hook runs the effect check.
@@ -12,7 +14,9 @@ make) is written by this script inside a scratch HOME, and then the real `post` 
 Isolation: every run gets HOME, BAWWAB_HOME and XDG_* under a scratch dir (default /var/tmp/bawwab-eval-*), the
 Claude/Bawwab env vars are removed, network goes to a dead proxy (OSV fails closed or is stubbed), the AI judge is
 the fake judge (BAWWAB_FAKE_JUDGE), and a `claude` guard on PATH refuses to run. The script refuses to start if
-HOME would resolve to the real home.
+HOME would resolve to the real home. On top of that, the whole run is re-executed inside an OS sandbox
+(eval/isolation.py: bubblewrap or Docker), which hides the real home, makes the repo read-only, has no network
+but loopback, and proves all three from the inside before any entry runs.
 """
 from __future__ import annotations
 
@@ -363,7 +367,10 @@ def reason_kind(text: str) -> str | None:
         return "quarantine"
     if "protected action" in t:
         return "protected"
-    if "fetch.failed" in t or "could not fetch" in t.lower() or "ConnectError" in t or "ProxyError" in t:
+    # the finding's evidence is cut to a fixed width, so how much of "ConnectError" survives depends on the length
+    # of the target path (the scratch dir): match the fetch line itself, not the error name
+    if ("fetch.failed" in t or "could not fetch" in t.lower() or "ConnectError" in t or "ProxyError" in t
+            or re.search(r"\bGET https?://\S+ failed: (?:Conn|Prox)", t)):
         return "fetch-failed"
     if "MALICIOUS" in t:
         return "malicious"
@@ -744,6 +751,147 @@ def summarise(attacks: list[dict], normal: list[dict]) -> dict:
     return {"families": fam, "misses": misses, "false_positives": fp}
 
 
+# ------------------------------------------------------------------ reproducibility: compare two result sets
+
+def comparable(d: Path) -> dict:
+    """The parts of a results dir that must not change between runs of the same tree: decisions, outcomes,
+    verdicts and findings. Timings, reason wording and the diff text are left out."""
+    def load(name):
+        p = d / f"{name}.json"
+        return json.loads(p.read_text()) if p.exists() else None
+
+    out: dict = {}
+    if (att := load("attacks")) is not None:
+        out["attacks"] = {a["id"]: {
+            "outcome": a.get("outcome"), "blocked_before": a.get("blocked_before"),
+            "caught_after": a.get("caught_after"), "gate": [(g["decision"], g["kind"]) for g in a.get("gate", [])],
+            "post": (a["post"]["decision"], a["post"]["kind"]) if a.get("post") else None,
+            "probe": (a["probe"]["decision"], a["probe"]["kind"]) if a.get("probe") else None,
+            "error": a.get("error")} for a in att}
+    if (nor := load("normal")) is not None:
+        out["normal"] = {n["id"]: {"notices": n.get("notices"), "denies": n.get("denies"), "error": n.get("error")}
+                         for n in nor}
+    if (rep := load("replicas")) is not None:
+        def strip(x):
+            if isinstance(x, dict):
+                return {k: strip(v) for k, v in x.items() if k != "diff_since_trusted"}
+            return x
+        out["replicas"] = strip(rep)
+    if (summ := load("summary")) is not None:
+        out["summary"] = summ
+    # tuples -> lists, as they would come back from disk; mkdtemp suffixes (replicas-XXXXXXXX) don't count
+    return json.loads(re.sub(r"replicas-[A-Za-z0-9_]{8}", "replicas-*", json.dumps(out)))
+
+
+def compare_results(expected: Path | dict, got: Path | dict) -> list[str]:
+    """Differences between two results dirs, or their `comparable` snapshots (only the sections both have)."""
+    a = copy.deepcopy(expected) if isinstance(expected, dict) else comparable(expected)
+    b = copy.deepcopy(got) if isinstance(got, dict) else comparable(got)
+    diffs: list[str] = []
+
+    def walk(x, y, where):
+        if isinstance(x, dict) and isinstance(y, dict):
+            for k in sorted(set(x) | set(y), key=str):
+                if k not in y:
+                    diffs.append(f"{where}/{k}: missing in this run")
+                elif k not in x:
+                    diffs.append(f"{where}/{k}: new in this run")
+                else:
+                    walk(x[k], y[k], f"{where}/{k}")
+        elif x != y:
+            diffs.append(f"{where}: expected {json.dumps(x)[:200]}, got {json.dumps(y)[:200]}")
+
+    # a partial run (--ids) is compared on the entries it ran, and its summary is not compared
+    partial = any(s in a and s in b and set(b[s]) < set(a[s]) for s in ("attacks", "normal"))
+    for section in sorted(set(a) & set(b)):
+        if section in ("attacks", "normal") and set(b[section]) < set(a[section]):
+            a[section] = {k: v for k, v in a[section].items() if k in b[section]}
+        if section == "summary" and partial:
+            continue
+        walk(a[section], b[section], section)
+    return diffs
+
+
+def _git_state() -> dict:
+    def git(*args):
+        r = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=30)
+        return r.stdout.strip() if r.returncode == 0 else None
+    return {"commit": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
+
+
+def _report_compare(expected: dict, got: Path, label: str) -> int:
+    if not expected:
+        print(f"run_eval: nothing to compare with in {label}", file=sys.stderr)
+        return 1
+    diffs = compare_results(expected, got)
+    if diffs:
+        print(f"run_eval: {len(diffs)} difference(s) from {label}:", file=sys.stderr)
+        for d in diffs[:200]:
+            print(f"  {d}", file=sys.stderr)
+        return 1
+    print(f"run_eval: decisions, outcomes and findings match {label}", file=sys.stderr)
+    return 0
+
+
+def _isolation():
+    """eval/isolation.py, loaded by path (eval/ is not a package)."""
+    name = "bawwab_eval_isolation"
+    if name not in sys.modules:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(name, EVAL / "isolation.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[name]
+
+
+def run_isolated(a, expected: dict | None = None, exec_=None) -> int:
+    """The outer half of --sandbox bwrap|docker|auto: re-run this script inside the sandbox, then copy its
+    results out and record which sandbox ran them."""
+    isolation = _isolation()
+
+    try:
+        runner = isolation.choose(a.sandbox, exec_)
+        scratch = resolve_workdir(a.workdir) if a.workdir else Path(tempfile.mkdtemp(prefix="bawwab-eval-",
+                                                                                        dir="/var/tmp"))
+    except (isolation.IsolationUnavailable, Unsafe) as e:
+        print(f"run_eval: refused: {e}", file=sys.stderr)
+        return 2
+    inner = ["--only", a.only] + (["--ids", a.ids] if a.ids else []) + (["--keep"] if a.keep else [])
+    spec = isolation.Spec(repo=ROOT, scratch=scratch.resolve(), real_home=REAL_HOME, python=Path(sys.executable),
+                          inner_args=inner)
+    print(f"run_eval: running inside {runner.name} (scratch {spec.scratch})", file=sys.stderr)
+    try:
+        try:
+            code = runner.run(spec)
+        except isolation.IsolationUnavailable as e:
+            print(f"run_eval: refused: {e}", file=sys.stderr)
+            return 2
+        meta_p = spec.inner_out / "meta.json"
+        if code != 0 or not meta_p.exists():
+            print(f"run_eval: the sandboxed run failed (exit {code})", file=sys.stderr)
+            return code or 1
+        meta = json.loads(meta_p.read_text())
+        iso = meta.get("meta", {}).get("isolation", {})
+        if iso.get("runner") != runner.name or not iso.get("ok"):
+            print(f"run_eval: the inner run did not confirm {runner.name} isolation: {iso}", file=sys.stderr)
+            return 1
+        meta["meta"].update(_git_state())
+        meta_p.write_text(json.dumps(meta, indent=2) + "\n")
+        if not a.no_write:
+            out = Path(a.out)
+            out.mkdir(parents=True, exist_ok=True)
+            for f in sorted(spec.inner_out.glob("*.json")):
+                shutil.copyfile(f, out / f.name)
+        if a.compare:
+            return _report_compare(expected or {}, spec.inner_out, a.compare)
+        return 0
+    finally:
+        if not a.keep:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--only", default="replicas,attacks,normal,latency,baseline")
@@ -753,7 +901,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep", action="store_true", help="keep the scratch dir")
     ap.add_argument("--out", default=str(RESULTS), help="where to write the results JSON")
     ap.add_argument("--no-write", action="store_true")
+    ap.add_argument("--sandbox", choices=("auto", "bwrap", "docker", "none"), default="auto",
+                    help="OS isolation for the whole run (default auto: bwrap, else docker, else refuse). "
+                         "`none` is environment isolation only")
+    ap.add_argument("--compare", nargs="?", const=str(RESULTS), default=None, metavar="DIR",
+                    help="after the run, compare decisions/outcomes/findings with DIR (default: the committed "
+                         "eval/results) and exit 1 on any difference")
     a = ap.parse_args(argv)
+    # snapshot before anything is written: --compare and --out are the same dir by default
+    expected = comparable(Path(a.compare)) if a.compare else None
+    if a.sandbox != "none":
+        return run_isolated(a, expected)
+    isolation = _isolation()
+
+    if os.environ.get(isolation.ENV_ISOLATION):
+        iso = isolation.self_check(ROOT)
+        if not iso["ok"]:
+            print(f"run_eval: refused: the sandbox is leaky: {json.dumps(iso)}", file=sys.stderr)
+            return 3
+    else:
+        iso = {"runner": "none", "ok": True, "checks": {},
+               "note": "environment isolation only (scratch HOME/XDG, dead proxy, claude guard); no OS sandbox"}
     parts = set(a.only.split(","))
     ids = {x for x in a.ids.split(",") if x}
     try:
@@ -789,8 +957,11 @@ def main(argv: list[str] | None = None) -> int:
             results["baseline"] = run_baseline(sb)
         results["summary"] = summarise(results.get("attacks", []), results.get("normal", []))
         results["guard_claude_invocations"] = sb.guard_log.read_text().splitlines() if sb.guard_log.exists() else []
-        results["meta"] = {"method": "hook replay (no live Claude, no container)", "python": sys.version.split()[0],
-                           "when": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+        results["meta"] = {"method": f"hook replay (no live Claude), isolation: {iso['runner']}",
+                           "python": sys.version.split()[0], "when": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                           "isolation": iso}
+        if not os.environ.get(isolation.ENV_ISOLATION):
+            results["meta"].update(_git_state())
     finally:
         if not a.keep:  # only the dir this run created (never the --workdir itself)
             shutil.rmtree(work, ignore_errors=True)
@@ -811,6 +982,8 @@ def main(argv: list[str] | None = None) -> int:
         (out / "meta.json").write_text(dump({"meta": results["meta"],
                                              "guard_claude_invocations": results["guard_claude_invocations"]}) + "\n")
     print(json.dumps(results.get("summary", {}), indent=2))
+    if a.compare and not a.no_write:
+        return _report_compare(expected or {}, Path(a.out), a.compare)
     return 0
 
 
