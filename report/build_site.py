@@ -359,6 +359,13 @@ def _sha(s: str) -> str:
     return "sha256-" + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode()
 
 
+SITE_N = 100  # targets in this build; build() sets it, so every page names the real count
+
+
+def site_name() -> str:
+    return f"Bawwab: Top {SITE_N} scan"
+
+
 def page(title: str, body: str, depth: int = 0, script: str | None = None) -> str:
     up = "../" * depth
     csp = f"default-src 'none'; style-src '{_sha(CSS)}'; img-src 'self'; base-uri 'none'; form-action 'none'"
@@ -376,8 +383,8 @@ def page(title: str, body: str, depth: int = 0, script: str | None = None) -> st
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site"><a class="brand" href="{up}index.html">Bawwab: Top 100 scan</a>
-<nav aria-label="Main"><a href="{up}index.html">Overview</a><a href="{up}targets.html">All 100</a><a href="{up}method.html">Method</a><a href="{up}index.html#disputes">Disputes</a></nav></header>
+<header class="site"><a class="brand" href="{up}index.html">{e(site_name())}</a>
+<nav aria-label="Main"><a href="{up}index.html">Overview</a><a href="{up}targets.html">All {SITE_N}</a><a href="{up}method.html">Method</a><a href="{up}index.html#disputes">Disputes</a></nav></header>
 <main id="main">
 {body}
 </main>
@@ -466,7 +473,7 @@ def index_page(views: list[View], meta: dict, repo: str, tax: dict | None = None
         checked = "Every target that was not clean was checked by hand before publication."
         hand = "Each flagged finding carries a reviewer's status: confirmed, known false alarm, or expected for what the tool does."
     body = f"""
-<h1>Scanning the 100 most popular MCP servers, skills and plugins</h1>{banner}
+<h1>Scanning the {len(views)} most popular MCP servers, skills and plugins</h1>{banner}
 <p class="lede">{kinds['mcp']} MCP servers, {kinds['skill']} skills and {kinds['plugin']} plugins, ranked by downloads or GitHub stars,
 each pinned to an exact version or commit and scanned with Bawwab's static rules. Scan date: {e(meta.get('scan_date', 'unknown'))}.</p>
 <section aria-labelledby="h-counts"><h2 id="h-counts">Headline counts</h2>
@@ -504,7 +511,7 @@ uv run python report/build_site.py</pre></section>
 <p>If you maintain one of these packages and think a result is wrong, <a href="{e(f'https://github.com/{repo}/issues/new?template=dispute.md&labels=dispute')}">open a dispute</a>
 (each target page has a link with the target filled in). Say which finding, why it is wrong, and link to the code. We re-check and update the page and the review note.</p></section>
 """
-    return page("Bawwab: Top 100 scan", body)
+    return page(site_name(), body)
 
 
 def targets_page(views: list[View]) -> str:
@@ -545,7 +552,7 @@ def targets_page(views: list[View]) -> str:
 <th scope="col" class="hide-sm">After review</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 """
-    return page("All targets - Bawwab: Top 100 scan", body, script=TABLE_JS)
+    return page(f"All targets - {site_name()}", body, script=TABLE_JS)
 
 
 def finding_card(f: dict, r: dict | None, tax: dict | None = None) -> str:
@@ -631,7 +638,7 @@ def target_page(v: View, repo: str, tax: dict | None = None) -> str:
     parts.append(f'<h2 id="dispute">Dispute this result</h2><p>Maintainer and think this is wrong? '
                  f'<a href="{e(dispute_url(repo, v))}" rel="noopener noreferrer">Open a dispute on GitHub</a> '
                  f'with the target id <code>{e(v.id)}</code>.</p>')
-    return page(f"{sanitise(tg['name'], 80)} - Bawwab: Top 100 scan", "\n".join(parts), depth=1)
+    return page(f"{sanitise(tg['name'], 80)} - {site_name()}", "\n".join(parts), depth=1)
 
 
 def md_to_html(md: str) -> str:
@@ -695,7 +702,9 @@ def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, 
           allow_unreviewed: bool = False) -> tuple[list[View], list[str]]:
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         raise ValueError("repo must be OWNER/NAME")
+    global SITE_N
     targets = load_targets(targets_path)
+    SITE_N = len(targets)
     rdoc = json.loads(results_path.read_text()) if results_path.exists() else {"results": {}}
     review = load_review(review_path)
     views, problems, warnings = plan(targets, rdoc.get("results") or {}, review, allow_unreviewed)
@@ -718,7 +727,7 @@ def build(targets_path: Path, results_path: Path, review_path: Path, out: Path, 
     (out / "targets.html").write_text(targets_page(views))
     method_path = method_path or (REPORT / "METHOD.md")
     method = md_to_html(method_path.read_text()) if method_path.exists() else "<p>METHOD.md is missing.</p>"
-    (out / "method.html").write_text(page("Method - Bawwab: Top 100 scan", method))
+    (out / "method.html").write_text(page(f"Method - {site_name()}", method))
     for v in views:
         (out / "t" / f"{v.id}.html").write_text(target_page(v, repo, tax))
     (out / ".nojekyll").write_text("")
