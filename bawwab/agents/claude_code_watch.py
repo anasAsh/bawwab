@@ -252,3 +252,183 @@ def package_dir(root: str, path: str) -> str | None:
         if part in SKIP_DIRS:
             return os.path.dirname(path)
     return None
+
+
+# ------------------------------------------------------------------ local code an MCP server entry runs
+# The effect item of a server binds its decision to these bytes (bawwab/agents/claude_code.py) and the fingerprint
+# stats them (hooks/fingerprint.py), so code changed under an unchanged, accepted config entry is checked again.
+# Candidates come from the entry's text alone (so the hook can cache them by the config files' stat data);
+# payload_roots then looks at the disk. Registry runners (npx, uvx, docker) are not local; `$VAR` paths, bare
+# command names (looked up on PATH) and `python -m <module>` are not resolved.
+
+_SCRIPT_RUNNERS = re.compile(r"(node|nodejs|bun|deno|tsx|ts-node|python[0-9.]*|pypy[0-9.]*|ruby|perl|php|bash|sh"
+                             r"|zsh)(\.exe)?")
+_INLINE = frozenset({"-c", "-e", "--eval", "-p", "--print", "-m"})  # code in the entry itself, or a module name
+_PRELOAD = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader"})  # node: files it runs
+_VALUE_FLAGS = frozenset({"-C", "--conditions", "--env-file", "-X", "-W", "--config", "--title", "--input-type",
+                          "--inspect-port", "--stack-size"})
+_UV_DIRS = ("--directory", "--project")
+_UV_VALUE_FLAGS = frozenset({"--with", "--with-requirements", "--with-editable", "--python", "-p", "--index",
+                             "--default-index", "--index-url", "--extra-index-url", "-i", "--find-links", "-f",
+                             "--env-file", "--extra", "--group", "--only-group", "--no-group", "--package",
+                             "--cache-dir", "--config-file", "--color", "--exclude-newer", "--resolution",
+                             "--prerelease", "--index-strategy", "--keyring-provider", "--link-mode",
+                             "--python-preference", "--refresh-package", "--reinstall-package",
+                             "--upgrade-package", "-P"})
+PKG_MARKERS = ("package.json", "pyproject.toml", "setup.py")
+_PKG_UP = 4  # parent levels searched for a script's package root
+
+
+def _resolve(base: str, p: str) -> str | None:
+    if not p or "$" in p or "\0" in p:
+        return None
+    p = os.path.expanduser(p)
+    return os.path.normpath(p if os.path.isabs(p) else os.path.join(base, p))
+
+
+def _pathlike(s: str) -> bool:
+    return s.startswith(("/", "./", "../", "~")) or "/" in s
+
+
+def _script_args(args: list, base: str, subcommand: bool) -> list:
+    """Files a script runner (node, python, ...) runs: its node preloads and its first positional argument."""
+    out: list = []
+    i = 1 if subcommand and args[:1] == ["run"] else 0  # deno run x.ts, bun run x.ts
+    while i < len(args):
+        a = args[i]
+        if a in _INLINE:
+            break
+        if a in _PRELOAD or a in _VALUE_FLAGS:
+            if a in _PRELOAD and i + 1 < len(args) and _pathlike(args[i + 1]):
+                out.append(_resolve(base, args[i + 1]))
+            i += 2
+            continue
+        if a.startswith("-"):
+            k, _, v = a.partition("=")
+            if k in _PRELOAD and v and _pathlike(v):
+                out.append(_resolve(base, v))
+            i += 1
+            continue
+        out.append(_resolve(base, a))
+        break
+    return out
+
+
+def _uv_args(args: list, base: str) -> list:
+    """`uv [--directory D] run [--project P] [--with ...] <script.py | python x.py | entry point>`."""
+    dirs: dict = {}
+    i, run = 0, False
+    while i < len(args):
+        a = args[i]
+        k, eq, v = a.partition("=")
+        if k in _UV_DIRS:
+            if not eq:
+                v = args[i + 1] if i + 1 < len(args) else ""
+                i += 1
+            dirs[k] = v
+            i += 1
+            continue
+        if a.startswith("-"):
+            i += 2 if (a in _UV_VALUE_FLAGS and not eq) else 1
+            continue
+        if run:
+            break
+        if a != "run":
+            return []  # uv tool run, uv pip ...: not a local project
+        run = True
+        i += 1
+    if not run:
+        return []
+    cwd = _resolve(base, dirs["--directory"]) if dirs.get("--directory") else base
+    if cwd is None:
+        return []
+    out = []
+    if dirs.get("--project") or dirs.get("--directory"):
+        out.append(_resolve(cwd, dirs["--project"]) if dirs.get("--project") else cwd)
+    rest = args[i:]
+    if rest:
+        cmd = os.path.basename(rest[0])
+        if _SCRIPT_RUNNERS.fullmatch(cmd):
+            out += _script_args(rest[1:], cwd, cmd in ("deno", "bun"))
+        elif _pathlike(rest[0]) or rest[0].endswith(".py"):
+            out.append(_resolve(cwd, rest[0]))
+    return out
+
+
+def server_payloads(spec: object, base: str) -> list:
+    """Local paths a server entry runs, from its text alone (base: the dir relative paths start from): the
+    command when it is a path, the script (and node preloads) of a script runner, `uv run`'s project dir and
+    script. A registry runner (npx, uvx, docker), a bare command name or a `$VAR` path gives nothing."""
+    if not isinstance(spec, dict) or spec.get("url"):
+        return []
+    cmd, args = spec.get("command"), spec.get("args", [])
+    if not isinstance(cmd, str) or not cmd or not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        return []
+    exe = os.path.basename(cmd)
+    if _SCRIPT_RUNNERS.fullmatch(exe):
+        out = _script_args(args, base, exe in ("deno", "bun"))
+    elif exe in ("uv", "uv.exe"):
+        out = _uv_args(args, base)
+    elif _pathlike(cmd):
+        out = [_resolve(base, cmd)]
+    else:
+        out = []
+    return list(dict.fromkeys(p for p in out if p))
+
+
+def _servers_at(data: object, kp: tuple, cwd: str, home: str, base: str) -> list:
+    for i, k in enumerate(kp):
+        if k == "{project}":
+            return [x for pk in project_keys(data, cwd, home)
+                    for x in _servers_at(data[pk], kp[i + 1:], cwd, home, os.path.realpath(pk))]
+        if not isinstance(data, dict):
+            return []
+        data = data.get(k)
+    return [(base, s) for s in data.values()] if isinstance(data, dict) else []
+
+
+def payload_candidates(cwd: str, home: str, load) -> list:
+    """(path, base) for every server entry the effect check reads: ~/.claude.json's user servers (relative to
+    cwd) and project servers (relative to the project), each project's .mcp.json (relative to its dir).
+    load(path) returns a watched file's parsed data, or None."""
+    out: list = []
+    for path, keypaths in json_files(cwd, home):
+        kps = [kp for kp in keypaths if kp and kp[-1] == "mcpServers"]
+        data = load(path) if kps else None
+        if data is None:
+            continue
+        base = os.path.dirname(path) if os.path.basename(path) == ".mcp.json" else cwd
+        for kp in kps:
+            for b, spec in _servers_at(data, kp, cwd, home, base):
+                out += [(p, b) for p in server_payloads(spec, b)]
+    return list(dict.fromkeys(out))
+
+
+def stop_dirs(cwd: str, home: str, base: str) -> set:
+    """Dirs never taken as a server's payload tree (with their parents and /): the session's project dirs,
+    the home dir and the entry's own base dir. They are the user's own tree: every edit would re-check the
+    server, so an entry that runs one keeps today's binding (its text, plus any script file it names)."""
+    return {os.path.realpath(p) for p in [*project_dirs(cwd, home), home, base]}
+
+
+def _stop(d: str, stops: set) -> bool:
+    rd = os.path.realpath(d)
+    return rd == os.sep or rd in stops or any(s.startswith(rd.rstrip(os.sep) + os.sep) for s in stops)
+
+
+def payload_roots(path: str, stops: set) -> list:
+    """What to hash (claude_code.py) or stat (fingerprint) for one candidate: [(path, is_tree)]. A dir is a
+    tree (none for a stop dir); a file, or a missing path (creating it must count), is itself plus the tree of
+    its package root: the nearest parent within _PKG_UP levels holding a PKG_MARKERS file, below any stop dir."""
+    if os.path.isdir(path):
+        return [] if _stop(path, stops) else [(path, True)]
+    out = [(path, False)]
+    d = os.path.dirname(path)
+    for _ in range(_PKG_UP):
+        if _stop(d, stops):
+            break
+        if any(os.path.isfile(os.path.join(d, m)) for m in PKG_MARKERS):
+            out.append((d, True))
+            break
+        d = os.path.dirname(d)
+    return out
