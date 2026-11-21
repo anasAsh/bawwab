@@ -89,15 +89,16 @@ def test_ruleset_version_computed():
 def test_ruleset_change_forces_rescan(tmp_path, monkeypatch):
     store = Store(tmp_path / "t.db")
     b = Fake()
+    cfg = Config(review_enabled=False)  # count judge calls only; the reviewer (spec §4a) is tested in test_reviewer
     t = parse_target(str(FIX / "text/inject_skill"))
-    r1 = scan_target(t, store=store, backend=b, cfg=Config())
+    r1 = scan_target(t, store=store, backend=b, cfg=cfg)
     assert b.calls == 1
-    scan_target(t, store=store, backend=b, cfg=Config())
+    scan_target(t, store=store, backend=b, cfg=cfg)
     assert b.calls == 1  # cached
     assert store.get_cached(r1.key) is not None
     monkeypatch.setattr(store_mod, "RULESET_VERSION", "f" * 64)
     assert store.get_cached(r1.key) is None
-    scan_target(t, store=store, backend=b, cfg=Config())
+    scan_target(t, store=store, backend=b, cfg=cfg)
     assert b.calls == 2  # rules changed: rescanned
     assert store.get_cached(r1.key) is not None
 

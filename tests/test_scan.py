@@ -50,12 +50,13 @@ def test_inject_skill_suspicious(store):
 
 def test_second_scan_cached(store):
     b = Fake()
-    r1 = scan("text/inject_skill", store, backend=b)
+    kw = {"cfg": Config(review_enabled=False)}  # count judge calls only; the reviewer is tested in test_reviewer
+    r1 = scan("text/inject_skill", store, backend=b, **kw)
     n = b.calls
     assert n == 1
-    r2 = scan("text/inject_skill", store, backend=b)
+    r2 = scan("text/inject_skill", store, backend=b, **kw)
     assert b.calls == n and r2.key == r1.key
-    scan("text/inject_skill", store, backend=b, no_cache=True)
+    scan("text/inject_skill", store, backend=b, no_cache=True, **kw)
     assert b.calls == n + 1
 
 
@@ -184,9 +185,10 @@ class Flaky:
 
 def test_transient_failure_not_cached(store):
     b = Flaky()
-    r1 = scan("text/inject_skill", store, backend=b)
+    kw = {"cfg": Config(review_enabled=False)}  # count judge calls only; the reviewer is tested in test_reviewer
+    r1 = scan("text/inject_skill", store, backend=b, **kw)
     assert any(f.rule == "judge.unavailable" for f in r1.findings)
-    r2 = scan("text/inject_skill", store, backend=b)
+    r2 = scan("text/inject_skill", store, backend=b, **kw)
     assert b.calls == 2 and not any(f.rule == "judge.unavailable" for f in r2.findings)
 
 
