@@ -21,6 +21,7 @@ from bawwab.scan.review import prompt as P
 from bawwab.types import ASSESSMENTS, RECOMMENDATIONS, Advice, Assessment, Finding, ScanReport, Severity, Verdict
 
 MIN_QUOTE = 20  # as the judge's grounding rule
+MIN_WHOLE_LINE = 6  # a shorter quote must be a whole source line (e.g. `'.env',`), never a fragment
 QUOTE_WINDOW = 5  # a quote must be within this many lines of its cited line
 CONTEXT_LINES = 20  # about 40 lines of code around each finding
 MAX_SUMMARY = MAX_WHY = MAX_QUOTE = 300
@@ -257,17 +258,24 @@ def serve_reads(root: _Root, reqs: list, reads_left: int, bytes_left: int) -> tu
 # ------------------------------------------------------------- validation
 
 def _check_quote(root: _Root, file: str, line: int, quote: str) -> None:
+    """Verbatim, within QUOTE_WINDOW lines of the cited line. At least MIN_QUOTE characters, or (for a short line,
+    such as `'.env',` in a list of file names) the whole stripped line, at least MIN_WHOLE_LINE characters."""
     q = _LINE_PREFIX.sub("", quote.strip(), count=1).strip()
-    if len(q) < MIN_QUOTE:
-        raise _CantTell(f"a quote is shorter than {MIN_QUOTE} characters")
+    if len(q) < MIN_WHOLE_LINE:
+        raise _CantTell(f"a quote is shorter than {MIN_WHOLE_LINE} characters")
     try:
         lines = root.lines(file, allow_extra=True)
     except (_Unavailable, _Escape, OSError) as e:
         raise _CantTell(f"a quote cites a file that can't be read ({_clip(file)})") from e
     if not 1 <= line <= len(lines):
         raise _CantTell(f"a quote cites a line outside {_clip(file)}")
-    window = "\n".join(lines[max(0, line - 1 - QUOTE_WINDOW): line + QUOTE_WINDOW])
-    if q not in window:
+    near = lines[max(0, line - 1 - QUOTE_WINDOW): line + QUOTE_WINDOW]
+    if len(q) < MIN_QUOTE:
+        if q not in (ln.strip() for ln in near):
+            raise _CantTell(f"a quote shorter than {MIN_QUOTE} characters is not a whole line of {_clip(file)} "
+                            f"near line {line}")
+        return
+    if q not in "\n".join(near):
         raise _CantTell(f"a quote does not appear in {_clip(file)} near line {line}")
 
 

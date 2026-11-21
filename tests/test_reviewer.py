@@ -181,6 +181,30 @@ def test_short_quote_becomes_cant_tell(root):
     assert a.recommendation == "cant-tell" and "shorter" in a.reason
 
 
+def test_short_whole_line_quote_is_accepted(root):
+    """Live run 2026-11-21: findings on short lines (e.g. `'.env',` in a file list) could never be grounded, and one
+    such quote turned 47 good assessments into cant-tell. A short quote may be the whole stripped line."""
+    r = _report()
+    a = review(root, r, _files(root), Scripted(_answer(r, rec="keep", quotes=("return res.json();", QUOTE2),
+                                                         lines=(7, 6))))
+    assert a.recommendation == "keep", a.reason
+
+
+def test_short_whole_line_must_be_near_the_cited_line(root):
+    r = _report()
+    far = (root / "index.js").read_text() + "\n" * 20 + "x\nreturn res.json();\n"
+    (root / "index.js").write_text(far.replace("  return res.json();\n", "  return 1;\n", 1))
+    a = review(root, r, _files(root), Scripted(_answer(r, rec="keep", quotes=("return res.json();", QUOTE2),
+                                                         lines=(3, 6))))
+    assert a.recommendation == "cant-tell" and "whole line" in a.reason
+
+
+def test_tiny_whole_line_quote_is_still_refused(root):
+    r = _report()
+    a = review(root, r, _files(root), Scripted(_answer(r, rec="keep", quotes=("}", QUOTE2), lines=(8, 6))))
+    assert a.recommendation == "cant-tell" and "shorter" in a.reason
+
+
 def test_line_number_prefix_in_a_quote_is_tolerated(root):
     r = _report()
     a = review(root, r, _files(root), Scripted(_answer(r, rec="keep", quotes=("    3 | " + QUOTE, QUOTE2))))
