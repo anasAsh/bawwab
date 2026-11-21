@@ -89,7 +89,7 @@ The run is OS-sandboxed (§0), but attack commands are still never executed. Wha
 - **Whether Claude would make these calls.** Prompt-injection susceptibility is out of scope: a "prompt-injected
   README" entry is just the call such a README would lead to.
 - **That Claude Code obeys the hook output.** This is assumed from its documented hook contract.
-- **The AI judge's contribution.** The judge is fake, so text attacks that only the Claude review could see are
+- **The AI judge's contribution.** The judge is fake, so text attacks that only the AI judge could see are
   measured as misses. Treat these numbers as a lower bound for detection, and say nothing about judge false
   positives.
 - **Real registries.** A registry target can't be fetched offline, so it is blocked by fail-closed `fetch.failed`.
@@ -125,7 +125,7 @@ postmark's tool send_email". That check runs in the SessionStart inventory and o
 - The rug-pull replica behaves as the brief expects: blocked as an update, with the diff shown.
 - A first install of postmark v2 is clean, because a hard-coded BCC in ordinary email code has no static signal.
   The real incident was likewise only visible by diffing versions.
-- A fresh install of the shadowing server is clean statically. Only the Claude review (fake here) or the warn-only
+- A fresh install of the shadowing server is clean statically. Only the AI judge (fake here) or the warn-only
   cross-server check sees it.
 
 Judge and static-only runs are identical for every replica, as expected with a judge that never reports.
