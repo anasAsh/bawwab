@@ -1,0 +1,101 @@
+# Publish the runtime-only plugin tree (R51) to the `plugin` branch, which .claude-plugin/marketplace.json points
+# at, so `/plugin marketplace add anasAsh/bawwab` + `/plugin install bawwab@bawwab` install it.
+#
+# `build` runs the plugin-shape tests and scripts/build_plugin.py with a read-only token. `publish` gets only
+# the built tree (a tarball, so bin/bawwab and the hook stay executable) and the write token, installs nothing
+# and runs no test code: it makes one commit with scripts/publish_plugin.sh and pushes it.
+#
+# The branch history is linear: each release is a new commit whose tree is exactly the built tree and whose
+# parent is the previous release. The push is a plain fast-forward (no force), so any client holding the branch
+# updates with an ordinary fetch, old releases stay reachable by sha, and branch protection can forbid force
+# pushes. A change that keeps the version is not published (Claude Code caches plugins by version): bump
+# .claude-plugin/plugin.json and pyproject.toml together to release.
+name: plugin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: plugin
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+      - name: Install
+        run: uv sync --locked
+      - name: Plugin-shape tests
+        run: >-
+          uv run pytest -q -p no:cacheprovider
+          tests/test_plugin_self.py tests/test_plugin_workflow.py
+          tests/test_e2e.py::test_plugin_manifest tests/test_e2e.py::test_marketplace_manifest
+          tests/test_e2e.py::test_hooks_manifest
+      - name: Build the plugin tree
+        run: |
+          python3 scripts/build_plugin.py "$RUNNER_TEMP/plugin"
+          tar -C "$RUNNER_TEMP/plugin" -cf "$RUNNER_TEMP/plugin.tar" .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: plugin-tree
+          path: ${{ runner.temp }}/plugin.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: plugin-tree
+          path: ${{ runner.temp }}/artifact
+      - name: Unpack
+        run: |
+          mkdir "$RUNNER_TEMP/plugin"
+          tar -C "$RUNNER_TEMP/plugin" -xf "$RUNNER_TEMP/artifact/plugin.tar"
+      - name: Commit and push the plugin branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          # The token goes to git through the environment for this step only: never in argv, never stored.
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          parent=
+          if git ls-remote --exit-code origin refs/heads/plugin >/dev/null; then
+            git fetch --no-tags --depth=1 origin +refs/heads/plugin:refs/remotes/origin/plugin
+            parent=$(git rev-parse refs/remotes/origin/plugin)
+          else
+            rc=$?; [ "$rc" -eq 2 ] || exit "$rc"  # 2: no plugin branch yet (first publish)
+          fi
+          commit=$(scripts/publish_plugin.sh "$RUNNER_TEMP/plugin" "$GITHUB_SHA" $parent)
+          if [ -z "$commit" ]; then
+            echo "Nothing published." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git log -1 --format='%H %s' "$commit" | tee -a "$GITHUB_STEP_SUMMARY"
+          git push origin "$commit:refs/heads/plugin"
