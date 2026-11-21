@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generated_at": "2026-11-20T11:09:30+00:00",
+ "generated_at": "2026-11-20T21:51:58+00:00",
  "counts": {
-  "mcp": 50,
-  "skill": 30,
-  "plugin": 20
+  "mcp": 138,
+  "skill": 64,
+  "plugin": 100
  },
  "targets": [
   {
@@ -958,8 +958,1680 @@
    "selection": "ranked"
   },
   {
-   "id": "skill-anthropics-skills-skills-academy-guide-95c06f",
+   "id": "mcp-pypi-chroma-mcp-265e0e",
    "rank": 51,
+   "kind": "mcp",
+   "kind_rank": 51,
+   "name": "chroma-mcp",
+   "source": "pypi",
+   "version": "0.2.6",
+   "commit": null,
+   "spec": "pypi:chroma-mcp==0.2.6",
+   "url": "https://pypi.org/project/chroma-mcp/0.2.6/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 90156,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/chroma-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-grafana-2ead50",
+   "rank": 52,
+   "kind": "mcp",
+   "kind_rank": 52,
+   "name": "mcp-grafana",
+   "source": "pypi",
+   "version": "2.2.0",
+   "commit": null,
+   "spec": "pypi:mcp-grafana==2.2.0",
+   "url": "https://pypi.org/project/mcp-grafana/2.2.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 89842,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-grafana/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-zencoderai-slack-mcp-server-ca2e08",
+   "rank": 53,
+   "kind": "mcp",
+   "kind_rank": 53,
+   "name": "@zencoderai/slack-mcp-server",
+   "source": "npm",
+   "version": "0.0.1",
+   "commit": null,
+   "spec": "@zencoderai/slack-mcp-server@0.0.1",
+   "url": "https://www.npmjs.com/package/@zencoderai/slack-mcp-server/v/0.0.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 82297,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@zencoderai/slack-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-netlify-mcp-713782",
+   "rank": 54,
+   "kind": "mcp",
+   "kind_rank": 54,
+   "name": "@netlify/mcp",
+   "source": "npm",
+   "version": "1.22.1",
+   "commit": null,
+   "spec": "@netlify/mcp@1.22.1",
+   "url": "https://www.npmjs.com/package/@netlify/mcp/v/1.22.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 80868,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@netlify/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-cloudwatch-mcp-server-ca3060",
+   "rank": 55,
+   "kind": "mcp",
+   "kind_rank": 55,
+   "name": "awslabs-cloudwatch-mcp-server",
+   "source": "pypi",
+   "version": "0.3.2",
+   "commit": null,
+   "spec": "pypi:awslabs-cloudwatch-mcp-server==0.3.2",
+   "url": "https://pypi.org/project/awslabs-cloudwatch-mcp-server/0.3.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 80310,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-cloudwatch-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-chelaile-mcp-server-5cf894",
+   "rank": 56,
+   "kind": "mcp",
+   "kind_rank": 56,
+   "name": "chelaile-mcp-server",
+   "source": "npm",
+   "version": "1.1.0",
+   "commit": null,
+   "spec": "chelaile-mcp-server@1.1.0",
+   "url": "https://www.npmjs.com/package/chelaile-mcp-server/v/1.1.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 78614,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/chelaile-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-django-mcp-server-e2ee89",
+   "rank": 57,
+   "kind": "mcp",
+   "kind_rank": 57,
+   "name": "django-mcp-server",
+   "source": "pypi",
+   "version": "0.5.7",
+   "commit": null,
+   "spec": "pypi:django-mcp-server==0.5.7",
+   "url": "https://pypi.org/project/django-mcp-server/0.5.7/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 75623,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/django-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-server-appwrite-f1903d",
+   "rank": 58,
+   "kind": "mcp",
+   "kind_rank": 58,
+   "name": "mcp-server-appwrite",
+   "source": "pypi",
+   "version": "2.6.6",
+   "commit": null,
+   "spec": "pypi:mcp-server-appwrite==2.6.6",
+   "url": "https://pypi.org/project/mcp-server-appwrite/2.6.6/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 66836,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-server-appwrite/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-aws-pricing-mcp-server-b3663e",
+   "rank": 59,
+   "kind": "mcp",
+   "kind_rank": 59,
+   "name": "awslabs-aws-pricing-mcp-server",
+   "source": "pypi",
+   "version": "1.1.2",
+   "commit": null,
+   "spec": "pypi:awslabs-aws-pricing-mcp-server==1.1.2",
+   "url": "https://pypi.org/project/awslabs-aws-pricing-mcp-server/1.1.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 64936,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-aws-pricing-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-kubernetes-mcp-server-f3fbc4",
+   "rank": 60,
+   "kind": "mcp",
+   "kind_rank": 60,
+   "name": "kubernetes-mcp-server",
+   "source": "npm",
+   "version": "0.1.3",
+   "commit": null,
+   "spec": "kubernetes-mcp-server@0.1.3",
+   "url": "https://www.npmjs.com/package/kubernetes-mcp-server/v/0.1.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 64014,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/kubernetes-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-clickhouse-4ec723",
+   "rank": 61,
+   "kind": "mcp",
+   "kind_rank": 61,
+   "name": "mcp-clickhouse",
+   "source": "pypi",
+   "version": "0.7.0",
+   "commit": null,
+   "spec": "pypi:mcp-clickhouse==0.7.0",
+   "url": "https://pypi.org/project/mcp-clickhouse/0.7.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 63485,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-clickhouse/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-eslint-mcp-c4ebe1",
+   "rank": 62,
+   "kind": "mcp",
+   "kind_rank": 62,
+   "name": "@eslint/mcp",
+   "source": "npm",
+   "version": "0.3.17",
+   "commit": null,
+   "spec": "@eslint/mcp@0.3.17",
+   "url": "https://www.npmjs.com/package/@eslint/mcp/v/0.3.17",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 61650,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@eslint/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-blender-mcp-43e0d7",
+   "rank": 63,
+   "kind": "mcp",
+   "kind_rank": 63,
+   "name": "blender-mcp",
+   "source": "pypi",
+   "version": "2.0.0",
+   "commit": null,
+   "spec": "pypi:blender-mcp==2.0.0",
+   "url": "https://pypi.org/project/blender-mcp/2.0.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 61489,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/blender-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-cap-js-mcp-server-51db93",
+   "rank": 64,
+   "kind": "mcp",
+   "kind_rank": 64,
+   "name": "@cap-js/mcp-server",
+   "source": "npm",
+   "version": "0.1.0",
+   "commit": null,
+   "spec": "@cap-js/mcp-server@0.1.0",
+   "url": "https://www.npmjs.com/package/@cap-js/mcp-server/v/0.1.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 60616,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@cap-js/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-workspace-mcp-0838f2",
+   "rank": 65,
+   "kind": "mcp",
+   "kind_rank": 65,
+   "name": "workspace-mcp",
+   "source": "pypi",
+   "version": "2.6.0",
+   "commit": null,
+   "spec": "pypi:workspace-mcp==2.6.0",
+   "url": "https://pypi.org/project/workspace-mcp/2.6.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 60257,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/workspace-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-slack-mcp-server-28c61b",
+   "rank": 66,
+   "kind": "mcp",
+   "kind_rank": 66,
+   "name": "slack-mcp-server",
+   "source": "npm",
+   "version": "1.3.0",
+   "commit": null,
+   "spec": "slack-mcp-server@1.3.0",
+   "url": "https://www.npmjs.com/package/slack-mcp-server/v/1.3.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 57053,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/slack-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-imgly-codesign-mcp-6dc247",
+   "rank": 67,
+   "kind": "mcp",
+   "kind_rank": 67,
+   "name": "@imgly/codesign-mcp",
+   "source": "npm",
+   "version": "0.7.1",
+   "commit": null,
+   "spec": "@imgly/codesign-mcp@0.7.1",
+   "url": "https://www.npmjs.com/package/@imgly/codesign-mcp/v/0.7.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 56271,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@imgly/codesign-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-shopify-dev-mcp-3bb92c",
+   "rank": 68,
+   "kind": "mcp",
+   "kind_rank": 68,
+   "name": "@shopify/dev-mcp",
+   "source": "npm",
+   "version": "1.19.0",
+   "commit": null,
+   "spec": "@shopify/dev-mcp@1.19.0",
+   "url": "https://www.npmjs.com/package/@shopify/dev-mcp/v/1.19.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 56163,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@shopify/dev-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mobilenext-mobile-mcp-2004d2",
+   "rank": 69,
+   "kind": "mcp",
+   "kind_rank": 69,
+   "name": "@mobilenext/mobile-mcp",
+   "source": "npm",
+   "version": "1.0.18",
+   "commit": null,
+   "spec": "@mobilenext/mobile-mcp@1.0.18",
+   "url": "https://www.npmjs.com/package/@mobilenext/mobile-mcp/v/1.0.18",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 55827,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@mobilenext/mobile-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mcp-hello-world-3d3a8e",
+   "rank": 70,
+   "kind": "mcp",
+   "kind_rank": 70,
+   "name": "mcp-hello-world",
+   "source": "npm",
+   "version": "1.1.2",
+   "commit": null,
+   "spec": "mcp-hello-world@1.1.2",
+   "url": "https://www.npmjs.com/package/mcp-hello-world/v/1.1.2",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 55081,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/mcp-hello-world"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-metamask-device-mcp-f65af2",
+   "rank": 71,
+   "kind": "mcp",
+   "kind_rank": 71,
+   "name": "@metamask/device-mcp",
+   "source": "npm",
+   "version": "0.9.0",
+   "commit": null,
+   "spec": "@metamask/device-mcp@0.9.0",
+   "url": "https://www.npmjs.com/package/@metamask/device-mcp/v/0.9.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 52510,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@metamask/device-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-aws-iac-mcp-server-a2539a",
+   "rank": 72,
+   "kind": "mcp",
+   "kind_rank": 72,
+   "name": "awslabs-aws-iac-mcp-server",
+   "source": "pypi",
+   "version": "1.0.27",
+   "commit": null,
+   "spec": "pypi:awslabs-aws-iac-mcp-server==1.0.27",
+   "url": "https://pypi.org/project/awslabs-aws-iac-mcp-server/1.0.27/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 50521,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-aws-iac-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-brave-brave-search-mcp-server-ae7ec4",
+   "rank": 73,
+   "kind": "mcp",
+   "kind_rank": 73,
+   "name": "@brave/brave-search-mcp-server",
+   "source": "npm",
+   "version": "2.2.0",
+   "commit": null,
+   "spec": "@brave/brave-search-mcp-server@2.2.0",
+   "url": "https://www.npmjs.com/package/@brave/brave-search-mcp-server/v/2.2.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 49475,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@brave/brave-search-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-apify-actors-mcp-server-dc3f02",
+   "rank": 74,
+   "kind": "mcp",
+   "kind_rank": 74,
+   "name": "@apify/actors-mcp-server",
+   "source": "npm",
+   "version": "0.22.0",
+   "commit": null,
+   "spec": "@apify/actors-mcp-server@0.22.0",
+   "url": "https://www.npmjs.com/package/@apify/actors-mcp-server/v/0.22.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 48737,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@apify/actors-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-excel-mcp-server-17ec83",
+   "rank": 75,
+   "kind": "mcp",
+   "kind_rank": 75,
+   "name": "excel-mcp-server",
+   "source": "pypi",
+   "version": "2.3.3",
+   "commit": null,
+   "spec": "pypi:excel-mcp-server==2.3.3",
+   "url": "https://pypi.org/project/excel-mcp-server/2.3.3/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 48418,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/excel-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-serdnaley-metabase-mcp-4e5d3d",
+   "rank": 76,
+   "kind": "mcp",
+   "kind_rank": 76,
+   "name": "@serdnaley/metabase-mcp",
+   "source": "npm",
+   "version": "0.5.0",
+   "commit": null,
+   "spec": "@serdnaley/metabase-mcp@0.5.0",
+   "url": "https://www.npmjs.com/package/@serdnaley/metabase-mcp/v/0.5.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 47786,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@serdnaley/metabase-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-n8n-mcp-3dced8",
+   "rank": 77,
+   "kind": "mcp",
+   "kind_rank": 77,
+   "name": "n8n-mcp",
+   "source": "npm",
+   "version": "2.103.2",
+   "commit": null,
+   "spec": "n8n-mcp@2.103.2",
+   "url": "https://www.npmjs.com/package/n8n-mcp/v/2.103.2",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 47555,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/n8n-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-statelyai-mcp-36cfa7",
+   "rank": 78,
+   "kind": "mcp",
+   "kind_rank": 78,
+   "name": "@statelyai/mcp",
+   "source": "npm",
+   "version": "0.29.6",
+   "commit": null,
+   "spec": "@statelyai/mcp@0.29.6",
+   "url": "https://www.npmjs.com/package/@statelyai/mcp/v/0.29.6",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 46732,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@statelyai/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-drawio-mcp-75993a",
+   "rank": 79,
+   "kind": "mcp",
+   "kind_rank": 79,
+   "name": "@drawio/mcp",
+   "source": "npm",
+   "version": "1.13.0",
+   "commit": null,
+   "spec": "@drawio/mcp@1.13.0",
+   "url": "https://www.npmjs.com/package/@drawio/mcp/v/1.13.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 45405,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@drawio/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-pagerduty-mcp-e54ea1",
+   "rank": 80,
+   "kind": "mcp",
+   "kind_rank": 80,
+   "name": "pagerduty-mcp",
+   "source": "pypi",
+   "version": "1.1.0",
+   "commit": null,
+   "spec": "pypi:pagerduty-mcp==1.1.0",
+   "url": "https://pypi.org/project/pagerduty-mcp/1.1.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 45121,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/pagerduty-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-cisco-ai-mcp-scanner-f84fe3",
+   "rank": 81,
+   "kind": "mcp",
+   "kind_rank": 81,
+   "name": "cisco-ai-mcp-scanner",
+   "source": "pypi",
+   "version": "4.8.7",
+   "commit": null,
+   "spec": "pypi:cisco-ai-mcp-scanner==4.8.7",
+   "url": "https://pypi.org/project/cisco-ai-mcp-scanner/4.8.7/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 42578,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/cisco-ai-mcp-scanner/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcpforunityserver-bfdf63",
+   "rank": 82,
+   "kind": "mcp",
+   "kind_rank": 82,
+   "name": "mcpforunityserver",
+   "source": "pypi",
+   "version": "10.3.0",
+   "commit": null,
+   "spec": "pypi:mcpforunityserver==10.3.0",
+   "url": "https://pypi.org/project/mcpforunityserver/10.3.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 41392,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcpforunityserver/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-winor30-mcp-server-datadog-64eccc",
+   "rank": 83,
+   "kind": "mcp",
+   "kind_rank": 83,
+   "name": "@winor30/mcp-server-datadog",
+   "source": "npm",
+   "version": "1.8.0",
+   "commit": null,
+   "spec": "@winor30/mcp-server-datadog@1.8.0",
+   "url": "https://www.npmjs.com/package/@winor30/mcp-server-datadog/v/1.8.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 39076,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@winor30/mcp-server-datadog"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-opensearch-mcp-server-py-da5d72",
+   "rank": 84,
+   "kind": "mcp",
+   "kind_rank": 84,
+   "name": "opensearch-mcp-server-py",
+   "source": "pypi",
+   "version": "0.12.0",
+   "commit": null,
+   "spec": "pypi:opensearch-mcp-server-py==0.12.0",
+   "url": "https://pypi.org/project/opensearch-mcp-server-py/0.12.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 38343,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/opensearch-mcp-server-py/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-larksuiteoapi-lark-mcp-a5220c",
+   "rank": 85,
+   "kind": "mcp",
+   "kind_rank": 85,
+   "name": "@larksuiteoapi/lark-mcp",
+   "source": "npm",
+   "version": "0.5.1",
+   "commit": null,
+   "spec": "@larksuiteoapi/lark-mcp@0.5.1",
+   "url": "https://www.npmjs.com/package/@larksuiteoapi/lark-mcp/v/0.5.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 36677,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@larksuiteoapi/lark-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-next-ai-drawio-mcp-server-70451f",
+   "rank": 86,
+   "kind": "mcp",
+   "kind_rank": 86,
+   "name": "@next-ai-drawio/mcp-server",
+   "source": "npm",
+   "version": "0.4.15",
+   "commit": null,
+   "spec": "@next-ai-drawio/mcp-server@0.4.15",
+   "url": "https://www.npmjs.com/package/@next-ai-drawio/mcp-server/v/0.4.15",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 34843,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@next-ai-drawio/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-logfire-mcp-531fe1",
+   "rank": 87,
+   "kind": "mcp",
+   "kind_rank": 87,
+   "name": "logfire-mcp",
+   "source": "pypi",
+   "version": "0.9.0",
+   "commit": null,
+   "spec": "pypi:logfire-mcp==0.9.0",
+   "url": "https://pypi.org/project/logfire-mcp/0.9.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 34473,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/logfire-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-analytics-mcp-10268b",
+   "rank": 88,
+   "kind": "mcp",
+   "kind_rank": 88,
+   "name": "analytics-mcp",
+   "source": "pypi",
+   "version": "1.1.0",
+   "commit": null,
+   "spec": "pypi:analytics-mcp==1.1.0",
+   "url": "https://pypi.org/project/analytics-mcp/1.1.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 33730,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/analytics-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-browsermcp-mcp-0dbdbd",
+   "rank": 89,
+   "kind": "mcp",
+   "kind_rank": 89,
+   "name": "@browsermcp/mcp",
+   "source": "npm",
+   "version": "2.5.0",
+   "commit": null,
+   "spec": "@browsermcp/mcp@2.5.0",
+   "url": "https://www.npmjs.com/package/@browsermcp/mcp/v/2.5.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 32537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@browsermcp/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-microsoft-clarity-mcp-server-435d14",
+   "rank": 90,
+   "kind": "mcp",
+   "kind_rank": 90,
+   "name": "@microsoft/clarity-mcp-server",
+   "source": "npm",
+   "version": "3.0.0",
+   "commit": null,
+   "spec": "@microsoft/clarity-mcp-server@3.0.0",
+   "url": "https://www.npmjs.com/package/@microsoft/clarity-mcp-server/v/3.0.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 32507,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@microsoft/clarity-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-hypothesi-tauri-mcp-server-805fd5",
+   "rank": 91,
+   "kind": "mcp",
+   "kind_rank": 91,
+   "name": "@hypothesi/tauri-mcp-server",
+   "source": "npm",
+   "version": "0.13.2",
+   "commit": null,
+   "spec": "@hypothesi/tauri-mcp-server@0.13.2",
+   "url": "https://www.npmjs.com/package/@hypothesi/tauri-mcp-server/v/0.13.2",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 32092,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@hypothesi/tauri-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-langsmith-mcp-server-422893",
+   "rank": 92,
+   "kind": "mcp",
+   "kind_rank": 92,
+   "name": "langsmith-mcp-server",
+   "source": "pypi",
+   "version": "0.1.1",
+   "commit": null,
+   "spec": "pypi:langsmith-mcp-server==0.1.1",
+   "url": "https://pypi.org/project/langsmith-mcp-server/0.1.1/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 31107,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/langsmith-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-axe-mcp-server-0470e7",
+   "rank": 93,
+   "kind": "mcp",
+   "kind_rank": 93,
+   "name": "axe-mcp-server",
+   "source": "npm",
+   "version": "1.9.1",
+   "commit": null,
+   "spec": "axe-mcp-server@1.9.1",
+   "url": "https://www.npmjs.com/package/axe-mcp-server/v/1.9.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 30764,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/axe-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-paperclipai-mcp-server-60e98e",
+   "rank": 94,
+   "kind": "mcp",
+   "kind_rank": 94,
+   "name": "@paperclipai/mcp-server",
+   "source": "npm",
+   "version": "2026.1117.0",
+   "commit": null,
+   "spec": "@paperclipai/mcp-server@2026.1117.0",
+   "url": "https://www.npmjs.com/package/@paperclipai/mcp-server/v/2026.1117.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 29693,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@paperclipai/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-elevenlabs-mcp-8c661f",
+   "rank": 95,
+   "kind": "mcp",
+   "kind_rank": 95,
+   "name": "elevenlabs-mcp",
+   "source": "pypi",
+   "version": "0.12.2",
+   "commit": null,
+   "spec": "pypi:elevenlabs-mcp==0.12.2",
+   "url": "https://pypi.org/project/elevenlabs-mcp/0.12.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 29210,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/elevenlabs-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-foldkit-devtools-mcp-3fd742",
+   "rank": 96,
+   "kind": "mcp",
+   "kind_rank": 96,
+   "name": "@foldkit/devtools-mcp",
+   "source": "npm",
+   "version": "0.26.0",
+   "commit": null,
+   "spec": "@foldkit/devtools-mcp@0.26.0",
+   "url": "https://www.npmjs.com/package/@foldkit/devtools-mcp/v/0.26.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 29176,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@foldkit/devtools-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-chatcut-desktop-mcp-ed8c44",
+   "rank": 97,
+   "kind": "mcp",
+   "kind_rank": 97,
+   "name": "chatcut-desktop-mcp",
+   "source": "npm",
+   "version": "0.1.1",
+   "commit": null,
+   "spec": "chatcut-desktop-mcp@0.1.1",
+   "url": "https://www.npmjs.com/package/chatcut-desktop-mcp/v/0.1.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 28319,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/chatcut-desktop-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-browserstack-mcp-server-f25274",
+   "rank": 98,
+   "kind": "mcp",
+   "kind_rank": 98,
+   "name": "@browserstack/mcp-server",
+   "source": "npm",
+   "version": "2.6.11",
+   "commit": null,
+   "spec": "@browserstack/mcp-server@2.6.11",
+   "url": "https://www.npmjs.com/package/@browserstack/mcp-server/v/2.6.11",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 27811,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@browserstack/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-productbrain-mcp-8a194f",
+   "rank": 99,
+   "kind": "mcp",
+   "kind_rank": 99,
+   "name": "@productbrain/mcp",
+   "source": "npm",
+   "version": "0.0.1-beta.16133",
+   "commit": null,
+   "spec": "@productbrain/mcp@0.0.1-beta.16133",
+   "url": "https://www.npmjs.com/package/@productbrain/mcp/v/0.0.1-beta.16133",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 27800,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@productbrain/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-meshy-ai-meshy-mcp-server-c9c32b",
+   "rank": 100,
+   "kind": "mcp",
+   "kind_rank": 100,
+   "name": "@meshy-ai/meshy-mcp-server",
+   "source": "npm",
+   "version": "0.6.12",
+   "commit": null,
+   "spec": "@meshy-ai/meshy-mcp-server@0.6.12",
+   "url": "https://www.npmjs.com/package/@meshy-ai/meshy-mcp-server/v/0.6.12",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 26720,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@meshy-ai/meshy-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-cloudbase-cloudbase-mcp-8c29b2",
+   "rank": 101,
+   "kind": "mcp",
+   "kind_rank": 101,
+   "name": "@cloudbase/cloudbase-mcp",
+   "source": "npm",
+   "version": "2.37.9",
+   "commit": null,
+   "spec": "@cloudbase/cloudbase-mcp@2.37.9",
+   "url": "https://www.npmjs.com/package/@cloudbase/cloudbase-mcp/v/2.37.9",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 25952,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@cloudbase/cloudbase-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-microsoft-postgres-mcp-4a4f5a",
+   "rank": 102,
+   "kind": "mcp",
+   "kind_rank": 102,
+   "name": "@microsoft/postgres-mcp",
+   "source": "npm",
+   "version": "0.3.1",
+   "commit": null,
+   "spec": "@microsoft/postgres-mcp@0.3.1",
+   "url": "https://www.npmjs.com/package/@microsoft/postgres-mcp/v/0.3.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 25717,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@microsoft/postgres-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-cnbcool-mcp-server-06e4e8",
+   "rank": 103,
+   "kind": "mcp",
+   "kind_rank": 103,
+   "name": "@cnbcool/mcp-server",
+   "source": "npm",
+   "version": "0.6.7",
+   "commit": null,
+   "spec": "@cnbcool/mcp-server@0.6.7",
+   "url": "https://www.npmjs.com/package/@cnbcool/mcp-server/v/0.6.7",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 25619,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@cnbcool/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mcp-server-kubernetes-2cfbc2",
+   "rank": 104,
+   "kind": "mcp",
+   "kind_rank": 104,
+   "name": "mcp-server-kubernetes",
+   "source": "npm",
+   "version": "4.2.3",
+   "commit": null,
+   "spec": "mcp-server-kubernetes@4.2.3",
+   "url": "https://www.npmjs.com/package/mcp-server-kubernetes/v/4.2.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 25555,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/mcp-server-kubernetes"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mui-mcp-7f52a7",
+   "rank": 105,
+   "kind": "mcp",
+   "kind_rank": 105,
+   "name": "@mui/mcp",
+   "source": "npm",
+   "version": "0.1.10",
+   "commit": null,
+   "spec": "@mui/mcp@0.1.10",
+   "url": "https://www.npmjs.com/package/@mui/mcp/v/0.1.10",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 25270,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@mui/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-pptx-viewer-mcp-ee2c2f",
+   "rank": 106,
+   "kind": "mcp",
+   "kind_rank": 106,
+   "name": "pptx-viewer-mcp",
+   "source": "npm",
+   "version": "2.10.3",
+   "commit": null,
+   "spec": "pptx-viewer-mcp@2.10.3",
+   "url": "https://www.npmjs.com/package/pptx-viewer-mcp/v/2.10.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 24988,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/pptx-viewer-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-google-cloud-gcloud-mcp-87161b",
+   "rank": 107,
+   "kind": "mcp",
+   "kind_rank": 107,
+   "name": "@google-cloud/gcloud-mcp",
+   "source": "npm",
+   "version": "0.5.3",
+   "commit": null,
+   "spec": "@google-cloud/gcloud-mcp@0.5.3",
+   "url": "https://www.npmjs.com/package/@google-cloud/gcloud-mcp/v/0.5.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 24664,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@google-cloud/gcloud-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-automattic-mcp-wordpress-remote-c9d93a",
+   "rank": 108,
+   "kind": "mcp",
+   "kind_rank": 108,
+   "name": "@automattic/mcp-wordpress-remote",
+   "source": "npm",
+   "version": "0.5.5",
+   "commit": null,
+   "spec": "@automattic/mcp-wordpress-remote@0.5.5",
+   "url": "https://www.npmjs.com/package/@automattic/mcp-wordpress-remote/v/0.5.5",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 23846,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@automattic/mcp-wordpress-remote"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-togglhq-mcp-f6a75a",
+   "rank": 109,
+   "kind": "mcp",
+   "kind_rank": 109,
+   "name": "@togglhq/mcp",
+   "source": "npm",
+   "version": "1.13.339",
+   "commit": null,
+   "spec": "@togglhq/mcp@1.13.339",
+   "url": "https://www.npmjs.com/package/@togglhq/mcp/v/1.13.339",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 23698,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@togglhq/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-dbt-mcp-e62e0d",
+   "rank": 110,
+   "kind": "mcp",
+   "kind_rank": 110,
+   "name": "dbt-mcp",
+   "source": "pypi",
+   "version": "2.10.2",
+   "commit": null,
+   "spec": "pypi:dbt-mcp==2.10.2",
+   "url": "https://pypi.org/project/dbt-mcp/2.10.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 23415,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/dbt-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-google-cloud-observability-mcp-2b7c69",
+   "rank": 111,
+   "kind": "mcp",
+   "kind_rank": 111,
+   "name": "@google-cloud/observability-mcp",
+   "source": "npm",
+   "version": "0.2.3",
+   "commit": null,
+   "spec": "@google-cloud/observability-mcp@0.2.3",
+   "url": "https://www.npmjs.com/package/@google-cloud/observability-mcp/v/0.2.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 23222,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@google-cloud/observability-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-discourse-mcp-758253",
+   "rank": 112,
+   "kind": "mcp",
+   "kind_rank": 112,
+   "name": "@discourse/mcp",
+   "source": "npm",
+   "version": "0.3.1",
+   "commit": null,
+   "spec": "@discourse/mcp@0.3.1",
+   "url": "https://www.npmjs.com/package/@discourse/mcp/v/0.3.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 22834,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@discourse/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-arcade-mcp-server-734c7d",
+   "rank": 113,
+   "kind": "mcp",
+   "kind_rank": 113,
+   "name": "arcade-mcp-server",
+   "source": "pypi",
+   "version": "1.33.3",
+   "commit": null,
+   "spec": "pypi:arcade-mcp-server==1.33.3",
+   "url": "https://pypi.org/project/arcade-mcp-server/1.33.3/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 22611,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/arcade-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-serper-mcp-server-1fe82e",
+   "rank": 114,
+   "kind": "mcp",
+   "kind_rank": 114,
+   "name": "serper-mcp-server",
+   "source": "pypi",
+   "version": "0.0.10",
+   "commit": null,
+   "spec": "pypi:serper-mcp-server==0.0.10",
+   "url": "https://pypi.org/project/serper-mcp-server/0.0.10/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 22581,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/serper-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-duckduckgo-mcp-server-8bb7d9",
+   "rank": 115,
+   "kind": "mcp",
+   "kind_rank": 115,
+   "name": "duckduckgo-mcp-server",
+   "source": "pypi",
+   "version": "0.7.0",
+   "commit": null,
+   "spec": "pypi:duckduckgo-mcp-server==0.7.0",
+   "url": "https://pypi.org/project/duckduckgo-mcp-server/0.7.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 22338,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/duckduckgo-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-opencode-mcp-43ebc5",
+   "rank": 116,
+   "kind": "mcp",
+   "kind_rank": 116,
+   "name": "opencode-mcp",
+   "source": "npm",
+   "version": "3.1.0",
+   "commit": null,
+   "spec": "opencode-mcp@3.1.0",
+   "url": "https://www.npmjs.com/package/opencode-mcp/v/3.1.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 22181,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/opencode-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-aashari-mcp-server-atlassian-jira-36ea09",
+   "rank": 117,
+   "kind": "mcp",
+   "kind_rank": 117,
+   "name": "@aashari/mcp-server-atlassian-jira",
+   "source": "npm",
+   "version": "3.3.0",
+   "commit": null,
+   "spec": "@aashari/mcp-server-atlassian-jira@3.3.0",
+   "url": "https://www.npmjs.com/package/@aashari/mcp-server-atlassian-jira/v/3.3.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 21667,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@aashari/mcp-server-atlassian-jira"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-benborla29-mcp-server-mysql-691040",
+   "rank": 118,
+   "kind": "mcp",
+   "kind_rank": 118,
+   "name": "@benborla29/mcp-server-mysql",
+   "source": "npm",
+   "version": "2.0.9",
+   "commit": null,
+   "spec": "@benborla29/mcp-server-mysql@2.0.9",
+   "url": "https://www.npmjs.com/package/@benborla29/mcp-server-mysql/v/2.0.9",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 21548,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@benborla29/mcp-server-mysql"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-mastergo-magic-mcp-bfe5e9",
+   "rank": 119,
+   "kind": "mcp",
+   "kind_rank": 119,
+   "name": "@mastergo/magic-mcp",
+   "source": "npm",
+   "version": "0.2.22",
+   "commit": null,
+   "spec": "@mastergo/magic-mcp@0.2.22",
+   "url": "https://www.npmjs.com/package/@mastergo/magic-mcp/v/0.2.22",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 21433,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@mastergo/magic-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-jcodemunch-mcp-5c9770",
+   "rank": 120,
+   "kind": "mcp",
+   "kind_rank": 120,
+   "name": "jcodemunch-mcp",
+   "source": "pypi",
+   "version": "1.108.471",
+   "commit": null,
+   "spec": "pypi:jcodemunch-mcp==1.108.471",
+   "url": "https://pypi.org/project/jcodemunch-mcp/1.108.471/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 21356,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/jcodemunch-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-tavily-mcp-5659bf",
+   "rank": 121,
+   "kind": "mcp",
+   "kind_rank": 121,
+   "name": "tavily-mcp",
+   "source": "npm",
+   "version": "0.2.22",
+   "commit": null,
+   "spec": "tavily-mcp@0.2.22",
+   "url": "https://www.npmjs.com/package/tavily-mcp/v/0.2.22",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 21347,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/tavily-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-scryfall-mcp-server-acd2e7",
+   "rank": 122,
+   "kind": "mcp",
+   "kind_rank": 122,
+   "name": "scryfall-mcp-server",
+   "source": "npm",
+   "version": "0.1.1",
+   "commit": null,
+   "spec": "scryfall-mcp-server@0.1.1",
+   "url": "https://www.npmjs.com/package/scryfall-mcp-server/v/0.1.1",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 21341,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/scryfall-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-xeroapi-xero-mcp-server-358032",
+   "rank": 123,
+   "kind": "mcp",
+   "kind_rank": 123,
+   "name": "@xeroapi/xero-mcp-server",
+   "source": "npm",
+   "version": "0.0.18",
+   "commit": null,
+   "spec": "@xeroapi/xero-mcp-server@0.0.18",
+   "url": "https://www.npmjs.com/package/@xeroapi/xero-mcp-server/v/0.0.18",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 20699,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@xeroapi/xero-mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-forestadmin-mcp-server-f8a4f4",
+   "rank": 124,
+   "kind": "mcp",
+   "kind_rank": 124,
+   "name": "@forestadmin/mcp-server",
+   "source": "npm",
+   "version": "1.29.8",
+   "commit": null,
+   "spec": "@forestadmin/mcp-server@1.29.8",
+   "url": "https://www.npmjs.com/package/@forestadmin/mcp-server/v/1.29.8",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 20475,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@forestadmin/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-resend-mcp-fafcf1",
+   "rank": 125,
+   "kind": "mcp",
+   "kind_rank": 125,
+   "name": "resend-mcp",
+   "source": "npm",
+   "version": "2.29.0",
+   "commit": null,
+   "spec": "resend-mcp@2.29.0",
+   "url": "https://www.npmjs.com/package/resend-mcp/v/2.29.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 19905,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/resend-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-awslabs-billing-cost-management-mcp-server-3a4b23",
+   "rank": 126,
+   "kind": "mcp",
+   "kind_rank": 126,
+   "name": "awslabs-billing-cost-management-mcp-server",
+   "source": "pypi",
+   "version": "0.0.46",
+   "commit": null,
+   "spec": "pypi:awslabs-billing-cost-management-mcp-server==0.0.46",
+   "url": "https://pypi.org/project/awslabs-billing-cost-management-mcp-server/0.0.46/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 19343,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/awslabs-billing-cost-management-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-sample-aws-pricing-calculator-mcp-b32631",
+   "rank": 127,
+   "kind": "mcp",
+   "kind_rank": 127,
+   "name": "sample-aws-pricing-calculator-mcp",
+   "source": "npm",
+   "version": "1.3.8",
+   "commit": null,
+   "spec": "sample-aws-pricing-calculator-mcp@1.3.8",
+   "url": "https://www.npmjs.com/package/sample-aws-pricing-calculator-mcp/v/1.3.8",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 19289,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/sample-aws-pricing-calculator-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-phantom-mcp-server-33113c",
+   "rank": 128,
+   "kind": "mcp",
+   "kind_rank": 128,
+   "name": "@phantom/mcp-server",
+   "source": "npm",
+   "version": "1.2.10",
+   "commit": null,
+   "spec": "@phantom/mcp-server@1.2.10",
+   "url": "https://www.npmjs.com/package/@phantom/mcp-server/v/1.2.10",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 19024,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@phantom/mcp-server"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-smartbear-mcp-fc6f57",
+   "rank": 129,
+   "kind": "mcp",
+   "kind_rank": 129,
+   "name": "@smartbear/mcp",
+   "source": "npm",
+   "version": "0.44.0",
+   "commit": null,
+   "spec": "@smartbear/mcp@0.44.0",
+   "url": "https://www.npmjs.com/package/@smartbear/mcp/v/0.44.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 18565,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@smartbear/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-bitbonsai-mcpvault-aecfd1",
+   "rank": 130,
+   "kind": "mcp",
+   "kind_rank": 130,
+   "name": "@bitbonsai/mcpvault",
+   "source": "npm",
+   "version": "0.18.4",
+   "commit": null,
+   "spec": "@bitbonsai/mcpvault@0.18.4",
+   "url": "https://www.npmjs.com/package/@bitbonsai/mcpvault/v/0.18.4",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 18403,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@bitbonsai/mcpvault"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-nextscope-mcp-f22043",
+   "rank": 131,
+   "kind": "mcp",
+   "kind_rank": 131,
+   "name": "@nextscope/mcp",
+   "source": "npm",
+   "version": "0.3.0",
+   "commit": null,
+   "spec": "@nextscope/mcp@0.3.0",
+   "url": "https://www.npmjs.com/package/@nextscope/mcp/v/0.3.0",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 18198,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/@nextscope/mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-mcp-google-sheets-8a6d62",
+   "rank": 132,
+   "kind": "mcp",
+   "kind_rank": 132,
+   "name": "mcp-google-sheets",
+   "source": "pypi",
+   "version": "0.6.3",
+   "commit": null,
+   "spec": "pypi:mcp-google-sheets==0.6.3",
+   "url": "https://pypi.org/project/mcp-google-sheets/0.6.3/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 17689,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/mcp-google-sheets/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-npm-freee-mcp-06fc60",
+   "rank": 133,
+   "kind": "mcp",
+   "kind_rank": 133,
+   "name": "freee-mcp",
+   "source": "npm",
+   "version": "0.38.3",
+   "commit": null,
+   "spec": "freee-mcp@0.38.3",
+   "url": "https://www.npmjs.com/package/freee-mcp/v/0.38.3",
+   "popularity": {
+    "metric": "npm_weekly_downloads",
+    "value": 15828,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.npmjs.org/downloads/point/last-week/freee-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-falcon-mcp-06d7ae",
+   "rank": 134,
+   "kind": "mcp",
+   "kind_rank": 134,
+   "name": "falcon-mcp",
+   "source": "pypi",
+   "version": "0.20.2",
+   "commit": null,
+   "spec": "pypi:falcon-mcp==0.20.2",
+   "url": "https://pypi.org/project/falcon-mcp/0.20.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 13990,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/falcon-mcp/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-prometheus-mcp-server-1be1a5",
+   "rank": 135,
+   "kind": "mcp",
+   "kind_rank": 135,
+   "name": "prometheus-mcp-server",
+   "source": "pypi",
+   "version": "1.6.2",
+   "commit": null,
+   "spec": "pypi:prometheus-mcp-server==1.6.2",
+   "url": "https://pypi.org/project/prometheus-mcp-server/1.6.2/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 13164,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/prometheus-mcp-server/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-ha-mcp-dev-20e0cd",
+   "rank": 136,
+   "kind": "mcp",
+   "kind_rank": 136,
+   "name": "ha-mcp-dev",
+   "source": "pypi",
+   "version": "9.3.0.dev3648",
+   "commit": null,
+   "spec": "pypi:ha-mcp-dev==9.3.0.dev3648",
+   "url": "https://pypi.org/project/ha-mcp-dev/9.3.0.dev3648/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 7515,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/ha-mcp-dev/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-openai-mcp-extensions-8b9bf1",
+   "rank": 137,
+   "kind": "mcp",
+   "kind_rank": 137,
+   "name": "openai-mcp-extensions",
+   "source": "pypi",
+   "version": "0.2.1",
+   "commit": null,
+   "spec": "pypi:openai-mcp-extensions==0.2.1",
+   "url": "https://pypi.org/project/openai-mcp-extensions/0.2.1/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 5523,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/openai-mcp-extensions/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "mcp-pypi-fastmcp-dishka-7f3c9d",
+   "rank": 138,
+   "kind": "mcp",
+   "kind_rank": 138,
+   "name": "fastmcp-dishka",
+   "source": "pypi",
+   "version": "1.0.0",
+   "commit": null,
+   "spec": "pypi:fastmcp-dishka==1.0.0",
+   "url": "https://pypi.org/project/fastmcp-dishka/1.0.0/",
+   "popularity": {
+    "metric": "pypi_weekly_downloads",
+    "value": 1111,
+    "collected_at": "2026-11-20",
+    "source_url": "https://pypistats.org/api/packages/fastmcp-dishka/recent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-anthropics-skills-skills-academy-guide-95c06f",
+   "rank": 139,
    "kind": "skill",
    "kind_rank": 1,
    "name": "academy-guide",
@@ -980,7 +2652,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-algorithmic-art-911b8a",
-   "rank": 52,
+   "rank": 140,
    "kind": "skill",
    "kind_rank": 2,
    "name": "algorithmic-art",
@@ -1001,7 +2673,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-brand-guidelines-91cd72",
-   "rank": 53,
+   "rank": 141,
    "kind": "skill",
    "kind_rank": 3,
    "name": "brand-guidelines",
@@ -1022,7 +2694,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-canvas-design-559e52",
-   "rank": 54,
+   "rank": 142,
    "kind": "skill",
    "kind_rank": 4,
    "name": "canvas-design",
@@ -1043,7 +2715,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-claude-api-b91236",
-   "rank": 55,
+   "rank": 143,
    "kind": "skill",
    "kind_rank": 5,
    "name": "claude-api",
@@ -1064,7 +2736,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-discernment-nudge-c3ebb1",
-   "rank": 56,
+   "rank": 144,
    "kind": "skill",
    "kind_rank": 6,
    "name": "discernment-nudge",
@@ -1085,7 +2757,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-doc-coauthoring-750689",
-   "rank": 57,
+   "rank": 145,
    "kind": "skill",
    "kind_rank": 7,
    "name": "doc-coauthoring",
@@ -1106,7 +2778,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-docx-00ffcc",
-   "rank": 58,
+   "rank": 146,
    "kind": "skill",
    "kind_rank": 8,
    "name": "docx",
@@ -1127,7 +2799,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-frontend-design-3628f6",
-   "rank": 59,
+   "rank": 147,
    "kind": "skill",
    "kind_rank": 9,
    "name": "frontend-design",
@@ -1148,7 +2820,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-internal-comms-dd8982",
-   "rank": 60,
+   "rank": 148,
    "kind": "skill",
    "kind_rank": 10,
    "name": "internal-comms",
@@ -1169,7 +2841,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-mcp-builder-cb47ad",
-   "rank": 61,
+   "rank": 149,
    "kind": "skill",
    "kind_rank": 11,
    "name": "mcp-builder",
@@ -1190,7 +2862,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-pdf-2194f7",
-   "rank": 62,
+   "rank": 150,
    "kind": "skill",
    "kind_rank": 12,
    "name": "pdf",
@@ -1211,7 +2883,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-pptx-2c4f53",
-   "rank": 63,
+   "rank": 151,
    "kind": "skill",
    "kind_rank": 13,
    "name": "pptx",
@@ -1232,7 +2904,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-skill-creator-abe73b",
-   "rank": 64,
+   "rank": 152,
    "kind": "skill",
    "kind_rank": 14,
    "name": "skill-creator",
@@ -1253,7 +2925,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-slack-gif-creator-171a63",
-   "rank": 65,
+   "rank": 153,
    "kind": "skill",
    "kind_rank": 15,
    "name": "slack-gif-creator",
@@ -1274,7 +2946,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-theme-factory-14b3cc",
-   "rank": 66,
+   "rank": 154,
    "kind": "skill",
    "kind_rank": 16,
    "name": "theme-factory",
@@ -1295,7 +2967,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-web-artifacts-builder-4f9efa",
-   "rank": 67,
+   "rank": 155,
    "kind": "skill",
    "kind_rank": 17,
    "name": "web-artifacts-builder",
@@ -1316,7 +2988,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-webapp-testing-aa9d29",
-   "rank": 68,
+   "rank": 156,
    "kind": "skill",
    "kind_rank": 18,
    "name": "webapp-testing",
@@ -1337,7 +3009,7 @@
   },
   {
    "id": "skill-anthropics-skills-skills-xlsx-586453",
-   "rank": 69,
+   "rank": 157,
    "kind": "skill",
    "kind_rank": 19,
    "name": "xlsx",
@@ -1358,7 +3030,7 @@
   },
   {
    "id": "skill-affaan-m-ecc-skills-accessibility-657a36",
-   "rank": 70,
+   "rank": 158,
    "kind": "skill",
    "kind_rank": 20,
    "name": "accessibility",
@@ -1379,7 +3051,7 @@
   },
   {
    "id": "skill-affaan-m-ecc-skills-agent-architecture-audit-a5b3cb",
-   "rank": 71,
+   "rank": 159,
    "kind": "skill",
    "kind_rank": 21,
    "name": "agent-architecture-audit",
@@ -1400,7 +3072,7 @@
   },
   {
    "id": "skill-multica-ai-andrej-karpathy-skills-skills-karpathy-guidelines-ffa669",
-   "rank": 72,
+   "rank": 160,
    "kind": "skill",
    "kind_rank": 22,
    "name": "karpathy-guidelines",
@@ -1421,7 +3093,7 @@
   },
   {
    "id": "skill-langgenius-dify-skills-difyctl-58feaa",
-   "rank": 73,
+   "rank": 161,
    "kind": "skill",
    "kind_rank": 23,
    "name": "difyctl",
@@ -1442,7 +3114,7 @@
   },
   {
    "id": "skill-shubhamsaboo-awesome-llm-apps-agent_skills-advisor-orchestrator-worker-81a68d",
-   "rank": 74,
+   "rank": 162,
    "kind": "skill",
    "kind_rank": 24,
    "name": "advisor-orchestrator-worker",
@@ -1463,7 +3135,7 @@
   },
   {
    "id": "skill-shubhamsaboo-awesome-llm-apps-agent_skills-commit-archaeologist-8b2517",
-   "rank": 75,
+   "rank": 163,
    "kind": "skill",
    "kind_rank": 25,
    "name": "commit-archaeologist",
@@ -1484,7 +3156,7 @@
   },
   {
    "id": "skill-juliusbrussee-caveman-skills-cavecrew-973fdf",
-   "rank": 76,
+   "rank": 164,
    "kind": "skill",
    "kind_rank": 26,
    "name": "cavecrew",
@@ -1505,7 +3177,7 @@
   },
   {
    "id": "skill-juliusbrussee-caveman-skills-caveman-b95c66",
-   "rank": 77,
+   "rank": 165,
    "kind": "skill",
    "kind_rank": 27,
    "name": "caveman",
@@ -1526,7 +3198,7 @@
   },
   {
    "id": "skill-addyosmani-agent-skills-skills-accessibility-engineering-7ef9a0",
-   "rank": 78,
+   "rank": 166,
    "kind": "skill",
    "kind_rank": 28,
    "name": "accessibility-engineering",
@@ -1547,7 +3219,7 @@
   },
   {
    "id": "skill-addyosmani-agent-skills-skills-api-and-interface-design-1543e2",
-   "rank": 79,
+   "rank": 167,
    "kind": "skill",
    "kind_rank": 29,
    "name": "api-and-interface-design",
@@ -1568,7 +3240,7 @@
   },
   {
    "id": "skill-leonxlnx-taste-skill-skills-taste-skill-f3b29d",
-   "rank": 80,
+   "rank": 168,
    "kind": "skill",
    "kind_rank": 30,
    "name": "taste-skill",
@@ -1588,8 +3260,722 @@
    "selection": "ranked"
   },
   {
+   "id": "skill-thedotmack-claude-mem-openclaw-493648",
+   "rank": 169,
+   "kind": "skill",
+   "kind_rank": 31,
+   "name": "openclaw",
+   "source": "github",
+   "version": null,
+   "commit": "c0f37d60b2e4860851575e3cbb003f23fc340d4e",
+   "repo": "thedotmack/claude-mem",
+   "path": "openclaw",
+   "spec": "git:https://github.com/thedotmack/claude-mem.git@c0f37d60b2e4860851575e3cbb003f23fc340d4e#openclaw",
+   "url": "https://github.com/thedotmack/claude-mem/tree/c0f37d60b2e4860851575e3cbb003f23fc340d4e/openclaw",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 118537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/thedotmack/claude-mem"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-thedotmack-claude-mem-claude-mem-cursor-skills-agent-cost-report-de13a7",
+   "rank": 170,
+   "kind": "skill",
+   "kind_rank": 32,
+   "name": "agent-cost-report",
+   "source": "github",
+   "version": null,
+   "commit": "c0f37d60b2e4860851575e3cbb003f23fc340d4e",
+   "repo": "thedotmack/claude-mem",
+   "path": "claude-mem-cursor/skills/agent-cost-report",
+   "spec": "git:https://github.com/thedotmack/claude-mem.git@c0f37d60b2e4860851575e3cbb003f23fc340d4e#claude-mem-cursor/skills/agent-cost-report",
+   "url": "https://github.com/thedotmack/claude-mem/tree/c0f37d60b2e4860851575e3cbb003f23fc340d4e/claude-mem-cursor/skills/agent-cost-report",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 118537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/thedotmack/claude-mem"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-paperclipai-paperclip-skills-agentmail-79c0f8",
+   "rank": 171,
+   "kind": "skill",
+   "kind_rank": 33,
+   "name": "agentmail",
+   "source": "github",
+   "version": null,
+   "commit": "f7db7312b4bef3d7790304701a7256cc2538a9fb",
+   "repo": "paperclipai/paperclip",
+   "path": "skills/agentmail",
+   "spec": "git:https://github.com/paperclipai/paperclip.git@f7db7312b4bef3d7790304701a7256cc2538a9fb#skills/agentmail",
+   "url": "https://github.com/paperclipai/paperclip/tree/f7db7312b4bef3d7790304701a7256cc2538a9fb/skills/agentmail",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 115459,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/paperclipai/paperclip"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-paperclipai-paperclip-skills-complain-007970",
+   "rank": 172,
+   "kind": "skill",
+   "kind_rank": 34,
+   "name": "complain",
+   "source": "github",
+   "version": null,
+   "commit": "f7db7312b4bef3d7790304701a7256cc2538a9fb",
+   "repo": "paperclipai/paperclip",
+   "path": "skills/complain",
+   "spec": "git:https://github.com/paperclipai/paperclip.git@f7db7312b4bef3d7790304701a7256cc2538a9fb#skills/complain",
+   "url": "https://github.com/paperclipai/paperclip/tree/f7db7312b4bef3d7790304701a7256cc2538a9fb/skills/complain",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 115459,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/paperclipai/paperclip"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-pbakaus-impeccable-cursor-plugin-skills-impeccable-45b3cc",
+   "rank": 173,
+   "kind": "skill",
+   "kind_rank": 35,
+   "name": "impeccable",
+   "source": "github",
+   "version": null,
+   "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+   "repo": "pbakaus/impeccable",
+   "path": "cursor-plugin/skills/impeccable",
+   "spec": "git:https://github.com/pbakaus/impeccable.git@b49177d32788f2dc585c42831d845dacf1ebed2c#cursor-plugin/skills/impeccable",
+   "url": "https://github.com/pbakaus/impeccable/tree/b49177d32788f2dc585c42831d845dacf1ebed2c/cursor-plugin/skills/impeccable",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 113994,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/pbakaus/impeccable"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-pbakaus-impeccable-plugin-skills-impeccable-17ce8c",
+   "rank": 174,
+   "kind": "skill",
+   "kind_rank": 36,
+   "name": "impeccable",
+   "source": "github",
+   "version": null,
+   "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+   "repo": "pbakaus/impeccable",
+   "path": "plugin/skills/impeccable",
+   "spec": "git:https://github.com/pbakaus/impeccable.git@b49177d32788f2dc585c42831d845dacf1ebed2c#plugin/skills/impeccable",
+   "url": "https://github.com/pbakaus/impeccable/tree/b49177d32788f2dc585c42831d845dacf1ebed2c/plugin/skills/impeccable",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 113994,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/pbakaus/impeccable"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-nexu-io-open-design-skills-8-bit-orbit-video-template-07d367",
+   "rank": 175,
+   "kind": "skill",
+   "kind_rank": 37,
+   "name": "8-bit-orbit-video-template",
+   "source": "github",
+   "version": null,
+   "commit": "667f19464a920958c78cf1d6336b50e8ce46d747",
+   "repo": "nexu-io/open-design",
+   "path": "skills/8-bit-orbit-video-template",
+   "spec": "git:https://github.com/nexu-io/open-design.git@667f19464a920958c78cf1d6336b50e8ce46d747#skills/8-bit-orbit-video-template",
+   "url": "https://github.com/nexu-io/open-design/tree/667f19464a920958c78cf1d6336b50e8ce46d747/skills/8-bit-orbit-video-template",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 108674,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nexu-io/open-design"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-nexu-io-open-design-skills-ad-creative-9c3487",
+   "rank": 176,
+   "kind": "skill",
+   "kind_rank": 38,
+   "name": "ad-creative",
+   "source": "github",
+   "version": null,
+   "commit": "667f19464a920958c78cf1d6336b50e8ce46d747",
+   "repo": "nexu-io/open-design",
+   "path": "skills/ad-creative",
+   "spec": "git:https://github.com/nexu-io/open-design.git@667f19464a920958c78cf1d6336b50e8ce46d747#skills/ad-creative",
+   "url": "https://github.com/nexu-io/open-design/tree/667f19464a920958c78cf1d6336b50e8ce46d747/skills/ad-creative",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 108674,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nexu-io/open-design"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-tt-a1i-archify-archify-de5f04",
+   "rank": 177,
+   "kind": "skill",
+   "kind_rank": 39,
+   "name": "archify",
+   "source": "github",
+   "version": null,
+   "commit": "44781293f38728baf04dbad33ce1a0cef8c39cca",
+   "repo": "tt-a1i/archify",
+   "path": "archify",
+   "spec": "git:https://github.com/tt-a1i/archify.git@44781293f38728baf04dbad33ce1a0cef8c39cca#archify",
+   "url": "https://github.com/tt-a1i/archify/tree/44781293f38728baf04dbad33ce1a0cef8c39cca/archify",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 98305,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/tt-a1i/archify"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-egonex-ai-understand-anything-understand-anything-plugin-skills-understand-a45a2c",
+   "rank": 178,
+   "kind": "skill",
+   "kind_rank": 40,
+   "name": "understand",
+   "source": "github",
+   "version": null,
+   "commit": "bb70fdb0489f8839ce55bf99dae0125ea067f712",
+   "repo": "Egonex-AI/Understand-Anything",
+   "path": "understand-anything-plugin/skills/understand",
+   "spec": "git:https://github.com/Egonex-AI/Understand-Anything.git@bb70fdb0489f8839ce55bf99dae0125ea067f712#understand-anything-plugin/skills/understand",
+   "url": "https://github.com/Egonex-AI/Understand-Anything/tree/bb70fdb0489f8839ce55bf99dae0125ea067f712/understand-anything-plugin/skills/understand",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 93438,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Egonex-AI/Understand-Anything"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-egonex-ai-understand-anything-understand-anything-plugin-skills-understand-chat-1be2d2",
+   "rank": 179,
+   "kind": "skill",
+   "kind_rank": 41,
+   "name": "understand-chat",
+   "source": "github",
+   "version": null,
+   "commit": "bb70fdb0489f8839ce55bf99dae0125ea067f712",
+   "repo": "Egonex-AI/Understand-Anything",
+   "path": "understand-anything-plugin/skills/understand-chat",
+   "spec": "git:https://github.com/Egonex-AI/Understand-Anything.git@bb70fdb0489f8839ce55bf99dae0125ea067f712#understand-anything-plugin/skills/understand-chat",
+   "url": "https://github.com/Egonex-AI/Understand-Anything/tree/bb70fdb0489f8839ce55bf99dae0125ea067f712/understand-anything-plugin/skills/understand-chat",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 93438,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Egonex-AI/Understand-Anything"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-composiohq-awesome-claude-skills-artifacts-builder-a13845",
+   "rank": 180,
+   "kind": "skill",
+   "kind_rank": 42,
+   "name": "artifacts-builder",
+   "source": "github",
+   "version": null,
+   "commit": "be2a406907dbc61b73e6827ded415c96139d13a2",
+   "repo": "ComposioHQ/awesome-claude-skills",
+   "path": "artifacts-builder",
+   "spec": "git:https://github.com/ComposioHQ/awesome-claude-skills.git@be2a406907dbc61b73e6827ded415c96139d13a2#artifacts-builder",
+   "url": "https://github.com/ComposioHQ/awesome-claude-skills/tree/be2a406907dbc61b73e6827ded415c96139d13a2/artifacts-builder",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 79947,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ComposioHQ/awesome-claude-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-composiohq-awesome-claude-skills-brand-guidelines-1d21df",
+   "rank": 181,
+   "kind": "skill",
+   "kind_rank": 43,
+   "name": "brand-guidelines",
+   "source": "github",
+   "version": null,
+   "commit": "be2a406907dbc61b73e6827ded415c96139d13a2",
+   "repo": "ComposioHQ/awesome-claude-skills",
+   "path": "brand-guidelines",
+   "spec": "git:https://github.com/ComposioHQ/awesome-claude-skills.git@be2a406907dbc61b73e6827ded415c96139d13a2#brand-guidelines",
+   "url": "https://github.com/ComposioHQ/awesome-claude-skills/tree/be2a406907dbc61b73e6827ded415c96139d13a2/brand-guidelines",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 79947,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ComposioHQ/awesome-claude-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-cloudflare-security-audit-skill-skills-security-audit-fceffc",
+   "rank": 182,
+   "kind": "skill",
+   "kind_rank": 44,
+   "name": "security-audit",
+   "source": "github",
+   "version": null,
+   "commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+   "repo": "cloudflare/security-audit-skill",
+   "path": "skills/security-audit",
+   "spec": "git:https://github.com/cloudflare/security-audit-skill.git@c1c8a8c1471069fb0e188eeaff69b8e8db6564a8#skills/security-audit",
+   "url": "https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8/skills/security-audit",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 76246,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/cloudflare/security-audit-skill"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-blader-humanizer-19cdef",
+   "rank": 183,
+   "kind": "skill",
+   "kind_rank": 45,
+   "name": "humanizer",
+   "source": "github",
+   "version": null,
+   "commit": "a32f24407364c74c812b43c15926d638bee1e072",
+   "repo": "blader/humanizer",
+   "path": "",
+   "spec": "git:https://github.com/blader/humanizer.git@a32f24407364c74c812b43c15926d638bee1e072",
+   "url": "https://github.com/blader/humanizer/tree/a32f24407364c74c812b43c15926d638bee1e072",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 71635,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/blader/humanizer"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-mvanhorn-last30days-skill-skills-last30days-c0096b",
+   "rank": 184,
+   "kind": "skill",
+   "kind_rank": 46,
+   "name": "last30days",
+   "source": "github",
+   "version": null,
+   "commit": "bb2f1ed2b9f6d07b90557c5eebd736b566533fec",
+   "repo": "mvanhorn/last30days-skill",
+   "path": "skills/last30days",
+   "spec": "git:https://github.com/mvanhorn/last30days-skill.git@bb2f1ed2b9f6d07b90557c5eebd736b566533fec#skills/last30days",
+   "url": "https://github.com/mvanhorn/last30days-skill/tree/bb2f1ed2b9f6d07b90557c5eebd736b566533fec/skills/last30days",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 71387,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/mvanhorn/last30days-skill"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-code-yeongyu-oh-my-openagent-packages-omo-senpi-skills-dag-library-9fdba7",
+   "rank": 185,
+   "kind": "skill",
+   "kind_rank": 47,
+   "name": "dag-library",
+   "source": "github",
+   "version": null,
+   "commit": "dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47",
+   "repo": "code-yeongyu/oh-my-openagent",
+   "path": "packages/omo-senpi/skills/dag-library",
+   "spec": "git:https://github.com/code-yeongyu/oh-my-openagent.git@dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47#packages/omo-senpi/skills/dag-library",
+   "url": "https://github.com/code-yeongyu/oh-my-openagent/tree/dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47/packages/omo-senpi/skills/dag-library",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 71030,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/code-yeongyu/oh-my-openagent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-code-yeongyu-oh-my-openagent-packages-omo-senpi-skills-give-me-tips-b82934",
+   "rank": 186,
+   "kind": "skill",
+   "kind_rank": 48,
+   "name": "give-me-tips",
+   "source": "github",
+   "version": null,
+   "commit": "dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47",
+   "repo": "code-yeongyu/oh-my-openagent",
+   "path": "packages/omo-senpi/skills/give-me-tips",
+   "spec": "git:https://github.com/code-yeongyu/oh-my-openagent.git@dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47#packages/omo-senpi/skills/give-me-tips",
+   "url": "https://github.com/code-yeongyu/oh-my-openagent/tree/dc3a1b9aaa3f4399a03ffd417de0bfe961c05c47/packages/omo-senpi/skills/give-me-tips",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 71030,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/code-yeongyu/oh-my-openagent"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-cathrynlavery-diagram-design-skills-diagram-design-ad8a42",
+   "rank": 187,
+   "kind": "skill",
+   "kind_rank": 49,
+   "name": "diagram-design",
+   "source": "github",
+   "version": null,
+   "commit": "d74d8c2d0c78a9e1efd43137f6a9a51182a8b5f0",
+   "repo": "cathrynlavery/diagram-design",
+   "path": "skills/diagram-design",
+   "spec": "git:https://github.com/cathrynlavery/diagram-design.git@d74d8c2d0c78a9e1efd43137f6a9a51182a8b5f0#skills/diagram-design",
+   "url": "https://github.com/cathrynlavery/diagram-design/tree/d74d8c2d0c78a9e1efd43137f6a9a51182a8b5f0/skills/diagram-design",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 69235,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/cathrynlavery/diagram-design"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-emilkowalski-skills-skills-animate-50047a",
+   "rank": 188,
+   "kind": "skill",
+   "kind_rank": 50,
+   "name": "animate",
+   "source": "github",
+   "version": null,
+   "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+   "repo": "emilkowalski/skills",
+   "path": "skills/animate",
+   "spec": "git:https://github.com/emilkowalski/skills.git@64eb3deb9a5fbfa041faf783e0bc3fd635872e9c#skills/animate",
+   "url": "https://github.com/emilkowalski/skills/tree/64eb3deb9a5fbfa041faf783e0bc3fd635872e9c/skills/animate",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 58404,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/emilkowalski/skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-emilkowalski-skills-skills-animate-expo-42bce4",
+   "rank": 189,
+   "kind": "skill",
+   "kind_rank": 51,
+   "name": "animate-expo",
+   "source": "github",
+   "version": null,
+   "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+   "repo": "emilkowalski/skills",
+   "path": "skills/animate-expo",
+   "spec": "git:https://github.com/emilkowalski/skills.git@64eb3deb9a5fbfa041faf783e0bc3fd635872e9c#skills/animate-expo",
+   "url": "https://github.com/emilkowalski/skills/tree/64eb3deb9a5fbfa041faf783e0bc3fd635872e9c/skills/animate-expo",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 58404,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/emilkowalski/skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-nutlope-hallmark-skills-hallmark-12d53d",
+   "rank": 190,
+   "kind": "skill",
+   "kind_rank": 52,
+   "name": "hallmark",
+   "source": "github",
+   "version": null,
+   "commit": "04977e15f3dfd6ee4b74c887dac3eb52665d6c92",
+   "repo": "Nutlope/hallmark",
+   "path": "skills/hallmark",
+   "spec": "git:https://github.com/Nutlope/hallmark.git@04977e15f3dfd6ee4b74c887dac3eb52665d6c92#skills/hallmark",
+   "url": "https://github.com/Nutlope/hallmark/tree/04977e15f3dfd6ee4b74c887dac3eb52665d6c92/skills/hallmark",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 58537,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Nutlope/hallmark"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-k-dense-ai-scientific-agent-skills-skills-13c-metabolic-flux-dcd5f5",
+   "rank": 191,
+   "kind": "skill",
+   "kind_rank": 53,
+   "name": "13c-metabolic-flux",
+   "source": "github",
+   "version": null,
+   "commit": "ec59a29a03d5c40f73ab40878df04860bc00e876",
+   "repo": "K-Dense-AI/scientific-agent-skills",
+   "path": "skills/13c-metabolic-flux",
+   "spec": "git:https://github.com/K-Dense-AI/scientific-agent-skills.git@ec59a29a03d5c40f73ab40878df04860bc00e876#skills/13c-metabolic-flux",
+   "url": "https://github.com/K-Dense-AI/scientific-agent-skills/tree/ec59a29a03d5c40f73ab40878df04860bc00e876/skills/13c-metabolic-flux",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 57935,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/K-Dense-AI/scientific-agent-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-k-dense-ai-scientific-agent-skills-skills-adaptyv-c493cc",
+   "rank": 192,
+   "kind": "skill",
+   "kind_rank": 54,
+   "name": "adaptyv",
+   "source": "github",
+   "version": null,
+   "commit": "ec59a29a03d5c40f73ab40878df04860bc00e876",
+   "repo": "K-Dense-AI/scientific-agent-skills",
+   "path": "skills/adaptyv",
+   "spec": "git:https://github.com/K-Dense-AI/scientific-agent-skills.git@ec59a29a03d5c40f73ab40878df04860bc00e876#skills/adaptyv",
+   "url": "https://github.com/K-Dense-AI/scientific-agent-skills/tree/ec59a29a03d5c40f73ab40878df04860bc00e876/skills/adaptyv",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 57935,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/K-Dense-AI/scientific-agent-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-imbad0202-academic-research-skills-academic-paper-33146f",
+   "rank": 193,
+   "kind": "skill",
+   "kind_rank": 55,
+   "name": "academic-paper",
+   "source": "github",
+   "version": null,
+   "commit": "bd57330f63f4b089dde8fdef9bf5f009ecc89f0c",
+   "repo": "Imbad0202/academic-research-skills",
+   "path": "academic-paper",
+   "spec": "git:https://github.com/Imbad0202/academic-research-skills.git@bd57330f63f4b089dde8fdef9bf5f009ecc89f0c#academic-paper",
+   "url": "https://github.com/Imbad0202/academic-research-skills/tree/bd57330f63f4b089dde8fdef9bf5f009ecc89f0c/academic-paper",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 57880,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Imbad0202/academic-research-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-imbad0202-academic-research-skills-academic-paper-reviewer-9f6315",
+   "rank": 194,
+   "kind": "skill",
+   "kind_rank": 56,
+   "name": "academic-paper-reviewer",
+   "source": "github",
+   "version": null,
+   "commit": "bd57330f63f4b089dde8fdef9bf5f009ecc89f0c",
+   "repo": "Imbad0202/academic-research-skills",
+   "path": "academic-paper-reviewer",
+   "spec": "git:https://github.com/Imbad0202/academic-research-skills.git@bd57330f63f4b089dde8fdef9bf5f009ecc89f0c#academic-paper-reviewer",
+   "url": "https://github.com/Imbad0202/academic-research-skills/tree/bd57330f63f4b089dde8fdef9bf5f009ecc89f0c/academic-paper-reviewer",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 57880,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Imbad0202/academic-research-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-alibaba-open-code-review-skills-open-code-review-617c6d",
+   "rank": 195,
+   "kind": "skill",
+   "kind_rank": 57,
+   "name": "open-code-review",
+   "source": "github",
+   "version": null,
+   "commit": "5a6f77ccd1540ed4e80c06490a696543e507d3e4",
+   "repo": "alibaba/open-code-review",
+   "path": "skills/open-code-review",
+   "spec": "git:https://github.com/alibaba/open-code-review.git@5a6f77ccd1540ed4e80c06490a696543e507d3e4#skills/open-code-review",
+   "url": "https://github.com/alibaba/open-code-review/tree/5a6f77ccd1540ed4e80c06490a696543e507d3e4/skills/open-code-review",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 54742,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/alibaba/open-code-review"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-alibaba-open-code-review-skills-open-code-review-delegate-f591d5",
+   "rank": 196,
+   "kind": "skill",
+   "kind_rank": 58,
+   "name": "open-code-review-delegate",
+   "source": "github",
+   "version": null,
+   "commit": "5a6f77ccd1540ed4e80c06490a696543e507d3e4",
+   "repo": "alibaba/open-code-review",
+   "path": "skills/open-code-review-delegate",
+   "spec": "git:https://github.com/alibaba/open-code-review.git@5a6f77ccd1540ed4e80c06490a696543e507d3e4#skills/open-code-review-delegate",
+   "url": "https://github.com/alibaba/open-code-review/tree/5a6f77ccd1540ed4e80c06490a696543e507d3e4/skills/open-code-review-delegate",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 54742,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/alibaba/open-code-review"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-cherryhq-cherry-studio-resources-code-cli-skills-code-mate-antigravity-52a28a",
+   "rank": 197,
+   "kind": "skill",
+   "kind_rank": 59,
+   "name": "code-mate-antigravity",
+   "source": "github",
+   "version": null,
+   "commit": "e99451ef5e7ca65aeb265d447b6844b624af9fd1",
+   "repo": "CherryHQ/cherry-studio",
+   "path": "resources/code-cli-skills/code-mate-antigravity",
+   "spec": "git:https://github.com/CherryHQ/cherry-studio.git@e99451ef5e7ca65aeb265d447b6844b624af9fd1#resources/code-cli-skills/code-mate-antigravity",
+   "url": "https://github.com/CherryHQ/cherry-studio/tree/e99451ef5e7ca65aeb265d447b6844b624af9fd1/resources/code-cli-skills/code-mate-antigravity",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 53700,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/CherryHQ/cherry-studio"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-cherryhq-cherry-studio-resources-code-cli-skills-code-mate-claude-code-8c415f",
+   "rank": 198,
+   "kind": "skill",
+   "kind_rank": 60,
+   "name": "code-mate-claude-code",
+   "source": "github",
+   "version": null,
+   "commit": "e99451ef5e7ca65aeb265d447b6844b624af9fd1",
+   "repo": "CherryHQ/cherry-studio",
+   "path": "resources/code-cli-skills/code-mate-claude-code",
+   "spec": "git:https://github.com/CherryHQ/cherry-studio.git@e99451ef5e7ca65aeb265d447b6844b624af9fd1#resources/code-cli-skills/code-mate-claude-code",
+   "url": "https://github.com/CherryHQ/cherry-studio/tree/e99451ef5e7ca65aeb265d447b6844b624af9fd1/resources/code-cli-skills/code-mate-claude-code",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 53700,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/CherryHQ/cherry-studio"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-obsidianmd-obsidian-skills-plugins-obsidian-skills-defuddle-b4634e",
+   "rank": 199,
+   "kind": "skill",
+   "kind_rank": 61,
+   "name": "defuddle",
+   "source": "github",
+   "version": null,
+   "commit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+   "repo": "obsidianmd/obsidian-skills",
+   "path": "plugins/obsidian/skills/defuddle",
+   "spec": "git:https://github.com/obsidianmd/obsidian-skills.git@b110b2f8e9eb1f287892f937050dfd40af862cbb#plugins/obsidian/skills/defuddle",
+   "url": "https://github.com/obsidianmd/obsidian-skills/tree/b110b2f8e9eb1f287892f937050dfd40af862cbb/plugins/obsidian/skills/defuddle",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 53314,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/obsidianmd/obsidian-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-obsidianmd-obsidian-skills-plugins-obsidian-skills-json-canvas-1f8ff1",
+   "rank": 200,
+   "kind": "skill",
+   "kind_rank": 62,
+   "name": "json-canvas",
+   "source": "github",
+   "version": null,
+   "commit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+   "repo": "obsidianmd/obsidian-skills",
+   "path": "plugins/obsidian/skills/json-canvas",
+   "spec": "git:https://github.com/obsidianmd/obsidian-skills.git@b110b2f8e9eb1f287892f937050dfd40af862cbb#plugins/obsidian/skills/json-canvas",
+   "url": "https://github.com/obsidianmd/obsidian-skills/tree/b110b2f8e9eb1f287892f937050dfd40af862cbb/plugins/obsidian/skills/json-canvas",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 53314,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/obsidianmd/obsidian-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-sickn33-agentic-awesome-skills-skills-00-andruia-consultant-7c7cb9",
+   "rank": 201,
+   "kind": "skill",
+   "kind_rank": 63,
+   "name": "00-andruia-consultant",
+   "source": "github",
+   "version": null,
+   "commit": "4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea",
+   "repo": "sickn33/agentic-awesome-skills",
+   "path": "skills/00-andruia-consultant",
+   "spec": "git:https://github.com/sickn33/agentic-awesome-skills.git@4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea#skills/00-andruia-consultant",
+   "url": "https://github.com/sickn33/agentic-awesome-skills/tree/4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea/skills/00-andruia-consultant",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 50025,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/sickn33/agentic-awesome-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "skill-sickn33-agentic-awesome-skills-skills-007-d7805e",
+   "rank": 202,
+   "kind": "skill",
+   "kind_rank": 64,
+   "name": "007",
+   "source": "github",
+   "version": null,
+   "commit": "4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea",
+   "repo": "sickn33/agentic-awesome-skills",
+   "path": "skills/007",
+   "spec": "git:https://github.com/sickn33/agentic-awesome-skills.git@4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea#skills/007",
+   "url": "https://github.com/sickn33/agentic-awesome-skills/tree/4a52ab5ef117bdce2c6ba8d87dd64df0c840dfea/skills/007",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 50025,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/sickn33/agentic-awesome-skills"
+   },
+   "selection": "ranked"
+  },
+  {
    "id": "plugin-mattpocock-skills-d1dbe9",
-   "rank": 81,
+   "rank": 203,
    "kind": "plugin",
    "kind_rank": 1,
    "name": "mattpocock-skills",
@@ -1611,7 +3997,7 @@
   },
   {
    "id": "plugin-obra-superpowers-574554",
-   "rank": 82,
+   "rank": 204,
    "kind": "plugin",
    "kind_rank": 2,
    "name": "superpowers",
@@ -1633,7 +4019,7 @@
   },
   {
    "id": "plugin-dietrichgebert-ponytail-1cb7b1",
-   "rank": 83,
+   "rank": 205,
    "kind": "plugin",
    "kind_rank": 3,
    "name": "ponytail",
@@ -1655,7 +4041,7 @@
   },
   {
    "id": "plugin-thedotmack-claude-mem-plugin-b07831",
-   "rank": 84,
+   "rank": 206,
    "kind": "plugin",
    "kind_rank": 4,
    "name": "claude-mem",
@@ -1677,7 +4063,7 @@
   },
   {
    "id": "plugin-thedotmack-claude-mem-cowork-0017bd",
-   "rank": 85,
+   "rank": 207,
    "kind": "plugin",
    "kind_rank": 5,
    "name": "cmem-pro",
@@ -1699,7 +4085,7 @@
   },
   {
    "id": "plugin-heygen-com-hyperframes-b89ef0",
-   "rank": 86,
+   "rank": 208,
    "kind": "plugin",
    "kind_rank": 6,
    "name": "hyperframes",
@@ -1721,7 +4107,7 @@
   },
   {
    "id": "plugin-career-ops-hq-career-ops-a4b120",
-   "rank": 87,
+   "rank": 209,
    "kind": "plugin",
    "kind_rank": 7,
    "name": "career-ops",
@@ -1743,7 +4129,7 @@
   },
   {
    "id": "plugin-ayghri-i-have-adhd-f35840",
-   "rank": 88,
+   "rank": 210,
    "kind": "plugin",
    "kind_rank": 8,
    "name": "i-have-adhd",
@@ -1765,7 +4151,7 @@
   },
   {
    "id": "plugin-coreyhaines31-marketingskills-6f54ea",
-   "rank": 89,
+   "rank": 211,
    "kind": "plugin",
    "kind_rank": 9,
    "name": "marketing-skills",
@@ -1787,7 +4173,7 @@
   },
   {
    "id": "plugin-chromedevtools-chrome-devtools-mcp-db4496",
-   "rank": 90,
+   "rank": 212,
    "kind": "plugin",
    "kind_rank": 10,
    "name": "chrome-devtools-mcp",
@@ -1809,7 +4195,7 @@
   },
   {
    "id": "plugin-sickn33-agentic-awesome-skills-plugins-agentic-awesome-skills-claude-e9562a",
-   "rank": 91,
+   "rank": 213,
    "kind": "plugin",
    "kind_rank": 11,
    "name": "agentic-awesome-skills",
@@ -1831,7 +4217,7 @@
   },
   {
    "id": "plugin-sickn33-agentic-awesome-skills-plugins-agentic-bundle-essentials-ecc7b1",
-   "rank": 92,
+   "rank": 214,
    "kind": "plugin",
    "kind_rank": 12,
    "name": "agentic-bundle-essentials",
@@ -1853,7 +4239,7 @@
   },
   {
    "id": "plugin-anthropics-claude-plugins-official-plugins-agent-sdk-dev-0d2dd6",
-   "rank": 93,
+   "rank": 215,
    "kind": "plugin",
    "kind_rank": 13,
    "name": "agent-sdk-dev",
@@ -1875,7 +4261,7 @@
   },
   {
    "id": "plugin-anthropics-claude-plugins-official-external_plugins-asana-b8cfe9",
-   "rank": 94,
+   "rank": 216,
    "kind": "plugin",
    "kind_rank": 14,
    "name": "asana",
@@ -1897,7 +4283,7 @@
   },
   {
    "id": "plugin-wshobson-agents-plugins-documentation-standards-7e55cb",
-   "rank": 95,
+   "rank": 217,
    "kind": "plugin",
    "kind_rank": 15,
    "name": "documentation-standards",
@@ -1919,7 +4305,7 @@
   },
   {
    "id": "plugin-wshobson-agents-plugins-code-documentation-2c98dc",
-   "rank": 96,
+   "rank": 218,
    "kind": "plugin",
    "kind_rank": 16,
    "name": "code-documentation",
@@ -1941,7 +4327,7 @@
   },
   {
    "id": "plugin-anthropics-knowledge-work-plugins-productivity-f91b3d",
-   "rank": 97,
+   "rank": 219,
    "kind": "plugin",
    "kind_rank": 17,
    "name": "productivity",
@@ -1963,7 +4349,7 @@
   },
   {
    "id": "plugin-anthropics-knowledge-work-plugins-enterprise-search-4fcf3f",
-   "rank": 98,
+   "rank": 220,
    "kind": "plugin",
    "kind_rank": 18,
    "name": "enterprise-search",
@@ -1985,7 +4371,7 @@
   },
   {
    "id": "plugin-mksglu-context-mode-plugins-claude-code-f529ad",
-   "rank": 99,
+   "rank": 221,
    "kind": "plugin",
    "kind_rank": 19,
    "name": "context-mode",
@@ -2007,7 +4393,7 @@
   },
   {
    "id": "plugin-alirezarezvani-claude-skills-marketing-skill-ed5f7f",
-   "rank": 100,
+   "rank": 222,
    "kind": "plugin",
    "kind_rank": 20,
    "name": "marketing-skills",
@@ -2026,6 +4412,1766 @@
     "source_url": "https://api.github.com/repos/alirezarezvani/claude-skills"
    },
    "selection": "ranked"
+  },
+  {
+   "id": "plugin-alirezarezvani-claude-skills-c-level-advisor-b5515b",
+   "rank": 223,
+   "kind": "plugin",
+   "kind_rank": 21,
+   "name": "c-level-skills",
+   "source": "github",
+   "version": null,
+   "commit": "f8593c4941210a621a6629ce1da9e07897976d5f",
+   "repo": "alirezarezvani/claude-skills",
+   "path": "c-level-advisor",
+   "marketplace": "alirezarezvani/claude-skills",
+   "spec": "git:https://github.com/alirezarezvani/claude-skills.git@f8593c4941210a621a6629ce1da9e07897976d5f#c-level-advisor",
+   "url": "https://github.com/alirezarezvani/claude-skills/tree/f8593c4941210a621a6629ce1da9e07897976d5f/c-level-advisor",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 30172,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/alirezarezvani/claude-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-jarrodwatts-claude-hud-3f40e8",
+   "rank": 224,
+   "kind": "plugin",
+   "kind_rank": 22,
+   "name": "claude-hud",
+   "source": "github",
+   "version": null,
+   "commit": "afcead17dce67aac6f0d2f8aba1bea6d4f64cfbf",
+   "repo": "jarrodwatts/claude-hud",
+   "path": "",
+   "marketplace": "jarrodwatts/claude-hud",
+   "spec": "git:https://github.com/jarrodwatts/claude-hud.git@afcead17dce67aac6f0d2f8aba1bea6d4f64cfbf",
+   "url": "https://github.com/jarrodwatts/claude-hud/tree/afcead17dce67aac6f0d2f8aba1bea6d4f64cfbf",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 29271,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/jarrodwatts/claude-hud"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-phuryn-pm-skills-pm-product-discovery-37e91a",
+   "rank": 225,
+   "kind": "plugin",
+   "kind_rank": 23,
+   "name": "pm-product-discovery",
+   "source": "github",
+   "version": null,
+   "commit": "9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef",
+   "repo": "phuryn/pm-skills",
+   "path": "pm-product-discovery",
+   "marketplace": "phuryn/pm-skills",
+   "spec": "git:https://github.com/phuryn/pm-skills.git@9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef#pm-product-discovery",
+   "url": "https://github.com/phuryn/pm-skills/tree/9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef/pm-product-discovery",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 28193,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/phuryn/pm-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-phuryn-pm-skills-pm-product-strategy-941c13",
+   "rank": 226,
+   "kind": "plugin",
+   "kind_rank": 24,
+   "name": "pm-product-strategy",
+   "source": "github",
+   "version": null,
+   "commit": "9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef",
+   "repo": "phuryn/pm-skills",
+   "path": "pm-product-strategy",
+   "marketplace": "phuryn/pm-skills",
+   "spec": "git:https://github.com/phuryn/pm-skills.git@9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef#pm-product-strategy",
+   "url": "https://github.com/phuryn/pm-skills/tree/9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef/pm-product-strategy",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 28193,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/phuryn/pm-skills"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-othmanadi-planning-with-files-33a648",
+   "rank": 227,
+   "kind": "plugin",
+   "kind_rank": 25,
+   "name": "planning-with-files",
+   "source": "github",
+   "version": null,
+   "commit": "51bf62def62d1cb317d37936929b4ef97cf862c3",
+   "repo": "OthmanAdi/planning-with-files",
+   "path": "",
+   "marketplace": "OthmanAdi/planning-with-files",
+   "spec": "git:https://github.com/OthmanAdi/planning-with-files.git@51bf62def62d1cb317d37936929b4ef97cf862c3",
+   "url": "https://github.com/OthmanAdi/planning-with-files/tree/51bf62def62d1cb317d37936929b4ef97cf862c3",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 28153,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/OthmanAdi/planning-with-files"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-everyinc-compound-engineering-plugin-32c5f4",
+   "rank": 228,
+   "kind": "plugin",
+   "kind_rank": 26,
+   "name": "compound-engineering",
+   "source": "github",
+   "version": null,
+   "commit": "467f92cebc17f25735ba1e80bc86f38ccd1cf098",
+   "repo": "EveryInc/compound-engineering-plugin",
+   "path": "",
+   "marketplace": "EveryInc/compound-engineering-plugin",
+   "spec": "git:https://github.com/EveryInc/compound-engineering-plugin.git@467f92cebc17f25735ba1e80bc86f38ccd1cf098",
+   "url": "https://github.com/EveryInc/compound-engineering-plugin/tree/467f92cebc17f25735ba1e80bc86f38ccd1cf098",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 26166,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/EveryInc/compound-engineering-plugin"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-googlechrome-modern-web-guidance-f6dd72",
+   "rank": 229,
+   "kind": "plugin",
+   "kind_rank": 27,
+   "name": "modern-web-guidance",
+   "source": "github",
+   "version": null,
+   "commit": "b31dc0a43ff5d19bcf386a3476a216f3b39a6f55",
+   "repo": "GoogleChrome/modern-web-guidance",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/GoogleChrome/modern-web-guidance.git@b31dc0a43ff5d19bcf386a3476a216f3b39a6f55",
+   "url": "https://github.com/GoogleChrome/modern-web-guidance/tree/b31dc0a43ff5d19bcf386a3476a216f3b39a6f55",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 23714,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/GoogleChrome/modern-web-guidance"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-google-elephant-goldfish-model-6cdc7a",
+   "rank": 230,
+   "kind": "plugin",
+   "kind_rank": 28,
+   "name": "egm",
+   "source": "github",
+   "version": null,
+   "commit": "70406c4d22cc7ea8299637c2c5b44625c48b3f08",
+   "repo": "google/elephant-goldfish-model",
+   "path": "",
+   "marketplace": "google/elephant-goldfish-model",
+   "spec": "git:https://github.com/google/elephant-goldfish-model.git@70406c4d22cc7ea8299637c2c5b44625c48b3f08",
+   "url": "https://github.com/google/elephant-goldfish-model/tree/70406c4d22cc7ea8299637c2c5b44625c48b3f08",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 21556,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/google/elephant-goldfish-model"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-confident-ai-deepeval-20b089",
+   "rank": 231,
+   "kind": "plugin",
+   "kind_rank": 29,
+   "name": "deepeval",
+   "source": "github",
+   "version": null,
+   "commit": "da9b2c969f8a15e8aa4ef67c372157ce060cd63e",
+   "repo": "confident-ai/deepeval",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/confident-ai/deepeval.git@da9b2c969f8a15e8aa4ef67c372157ce060cd63e",
+   "url": "https://github.com/confident-ai/deepeval/tree/da9b2c969f8a15e8aa4ef67c372157ce060cd63e",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 19576,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/confident-ai/deepeval"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-lemomo-ai-lemo-opuscar-plugin-fc01bc",
+   "rank": 232,
+   "kind": "plugin",
+   "kind_rank": 30,
+   "name": "lemo-opuscar",
+   "source": "github",
+   "version": null,
+   "commit": "f9e204293930952b61ba921cd8944d05f121beee",
+   "repo": "lemomo-ai/lemo-opuscar",
+   "path": "plugin",
+   "marketplace": "lemomo-ai/lemo-opuscar",
+   "spec": "git:https://github.com/lemomo-ai/lemo-opuscar.git@f9e204293930952b61ba921cd8944d05f121beee#plugin",
+   "url": "https://github.com/lemomo-ai/lemo-opuscar/tree/f9e204293930952b61ba921cd8944d05f121beee/plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 18901,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/lemomo-ai/lemo-opuscar"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-huggingface-skills-78399c",
+   "rank": 233,
+   "kind": "plugin",
+   "kind_rank": 31,
+   "name": "huggingface-skills",
+   "source": "github",
+   "version": null,
+   "commit": "c3ff942be3e07116b475253f0a8fc4f54682c1a8",
+   "repo": "huggingface/skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/huggingface/skills.git@c3ff942be3e07116b475253f0a8fc4f54682c1a8",
+   "url": "https://github.com/huggingface/skills/tree/c3ff942be3e07116b475253f0a8fc4f54682c1a8",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 11366,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/huggingface/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-tigerless-labs-autoharness-ee26ac",
+   "rank": 234,
+   "kind": "plugin",
+   "kind_rank": 32,
+   "name": "autoharness",
+   "source": "github",
+   "version": null,
+   "commit": "6d85325ab5ef436d1d4d52ffa82e43ea0365d144",
+   "repo": "tigerless-labs/autoharness",
+   "path": "",
+   "marketplace": "tigerless-labs/autoharness",
+   "spec": "git:https://github.com/tigerless-labs/autoharness.git@6d85325ab5ef436d1d4d52ffa82e43ea0365d144",
+   "url": "https://github.com/tigerless-labs/autoharness/tree/6d85325ab5ef436d1d4d52ffa82e43ea0365d144",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 11199,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/tigerless-labs/autoharness"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-wonderwhy-er-desktopcommandermcp-plugins-claude-302ad5",
+   "rank": 235,
+   "kind": "plugin",
+   "kind_rank": 33,
+   "name": "desktop-commander",
+   "source": "github",
+   "version": null,
+   "commit": "75048278f4866f0d8bde26f6f9aa3b8d39dca870",
+   "repo": "wonderwhy-er/DesktopCommanderMCP",
+   "path": "plugins/claude",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/wonderwhy-er/DesktopCommanderMCP.git@75048278f4866f0d8bde26f6f9aa3b8d39dca870#plugins/claude",
+   "url": "https://github.com/wonderwhy-er/DesktopCommanderMCP/tree/75048278f4866f0d8bde26f6f9aa3b8d39dca870/plugins/claude",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 10374,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/wonderwhy-er/DesktopCommanderMCP"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-ykdojo-claude-code-tips-9192c5",
+   "rank": 236,
+   "kind": "plugin",
+   "kind_rank": 34,
+   "name": "dx",
+   "source": "github",
+   "version": null,
+   "commit": "577ac89252195d61283b334c4b9d292b52c82203",
+   "repo": "ykdojo/claude-code-tips",
+   "path": "",
+   "marketplace": "ykdojo/claude-code-tips",
+   "spec": "git:https://github.com/ykdojo/claude-code-tips.git@577ac89252195d61283b334c4b9d292b52c82203",
+   "url": "https://github.com/ykdojo/claude-code-tips/tree/577ac89252195d61283b334c4b9d292b52c82203",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 10364,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ykdojo/claude-code-tips"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-anthropics-claude-for-legal-commercial-legal-07f6a0",
+   "rank": 237,
+   "kind": "plugin",
+   "kind_rank": 35,
+   "name": "commercial-legal",
+   "source": "github",
+   "version": null,
+   "commit": "4a6c651889c97cc9140580363c73e0eb17379c2b",
+   "repo": "anthropics/claude-for-legal",
+   "path": "commercial-legal",
+   "marketplace": "anthropics/claude-for-legal",
+   "spec": "git:https://github.com/anthropics/claude-for-legal.git@4a6c651889c97cc9140580363c73e0eb17379c2b#commercial-legal",
+   "url": "https://github.com/anthropics/claude-for-legal/tree/4a6c651889c97cc9140580363c73e0eb17379c2b/commercial-legal",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 10050,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/claude-for-legal"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-anthropics-claude-for-legal-privacy-legal-2169a3",
+   "rank": 238,
+   "kind": "plugin",
+   "kind_rank": 36,
+   "name": "privacy-legal",
+   "source": "github",
+   "version": null,
+   "commit": "4a6c651889c97cc9140580363c73e0eb17379c2b",
+   "repo": "anthropics/claude-for-legal",
+   "path": "privacy-legal",
+   "marketplace": "anthropics/claude-for-legal",
+   "spec": "git:https://github.com/anthropics/claude-for-legal.git@4a6c651889c97cc9140580363c73e0eb17379c2b#privacy-legal",
+   "url": "https://github.com/anthropics/claude-for-legal/tree/4a6c651889c97cc9140580363c73e0eb17379c2b/privacy-legal",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 10050,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/anthropics/claude-for-legal"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-rehan-remade-universal-modder-204c50",
+   "rank": 239,
+   "kind": "plugin",
+   "kind_rank": 37,
+   "name": "universal-modder",
+   "source": "github",
+   "version": null,
+   "commit": "a34eae75732d7fd5e7810abde188063e72829525",
+   "repo": "rehan-remade/universal-modder",
+   "path": "",
+   "marketplace": "rehan-remade/universal-modder",
+   "spec": "git:https://github.com/rehan-remade/universal-modder.git@a34eae75732d7fd5e7810abde188063e72829525",
+   "url": "https://github.com/rehan-remade/universal-modder/tree/a34eae75732d7fd5e7810abde188063e72829525",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 9803,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/rehan-remade/universal-modder"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-revfactory-harness-9e47c9",
+   "rank": 240,
+   "kind": "plugin",
+   "kind_rank": 38,
+   "name": "harness",
+   "source": "github",
+   "version": null,
+   "commit": "92d9f1b29e7af81acebf51a9fcd1832e739a1414",
+   "repo": "revfactory/harness",
+   "path": "",
+   "marketplace": "revfactory/harness",
+   "spec": "git:https://github.com/revfactory/harness.git@92d9f1b29e7af81acebf51a9fcd1832e739a1414",
+   "url": "https://github.com/revfactory/harness/tree/92d9f1b29e7af81acebf51a9fcd1832e739a1414",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 9386,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/revfactory/harness"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-patch-gg-pixelfx-28648c",
+   "rank": 241,
+   "kind": "plugin",
+   "kind_rank": 39,
+   "name": "pixelfx",
+   "source": "github",
+   "version": null,
+   "commit": "5294518ce7c72e48b6100a744596e0acf57f2826",
+   "repo": "patch-gg/pixelfx",
+   "path": "",
+   "marketplace": "patch-gg/pixelfx",
+   "spec": "git:https://github.com/patch-gg/pixelfx.git@5294518ce7c72e48b6100a744596e0acf57f2826",
+   "url": "https://github.com/patch-gg/pixelfx/tree/5294518ce7c72e48b6100a744596e0acf57f2826",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 8429,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/patch-gg/pixelfx"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-tamaratran-fast-jev-compaction-fa2e52",
+   "rank": 242,
+   "kind": "plugin",
+   "kind_rank": 40,
+   "name": "fast-jev-compaction",
+   "source": "github",
+   "version": null,
+   "commit": "e3f262a7f4d42bd8dd32ced30d26176f7cb545b0",
+   "repo": "tamaratran/fast-jev-compaction",
+   "path": "",
+   "marketplace": "tamaratran/fast-jev-compaction",
+   "spec": "git:https://github.com/tamaratran/fast-jev-compaction.git@e3f262a7f4d42bd8dd32ced30d26176f7cb545b0",
+   "url": "https://github.com/tamaratran/fast-jev-compaction/tree/e3f262a7f4d42bd8dd32ced30d26176f7cb545b0",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 8003,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/tamaratran/fast-jev-compaction"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-internet-court-internet-court-skill-979571",
+   "rank": 243,
+   "kind": "plugin",
+   "kind_rank": 41,
+   "name": "internet-court",
+   "source": "github",
+   "version": null,
+   "commit": "462bf30efaea73c8af4ed9d6e9970d4495224ad2",
+   "repo": "internet-court/internet-court-skill",
+   "path": "",
+   "marketplace": "internet-court/internet-court-skill",
+   "spec": "git:https://github.com/internet-court/internet-court-skill.git@462bf30efaea73c8af4ed9d6e9970d4495224ad2",
+   "url": "https://github.com/internet-court/internet-court-skill/tree/462bf30efaea73c8af4ed9d6e9970d4495224ad2",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 7142,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/internet-court/internet-court-skill"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-brainblend-ai-atomic-agents-claude-plugin-atomic-agents-809014",
+   "rank": 244,
+   "kind": "plugin",
+   "kind_rank": 42,
+   "name": "atomic-agents",
+   "source": "github",
+   "version": null,
+   "commit": "33d2ec94f42d4a65393a336e35edf21ee5700303",
+   "repo": "BrainBlend-AI/atomic-agents",
+   "path": "claude-plugin/atomic-agents",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/BrainBlend-AI/atomic-agents.git@33d2ec94f42d4a65393a336e35edf21ee5700303#claude-plugin/atomic-agents",
+   "url": "https://github.com/BrainBlend-AI/atomic-agents/tree/33d2ec94f42d4a65393a336e35edf21ee5700303/claude-plugin/atomic-agents",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 6342,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/BrainBlend-AI/atomic-agents"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-haydenschmitty-floorplan-22c678",
+   "rank": 245,
+   "kind": "plugin",
+   "kind_rank": 43,
+   "name": "floorplan",
+   "source": "github",
+   "version": null,
+   "commit": "94f81b463b7617e06d873ac71323ce71644c8399",
+   "repo": "haydenschmitty/floorplan",
+   "path": "",
+   "marketplace": "haydenschmitty/floorplan",
+   "spec": "git:https://github.com/haydenschmitty/floorplan.git@94f81b463b7617e06d873ac71323ce71644c8399",
+   "url": "https://github.com/haydenschmitty/floorplan/tree/94f81b463b7617e06d873ac71323ce71644c8399",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 5368,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/haydenschmitty/floorplan"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-nateherkai-scroll-craft-plugins-nateherk-design-e50476",
+   "rank": 246,
+   "kind": "plugin",
+   "kind_rank": 44,
+   "name": "nateherk-design",
+   "source": "github",
+   "version": null,
+   "commit": "75d81f74e83692add18cd7a8a8e078b8a887a579",
+   "repo": "nateherkai/scroll-craft",
+   "path": "plugins/nateherk-design",
+   "marketplace": "nateherkai/scroll-craft",
+   "spec": "git:https://github.com/nateherkai/scroll-craft.git@75d81f74e83692add18cd7a8a8e078b8a887a579#plugins/nateherk-design",
+   "url": "https://github.com/nateherkai/scroll-craft/tree/75d81f74e83692add18cd7a8a8e078b8a887a579/plugins/nateherk-design",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 5273,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nateherkai/scroll-craft"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-exa-labs-exa-mcp-server-671ae8",
+   "rank": 247,
+   "kind": "plugin",
+   "kind_rank": 45,
+   "name": "exa",
+   "source": "github",
+   "version": null,
+   "commit": "15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
+   "repo": "exa-labs/exa-mcp-server",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/exa-labs/exa-mcp-server.git@15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
+   "url": "https://github.com/exa-labs/exa-mcp-server/tree/15ffb50519e719dc791cdc750ce5ed1934c0a1ed",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 5246,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/exa-labs/exa-mcp-server"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-manavarya09-design-extract-beac0f",
+   "rank": 248,
+   "kind": "plugin",
+   "kind_rank": 46,
+   "name": "designlang",
+   "source": "github",
+   "version": null,
+   "commit": "7d37734ef93c57daf358638322ffcb2c45118b3d",
+   "repo": "Manavarya09/design-extract",
+   "path": "",
+   "marketplace": "Manavarya09/design-extract",
+   "spec": "git:https://github.com/Manavarya09/design-extract.git@7d37734ef93c57daf358638322ffcb2c45118b3d",
+   "url": "https://github.com/Manavarya09/design-extract/tree/7d37734ef93c57daf358638322ffcb2c45118b3d",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 5169,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Manavarya09/design-extract"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-zenbu-labs-terminal-browser-claude-code-plugin-e46909",
+   "rank": 249,
+   "kind": "plugin",
+   "kind_rank": 47,
+   "name": "terminal-browser",
+   "source": "github",
+   "version": null,
+   "commit": "b0935ef2ad4476c2112d0e74da0582208b34f707",
+   "repo": "zenbu-labs/terminal-browser",
+   "path": "claude-code-plugin",
+   "marketplace": "zenbu-labs/terminal-browser",
+   "spec": "git:https://github.com/zenbu-labs/terminal-browser.git@b0935ef2ad4476c2112d0e74da0582208b34f707#claude-code-plugin",
+   "url": "https://github.com/zenbu-labs/terminal-browser/tree/b0935ef2ad4476c2112d0e74da0582208b34f707/claude-code-plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4731,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/zenbu-labs/terminal-browser"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-nyldn-claude-octopus-2be7e9",
+   "rank": 250,
+   "kind": "plugin",
+   "kind_rank": 48,
+   "name": "octo",
+   "source": "github",
+   "version": null,
+   "commit": "7f979682e455198e170262eefd2469387e495ef6",
+   "repo": "nyldn/claude-octopus",
+   "path": "",
+   "marketplace": "nyldn/claude-octopus",
+   "spec": "git:https://github.com/nyldn/claude-octopus.git@7f979682e455198e170262eefd2469387e495ef6",
+   "url": "https://github.com/nyldn/claude-octopus/tree/7f979682e455198e170262eefd2469387e495ef6",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4477,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nyldn/claude-octopus"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-nykooi1-vibe-wise-834979",
+   "rank": 251,
+   "kind": "plugin",
+   "kind_rank": 49,
+   "name": "vibe-wise",
+   "source": "github",
+   "version": null,
+   "commit": "eefb53df406ab89e31444684ff32c1df205221f8",
+   "repo": "nykooi1/vibe-wise",
+   "path": "",
+   "marketplace": "nykooi1/vibe-wise",
+   "spec": "git:https://github.com/nykooi1/vibe-wise.git@eefb53df406ab89e31444684ff32c1df205221f8",
+   "url": "https://github.com/nykooi1/vibe-wise/tree/eefb53df406ab89e31444684ff32c1df205221f8",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4420,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nykooi1/vibe-wise"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-nowork-studio-notfair-plugin-eb0776",
+   "rank": 252,
+   "kind": "plugin",
+   "kind_rank": 50,
+   "name": "notfair",
+   "source": "github",
+   "version": null,
+   "commit": "be3a43233c8836525fafcfdb85f78fb08e56a43f",
+   "repo": "nowork-studio/notfair-plugin",
+   "path": "",
+   "marketplace": "nowork-studio/notfair-plugin",
+   "spec": "git:https://github.com/nowork-studio/notfair-plugin.git@be3a43233c8836525fafcfdb85f78fb08e56a43f",
+   "url": "https://github.com/nowork-studio/notfair-plugin/tree/be3a43233c8836525fafcfdb85f78fb08e56a43f",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4274,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/nowork-studio/notfair-plugin"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-expo-skills-plugins-expo-326cd2",
+   "rank": 253,
+   "kind": "plugin",
+   "kind_rank": 51,
+   "name": "expo",
+   "source": "github",
+   "version": null,
+   "commit": "d4f484024fec15196bfd3c272e953e3f983972cf",
+   "repo": "expo/skills",
+   "path": "plugins/expo",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/expo/skills.git@d4f484024fec15196bfd3c272e953e3f983972cf#plugins/expo",
+   "url": "https://github.com/expo/skills/tree/d4f484024fec15196bfd3c272e953e3f983972cf/plugins/expo",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4195,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/expo/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-nvidia-skills-plugins-nvidia-skills-6efc99",
+   "rank": 254,
+   "kind": "plugin",
+   "kind_rank": 52,
+   "name": "nvidia-skills",
+   "source": "github",
+   "version": null,
+   "commit": "029363a2023c0b24b1a75ddbeac11cd286d74afb",
+   "repo": "NVIDIA/skills",
+   "path": "plugins/nvidia-skills",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/NVIDIA/skills.git@029363a2023c0b24b1a75ddbeac11cd286d74afb#plugins/nvidia-skills",
+   "url": "https://github.com/NVIDIA/skills/tree/029363a2023c0b24b1a75ddbeac11cd286d74afb/plugins/nvidia-skills",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 4093,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/NVIDIA/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-nanako0129-sepia-bdf4a1",
+   "rank": 255,
+   "kind": "plugin",
+   "kind_rank": 53,
+   "name": "sepia",
+   "source": "github",
+   "version": null,
+   "commit": "0eb11d6c64c962fcc35f596c167c6e38045d6cb8",
+   "repo": "Nanako0129/sepia",
+   "path": "",
+   "marketplace": "Nanako0129/sepia",
+   "spec": "git:https://github.com/Nanako0129/sepia.git@0eb11d6c64c962fcc35f596c167c6e38045d6cb8",
+   "url": "https://github.com/Nanako0129/sepia/tree/0eb11d6c64c962fcc35f596c167c6e38045d6cb8",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3908,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Nanako0129/sepia"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-gemini-cli-extensions-conductor-353c57",
+   "rank": 256,
+   "kind": "plugin",
+   "kind_rank": 54,
+   "name": "conductor",
+   "source": "github",
+   "version": null,
+   "commit": "6e8f9a860bcdd6a2c423473c12e745200688c633",
+   "repo": "gemini-cli-extensions/conductor",
+   "path": "",
+   "marketplace": "gemini-cli-extensions/conductor",
+   "spec": "git:https://github.com/gemini-cli-extensions/conductor.git@6e8f9a860bcdd6a2c423473c12e745200688c633",
+   "url": "https://github.com/gemini-cli-extensions/conductor/tree/6e8f9a860bcdd6a2c423473c12e745200688c633",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3801,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/gemini-cli-extensions/conductor"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-davepoon-buildwithclaude-plugins-claude-imagine-411378",
+   "rank": 257,
+   "kind": "plugin",
+   "kind_rank": 55,
+   "name": "claude-imagine",
+   "source": "github",
+   "version": null,
+   "commit": "755aa79505c209bd41f254c1c25ebedb78ea603d",
+   "repo": "davepoon/buildwithclaude",
+   "path": "plugins/claude-imagine",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/davepoon/buildwithclaude.git@755aa79505c209bd41f254c1c25ebedb78ea603d#plugins/claude-imagine",
+   "url": "https://github.com/davepoon/buildwithclaude/tree/755aa79505c209bd41f254c1c25ebedb78ea603d/plugins/claude-imagine",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3777,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/davepoon/buildwithclaude"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-davepoon-buildwithclaude-plugins-crosstalk-ece27e",
+   "rank": 258,
+   "kind": "plugin",
+   "kind_rank": 56,
+   "name": "crosstalk",
+   "source": "github",
+   "version": null,
+   "commit": "755aa79505c209bd41f254c1c25ebedb78ea603d",
+   "repo": "davepoon/buildwithclaude",
+   "path": "plugins/crosstalk",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/davepoon/buildwithclaude.git@755aa79505c209bd41f254c1c25ebedb78ea603d#plugins/crosstalk",
+   "url": "https://github.com/davepoon/buildwithclaude/tree/755aa79505c209bd41f254c1c25ebedb78ea603d/plugins/crosstalk",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3777,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/davepoon/buildwithclaude"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-aws-agent-toolkit-for-aws-plugins-aws-agents-12010a",
+   "rank": 259,
+   "kind": "plugin",
+   "kind_rank": 57,
+   "name": "aws-agents",
+   "source": "github",
+   "version": null,
+   "commit": "0d6167ad2e6dfb858098c4162fe74d04c975532f",
+   "repo": "aws/agent-toolkit-for-aws",
+   "path": "plugins/aws-agents",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/aws/agent-toolkit-for-aws.git@0d6167ad2e6dfb858098c4162fe74d04c975532f#plugins/aws-agents",
+   "url": "https://github.com/aws/agent-toolkit-for-aws/tree/0d6167ad2e6dfb858098c4162fe74d04c975532f/plugins/aws-agents",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3527,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/aws/agent-toolkit-for-aws"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-aws-agent-toolkit-for-aws-plugins-aws-agents-for-devsecops-856b33",
+   "rank": 260,
+   "kind": "plugin",
+   "kind_rank": 58,
+   "name": "aws-agents-for-devsecops",
+   "source": "github",
+   "version": null,
+   "commit": "7bde20faede49dd5764c02b54f5e306849f7e3ca",
+   "repo": "aws/agent-toolkit-for-aws",
+   "path": "plugins/aws-agents-for-devsecops",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/aws/agent-toolkit-for-aws.git@7bde20faede49dd5764c02b54f5e306849f7e3ca#plugins/aws-agents-for-devsecops",
+   "url": "https://github.com/aws/agent-toolkit-for-aws/tree/7bde20faede49dd5764c02b54f5e306849f7e3ca/plugins/aws-agents-for-devsecops",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3527,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/aws/agent-toolkit-for-aws"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-agenticnotetaking-arscontexta-f41fcb",
+   "rank": 261,
+   "kind": "plugin",
+   "kind_rank": 59,
+   "name": "arscontexta",
+   "source": "github",
+   "version": null,
+   "commit": "2acfd5cc4473c4d06c46be63df748e77e00e2746",
+   "repo": "agenticnotetaking/arscontexta",
+   "path": "",
+   "marketplace": "agenticnotetaking/arscontexta",
+   "spec": "git:https://github.com/agenticnotetaking/arscontexta.git@2acfd5cc4473c4d06c46be63df748e77e00e2746",
+   "url": "https://github.com/agenticnotetaking/arscontexta/tree/2acfd5cc4473c4d06c46be63df748e77e00e2746",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3519,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/agenticnotetaking/arscontexta"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-cloudflare-skills-629e8d",
+   "rank": 262,
+   "kind": "plugin",
+   "kind_rank": 60,
+   "name": "cloudflare",
+   "source": "github",
+   "version": null,
+   "commit": "cbf893b954222276bf1af57e5f23379231e0efb9",
+   "repo": "cloudflare/skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/cloudflare/skills.git@cbf893b954222276bf1af57e5f23379231e0efb9",
+   "url": "https://github.com/cloudflare/skills/tree/cbf893b954222276bf1af57e5f23379231e0efb9",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3410,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/cloudflare/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-modelcontextprotocol-ext-apps-plugins-mcp-apps-f4febd",
+   "rank": 263,
+   "kind": "plugin",
+   "kind_rank": 61,
+   "name": "mcp-apps",
+   "source": "github",
+   "version": null,
+   "commit": "6d9bdc7babf275b759225aa722cbf5510c4c6021",
+   "repo": "modelcontextprotocol/ext-apps",
+   "path": "plugins/mcp-apps",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/modelcontextprotocol/ext-apps.git@6d9bdc7babf275b759225aa722cbf5510c4c6021#plugins/mcp-apps",
+   "url": "https://github.com/modelcontextprotocol/ext-apps/tree/6d9bdc7babf275b759225aa722cbf5510c4c6021/plugins/mcp-apps",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3127,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/modelcontextprotocol/ext-apps"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-chrisryugj-kordoc-plugins-kordoc-cb7324",
+   "rank": 264,
+   "kind": "plugin",
+   "kind_rank": 62,
+   "name": "kordoc",
+   "source": "github",
+   "version": null,
+   "commit": "3b7bb51313d119fa61e780313143737de48ae2ca",
+   "repo": "chrisryugj/kordoc",
+   "path": "plugins/kordoc",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/chrisryugj/kordoc.git@3b7bb51313d119fa61e780313143737de48ae2ca#plugins/kordoc",
+   "url": "https://github.com/chrisryugj/kordoc/tree/3b7bb51313d119fa61e780313143737de48ae2ca/plugins/kordoc",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 3062,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/chrisryugj/kordoc"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-rohitg00-pro-workflow-7906ba",
+   "rank": 265,
+   "kind": "plugin",
+   "kind_rank": 63,
+   "name": "pro-workflow",
+   "source": "github",
+   "version": null,
+   "commit": "86d5f2770bd8e1695e40888e4242841eb7cbad4f",
+   "repo": "rohitg00/pro-workflow",
+   "path": "",
+   "marketplace": "rohitg00/pro-workflow",
+   "spec": "git:https://github.com/rohitg00/pro-workflow.git@86d5f2770bd8e1695e40888e4242841eb7cbad4f",
+   "url": "https://github.com/rohitg00/pro-workflow/tree/86d5f2770bd8e1695e40888e4242841eb7cbad4f",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2966,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/rohitg00/pro-workflow"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-jeremylongshore-tons-of-skills-marketplace-plugins-productivity-000-jeremy-content-consistenc-19ef9d",
+   "rank": 266,
+   "kind": "plugin",
+   "kind_rank": 64,
+   "name": "000-jeremy-content-consistency-validator",
+   "source": "github",
+   "version": null,
+   "commit": "820dfc85762b0890e957952e56a6610399ed4e20",
+   "repo": "jeremylongshore/tons-of-skills-marketplace",
+   "path": "plugins/productivity/000-jeremy-content-consistency-validator",
+   "marketplace": "jeremylongshore/tons-of-skills-marketplace",
+   "spec": "git:https://github.com/jeremylongshore/tons-of-skills-marketplace.git@820dfc85762b0890e957952e56a6610399ed4e20#plugins/productivity/000-jeremy-content-consistency-validator",
+   "url": "https://github.com/jeremylongshore/tons-of-skills-marketplace/tree/820dfc85762b0890e957952e56a6610399ed4e20/plugins/productivity/000-jeremy-content-consistency-validator",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2932,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/jeremylongshore/tons-of-skills-marketplace"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-jeremylongshore-tons-of-skills-marketplace-plugins-productivity-002-jeremy-yaml-master-agent-3d185a",
+   "rank": 267,
+   "kind": "plugin",
+   "kind_rank": 65,
+   "name": "002-jeremy-yaml-master-agent",
+   "source": "github",
+   "version": null,
+   "commit": "820dfc85762b0890e957952e56a6610399ed4e20",
+   "repo": "jeremylongshore/tons-of-skills-marketplace",
+   "path": "plugins/productivity/002-jeremy-yaml-master-agent",
+   "marketplace": "jeremylongshore/tons-of-skills-marketplace",
+   "spec": "git:https://github.com/jeremylongshore/tons-of-skills-marketplace.git@820dfc85762b0890e957952e56a6610399ed4e20#plugins/productivity/002-jeremy-yaml-master-agent",
+   "url": "https://github.com/jeremylongshore/tons-of-skills-marketplace/tree/820dfc85762b0890e957952e56a6610399ed4e20/plugins/productivity/002-jeremy-yaml-master-agent",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2932,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/jeremylongshore/tons-of-skills-marketplace"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-zilliztech-memsearch-plugins-claude-code-0bce1c",
+   "rank": 268,
+   "kind": "plugin",
+   "kind_rank": 66,
+   "name": "memsearch",
+   "source": "github",
+   "version": null,
+   "commit": "ff6bdc329fa12875e9770a301cd57dabe7d614d3",
+   "repo": "zilliztech/memsearch",
+   "path": "plugins/claude-code",
+   "marketplace": "zilliztech/memsearch",
+   "spec": "git:https://github.com/zilliztech/memsearch.git@ff6bdc329fa12875e9770a301cd57dabe7d614d3#plugins/claude-code",
+   "url": "https://github.com/zilliztech/memsearch/tree/ff6bdc329fa12875e9770a301cd57dabe7d614d3/plugins/claude-code",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2913,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/zilliztech/memsearch"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-chrisryugj-korean-law-mcp-e1c11e",
+   "rank": 269,
+   "kind": "plugin",
+   "kind_rank": 67,
+   "name": "korean-law",
+   "source": "github",
+   "version": null,
+   "commit": "3620a88f3c368dff46a0e3302326b002bd70efc9",
+   "repo": "chrisryugj/korean-law-mcp",
+   "path": "",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/chrisryugj/korean-law-mcp.git@3620a88f3c368dff46a0e3302326b002bd70efc9",
+   "url": "https://github.com/chrisryugj/korean-law-mcp/tree/3620a88f3c368dff46a0e3302326b002bd70efc9",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2904,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/chrisryugj/korean-law-mcp"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-rohitg00-awesome-claude-code-toolkit-plugins-a11y-audit-48fc1d",
+   "rank": 270,
+   "kind": "plugin",
+   "kind_rank": 68,
+   "name": "a11y-audit",
+   "source": "github",
+   "version": null,
+   "commit": "ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9",
+   "repo": "rohitg00/awesome-claude-code-toolkit",
+   "path": "plugins/a11y-audit",
+   "marketplace": "rohitg00/awesome-claude-code-toolkit",
+   "spec": "git:https://github.com/rohitg00/awesome-claude-code-toolkit.git@ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9#plugins/a11y-audit",
+   "url": "https://github.com/rohitg00/awesome-claude-code-toolkit/tree/ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9/plugins/a11y-audit",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2851,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/rohitg00/awesome-claude-code-toolkit"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-rohitg00-awesome-claude-code-toolkit-plugins-accessibility-checker-0f679b",
+   "rank": 271,
+   "kind": "plugin",
+   "kind_rank": 69,
+   "name": "accessibility-checker",
+   "source": "github",
+   "version": null,
+   "commit": "ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9",
+   "repo": "rohitg00/awesome-claude-code-toolkit",
+   "path": "plugins/accessibility-checker",
+   "marketplace": "rohitg00/awesome-claude-code-toolkit",
+   "spec": "git:https://github.com/rohitg00/awesome-claude-code-toolkit.git@ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9#plugins/accessibility-checker",
+   "url": "https://github.com/rohitg00/awesome-claude-code-toolkit/tree/ebdf1d596d2cde5c5cceb32177e8d1cf4829e7d9/plugins/accessibility-checker",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2851,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/rohitg00/awesome-claude-code-toolkit"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-figma-mcp-server-guide-04e326",
+   "rank": 272,
+   "kind": "plugin",
+   "kind_rank": 70,
+   "name": "figma",
+   "source": "github",
+   "version": null,
+   "commit": "43a06ff1738935ad5c3d9b0437b5373aaf45cdc3",
+   "repo": "figma/mcp-server-guide",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/figma/mcp-server-guide.git@43a06ff1738935ad5c3d9b0437b5373aaf45cdc3",
+   "url": "https://github.com/figma/mcp-server-guide/tree/43a06ff1738935ad5c3d9b0437b5373aaf45cdc3",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2216,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/figma/mcp-server-guide"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-zhuyansen-new-term-radar-045b75",
+   "rank": 273,
+   "kind": "plugin",
+   "kind_rank": 71,
+   "name": "new-term-radar",
+   "source": "github",
+   "version": null,
+   "commit": "3cf6515c4076cb2800819473062d9b36d563d0fe",
+   "repo": "zhuyansen/new-term-radar",
+   "path": "",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/zhuyansen/new-term-radar.git@3cf6515c4076cb2800819473062d9b36d563d0fe",
+   "url": "https://github.com/zhuyansen/new-term-radar/tree/3cf6515c4076cb2800819473062d9b36d563d0fe",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2199,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/zhuyansen/new-term-radar"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-stripe-ai-providers-claude-plugin-63c9ad",
+   "rank": 274,
+   "kind": "plugin",
+   "kind_rank": 72,
+   "name": "stripe",
+   "source": "github",
+   "version": null,
+   "commit": "deae744bc0cbf6034b4b6f22f51c690b71a4e779",
+   "repo": "stripe/ai",
+   "path": "providers/claude/plugin",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/stripe/ai.git@deae744bc0cbf6034b4b6f22f51c690b71a4e779#providers/claude/plugin",
+   "url": "https://github.com/stripe/ai/tree/deae744bc0cbf6034b4b6f22f51c690b71a4e779/providers/claude/plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2075,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/stripe/ai"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-microsoftdocs-mcp-bd70ac",
+   "rank": 275,
+   "kind": "plugin",
+   "kind_rank": 73,
+   "name": "microsoft-docs",
+   "source": "github",
+   "version": null,
+   "commit": "f0a9478a954c9b3a7c6525a5183466902ca60731",
+   "repo": "MicrosoftDocs/mcp",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/MicrosoftDocs/mcp.git@f0a9478a954c9b3a7c6525a5183466902ca60731",
+   "url": "https://github.com/MicrosoftDocs/mcp/tree/f0a9478a954c9b3a7c6525a5183466902ca60731",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 2002,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/MicrosoftDocs/mcp"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-epicgames-unreal-engine-skills-for-claude-code-plugin-7591d0",
+   "rank": 276,
+   "kind": "plugin",
+   "kind_rank": 74,
+   "name": "unreal-engine-skills-for-claude-code",
+   "source": "github",
+   "version": null,
+   "commit": "0e27bde2b55c5d3f6948532f4296aaa3654d8f4b",
+   "repo": "EpicGames/unreal-engine-skills-for-claude-code-plugin",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/EpicGames/unreal-engine-skills-for-claude-code-plugin.git@0e27bde2b55c5d3f6948532f4296aaa3654d8f4b",
+   "url": "https://github.com/EpicGames/unreal-engine-skills-for-claude-code-plugin/tree/0e27bde2b55c5d3f6948532f4296aaa3654d8f4b",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1999,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/EpicGames/unreal-engine-skills-for-claude-code-plugin"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-microsoft-azure-skills-efe0cf",
+   "rank": 277,
+   "kind": "plugin",
+   "kind_rank": 75,
+   "name": "azure",
+   "source": "github",
+   "version": null,
+   "commit": "5b4f0c0778079a2f568581107f23349ce9a0a9b2",
+   "repo": "microsoft/azure-skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/microsoft/azure-skills.git@5b4f0c0778079a2f568581107f23349ce9a0a9b2",
+   "url": "https://github.com/microsoft/azure-skills/tree/5b4f0c0778079a2f568581107f23349ce9a0a9b2",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1660,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/microsoft/azure-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-vshulcz-deja-vu-claude-plugin-180d55",
+   "rank": 278,
+   "kind": "plugin",
+   "kind_rank": 76,
+   "name": "deja-vu",
+   "source": "github",
+   "version": null,
+   "commit": "8fbf4e8d71826a28db52be416349c682298bc9cf",
+   "repo": "vshulcz/deja-vu",
+   "path": "claude-plugin",
+   "marketplace": "wshobson/agents",
+   "spec": "git:https://github.com/vshulcz/deja-vu.git@8fbf4e8d71826a28db52be416349c682298bc9cf#claude-plugin",
+   "url": "https://github.com/vshulcz/deja-vu/tree/8fbf4e8d71826a28db52be416349c682298bc9cf/claude-plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1632,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/vshulcz/deja-vu"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-jaypokale-chisle-5cbe4a",
+   "rank": 279,
+   "kind": "plugin",
+   "kind_rank": 77,
+   "name": "chisle",
+   "source": "github",
+   "version": null,
+   "commit": "b0fde39bbc2901683d27114071b5954c2799430a",
+   "repo": "JayPokale/Chisle",
+   "path": "",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/JayPokale/Chisle.git@b0fde39bbc2901683d27114071b5954c2799430a",
+   "url": "https://github.com/JayPokale/Chisle/tree/b0fde39bbc2901683d27114071b5954c2799430a",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1228,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/JayPokale/Chisle"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-atlassian-atlassian-mcp-server-3d934d",
+   "rank": 280,
+   "kind": "plugin",
+   "kind_rank": 78,
+   "name": "atlassian",
+   "source": "github",
+   "version": null,
+   "commit": "b74220d41142fae52b4f680c805b2ab81050991a",
+   "repo": "atlassian/atlassian-mcp-server",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/atlassian/atlassian-mcp-server.git@b74220d41142fae52b4f680c805b2ab81050991a",
+   "url": "https://github.com/atlassian/atlassian-mcp-server/tree/b74220d41142fae52b4f680c805b2ab81050991a",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1183,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/atlassian/atlassian-mcp-server"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-forcedotcom-sf-skills-plugins-builder-salesforce-development-42ccd0",
+   "rank": 281,
+   "kind": "plugin",
+   "kind_rank": 79,
+   "name": "salesforce-development",
+   "source": "github",
+   "version": null,
+   "commit": "d3088edf8776a3c23f55aadead587eb3903be2d3",
+   "repo": "forcedotcom/sf-skills",
+   "path": "plugins/builder/salesforce-development",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/forcedotcom/sf-skills.git@d3088edf8776a3c23f55aadead587eb3903be2d3#plugins/builder/salesforce-development",
+   "url": "https://github.com/forcedotcom/sf-skills/tree/d3088edf8776a3c23f55aadead587eb3903be2d3/plugins/builder/salesforce-development",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1175,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/forcedotcom/sf-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-superdesigndev-superdesign-skill-567577",
+   "rank": 282,
+   "kind": "plugin",
+   "kind_rank": 80,
+   "name": "superdesign",
+   "source": "github",
+   "version": null,
+   "commit": "f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+   "repo": "superdesigndev/superdesign-skill",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/superdesigndev/superdesign-skill.git@f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+   "url": "https://github.com/superdesigndev/superdesign-skill/tree/f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 1033,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/superdesigndev/superdesign-skill"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-awslabs-agent-plugins-plugins-amazon-location-service-d34693",
+   "rank": 283,
+   "kind": "plugin",
+   "kind_rank": 81,
+   "name": "amazon-location-service",
+   "source": "github",
+   "version": null,
+   "commit": "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+   "repo": "awslabs/agent-plugins",
+   "path": "plugins/amazon-location-service",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/awslabs/agent-plugins.git@097fe8ad56d8a1d5e2c81d7880adf145553cf244#plugins/amazon-location-service",
+   "url": "https://github.com/awslabs/agent-plugins/tree/097fe8ad56d8a1d5e2c81d7880adf145553cf244/plugins/amazon-location-service",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 947,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/awslabs/agent-plugins"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-awslabs-agent-plugins-plugins-aws-amplify-c06bef",
+   "rank": 284,
+   "kind": "plugin",
+   "kind_rank": 82,
+   "name": "aws-amplify",
+   "source": "github",
+   "version": null,
+   "commit": "097fe8ad56d8a1d5e2c81d7880adf145553cf244",
+   "repo": "awslabs/agent-plugins",
+   "path": "plugins/aws-amplify",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/awslabs/agent-plugins.git@097fe8ad56d8a1d5e2c81d7880adf145553cf244#plugins/aws-amplify",
+   "url": "https://github.com/awslabs/agent-plugins/tree/097fe8ad56d8a1d5e2c81d7880adf145553cf244/plugins/aws-amplify",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 947,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/awslabs/agent-plugins"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-cygnux-labs-tracekit-plugin-0fcdd4",
+   "rank": 285,
+   "kind": "plugin",
+   "kind_rank": 83,
+   "name": "tracekit",
+   "source": "github",
+   "version": null,
+   "commit": "4c95b3c7c9d5689dafab148f8cf9bec393d08ba4",
+   "repo": "Cygnux-Labs/Tracekit",
+   "path": "plugin",
+   "marketplace": "davepoon/buildwithclaude",
+   "spec": "git:https://github.com/Cygnux-Labs/Tracekit.git@4c95b3c7c9d5689dafab148f8cf9bec393d08ba4#plugin",
+   "url": "https://github.com/Cygnux-Labs/Tracekit/tree/4c95b3c7c9d5689dafab148f8cf9bec393d08ba4/plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 722,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Cygnux-Labs/Tracekit"
+   },
+   "selection": "ranked"
+  },
+  {
+   "id": "plugin-unity-technologies-unity-agent-plugin-24b68c",
+   "rank": 286,
+   "kind": "plugin",
+   "kind_rank": 84,
+   "name": "unity",
+   "source": "github",
+   "version": null,
+   "commit": "81b6079e465246dbca42987469e80b71c2cca9d2",
+   "repo": "Unity-Technologies/unity-agent-plugin",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/Unity-Technologies/unity-agent-plugin.git@81b6079e465246dbca42987469e80b71c2cca9d2",
+   "url": "https://github.com/Unity-Technologies/unity-agent-plugin/tree/81b6079e465246dbca42987469e80b71c2cca9d2",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 660,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Unity-Technologies/unity-agent-plugin"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-shopify-shopify-ai-toolkit-22a5ac",
+   "rank": 287,
+   "kind": "plugin",
+   "kind_rank": 85,
+   "name": "shopify-ai-toolkit",
+   "source": "github",
+   "version": null,
+   "commit": "3c32168c6e4cb73f0b46243c82586176ca58bb48",
+   "repo": "Shopify/Shopify-AI-Toolkit",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/Shopify/Shopify-AI-Toolkit.git@3c32168c6e4cb73f0b46243c82586176ca58bb48",
+   "url": "https://github.com/Shopify/Shopify-AI-Toolkit/tree/3c32168c6e4cb73f0b46243c82586176ca58bb48",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 652,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/Shopify/Shopify-AI-Toolkit"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-duckdb-duckdb-skills-d9c55c",
+   "rank": 288,
+   "kind": "plugin",
+   "kind_rank": 86,
+   "name": "duckdb-skills",
+   "source": "github",
+   "version": null,
+   "commit": "7feda8e01e22bc0886c86123f3884947e36d8c69",
+   "repo": "duckdb/duckdb-skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/duckdb/duckdb-skills.git@7feda8e01e22bc0886c86123f3884947e36d8c69",
+   "url": "https://github.com/duckdb/duckdb-skills/tree/7feda8e01e22bc0886c86123f3884947e36d8c69",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 618,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/duckdb/duckdb-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-gitroomhq-postiz-agent-23ce7e",
+   "rank": 289,
+   "kind": "plugin",
+   "kind_rank": 87,
+   "name": "postiz",
+   "source": "github",
+   "version": null,
+   "commit": "86e02524377cc60a6cd6ef67fd10a3caeade8d2c",
+   "repo": "gitroomhq/postiz-agent",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/gitroomhq/postiz-agent.git@86e02524377cc60a6cd6ef67fd10a3caeade8d2c",
+   "url": "https://github.com/gitroomhq/postiz-agent/tree/86e02524377cc60a6cd6ef67fd10a3caeade8d2c",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 580,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/gitroomhq/postiz-agent"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-clickhouse-agent-skills-5127b5",
+   "rank": 290,
+   "kind": "plugin",
+   "kind_rank": 88,
+   "name": "clickhouse-best-practices",
+   "source": "github",
+   "version": null,
+   "commit": "356a8c1b9a7392adb389a132f5ad3fec38532a03",
+   "repo": "ClickHouse/agent-skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/ClickHouse/agent-skills.git@356a8c1b9a7392adb389a132f5ad3fec38532a03",
+   "url": "https://github.com/ClickHouse/agent-skills/tree/356a8c1b9a7392adb389a132f5ad3fec38532a03",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 572,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/ClickHouse/agent-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-theqtcompanyrnd-agent-skills-8b692b",
+   "rank": 291,
+   "kind": "plugin",
+   "kind_rank": 89,
+   "name": "qt-development-skills",
+   "source": "github",
+   "version": null,
+   "commit": "a784c48445e34f126760f17ba0600a25f2d19968",
+   "repo": "TheQtCompanyRnD/agent-skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/TheQtCompanyRnD/agent-skills.git@a784c48445e34f126760f17ba0600a25f2d19968",
+   "url": "https://github.com/TheQtCompanyRnD/agent-skills/tree/a784c48445e34f126760f17ba0600a25f2d19968",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 554,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/TheQtCompanyRnD/agent-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-makenotion-claude-code-notion-plugin-286f75",
+   "rank": 292,
+   "kind": "plugin",
+   "kind_rank": 90,
+   "name": "notion",
+   "source": "github",
+   "version": null,
+   "commit": "9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+   "repo": "makenotion/claude-code-notion-plugin",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/makenotion/claude-code-notion-plugin.git@9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+   "url": "https://github.com/makenotion/claude-code-notion-plugin/tree/9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 511,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/makenotion/claude-code-notion-plugin"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-amd-skills-skills-b1f8fe",
+   "rank": 293,
+   "kind": "plugin",
+   "kind_rank": 91,
+   "name": "amd-skills",
+   "source": "github",
+   "version": null,
+   "commit": "d4417422312c82d4761d3255b69bfcd411147cf3",
+   "repo": "amd/skills",
+   "path": "skills",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/amd/skills.git@d4417422312c82d4761d3255b69bfcd411147cf3#skills",
+   "url": "https://github.com/amd/skills/tree/d4417422312c82d4761d3255b69bfcd411147cf3/skills",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 508,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/amd/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-tavily-ai-skills-956deb",
+   "rank": 294,
+   "kind": "plugin",
+   "kind_rank": 92,
+   "name": "tavily",
+   "source": "github",
+   "version": null,
+   "commit": "778122e5f9c680f541eeceda5a5b36405eb7980c",
+   "repo": "tavily-ai/skills",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/tavily-ai/skills.git@778122e5f9c680f541eeceda5a5b36405eb7980c",
+   "url": "https://github.com/tavily-ai/skills/tree/778122e5f9c680f541eeceda5a5b36405eb7980c",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 496,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/tavily-ai/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-astronomer-agents-8a5ebb",
+   "rank": 295,
+   "kind": "plugin",
+   "kind_rank": 93,
+   "name": "astronomer-data-agents",
+   "source": "github",
+   "version": null,
+   "commit": "35b9610bb2710c37ca11326c4cbf7818b6725fec",
+   "repo": "astronomer/agents",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/astronomer/agents.git@35b9610bb2710c37ca11326c4cbf7818b6725fec",
+   "url": "https://github.com/astronomer/agents/tree/35b9610bb2710c37ca11326c4cbf7818b6725fec",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 464,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/astronomer/agents"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-zapier-zapier-mcp-plugins-zapier-22a534",
+   "rank": 296,
+   "kind": "plugin",
+   "kind_rank": 94,
+   "name": "zapier",
+   "source": "github",
+   "version": null,
+   "commit": "54a12277a12c60df51ec16cf4e4ef0b27b166649",
+   "repo": "zapier/zapier-mcp",
+   "path": "plugins/zapier",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/zapier/zapier-mcp.git@54a12277a12c60df51ec16cf4e4ef0b27b166649#plugins/zapier",
+   "url": "https://github.com/zapier/zapier-mcp/tree/54a12277a12c60df51ec16cf4e4ef0b27b166649/plugins/zapier",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 463,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/zapier/zapier-mcp"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-growthxai-output-coding_assistants-claude-plugins-outputai-552c06",
+   "rank": 297,
+   "kind": "plugin",
+   "kind_rank": 95,
+   "name": "outputai",
+   "source": "github",
+   "version": null,
+   "commit": "2032ff617a62840ae786f0721ebb2941c5e2bd00",
+   "repo": "growthxai/output",
+   "path": "coding_assistants/claude/plugins/outputai",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/growthxai/output.git@2032ff617a62840ae786f0721ebb2941c5e2bd00#coding_assistants/claude/plugins/outputai",
+   "url": "https://github.com/growthxai/output/tree/2032ff617a62840ae786f0721ebb2941c5e2bd00/coding_assistants/claude/plugins/outputai",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 445,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/growthxai/output"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-mondaycom-mcp-plugins-monday-crm-eb5243",
+   "rank": 298,
+   "kind": "plugin",
+   "kind_rank": 96,
+   "name": "monday-crm",
+   "source": "github",
+   "version": null,
+   "commit": "8fdc0b4af07a4b7e1059ca3f8320d64968737b8e",
+   "repo": "mondaycom/mcp",
+   "path": "plugins/monday-crm",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/mondaycom/mcp.git@8fdc0b4af07a4b7e1059ca3f8320d64968737b8e#plugins/monday-crm",
+   "url": "https://github.com/mondaycom/mcp/tree/8fdc0b4af07a4b7e1059ca3f8320d64968737b8e/plugins/monday-crm",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 440,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/mondaycom/mcp"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-greptileai-skills-plugins-greptile-ec55bc",
+   "rank": 299,
+   "kind": "plugin",
+   "kind_rank": 97,
+   "name": "greptile",
+   "source": "github",
+   "version": null,
+   "commit": "4a13eb124ab175d018869fe7cc4d203e374571dc",
+   "repo": "greptileai/skills",
+   "path": "plugins/greptile",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/greptileai/skills.git@4a13eb124ab175d018869fe7cc4d203e374571dc#plugins/greptile",
+   "url": "https://github.com/greptileai/skills/tree/4a13eb124ab175d018869fe7cc4d203e374571dc/plugins/greptile",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 439,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/greptileai/skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-spotify-save-to-spotify-plugin-33bfef",
+   "rank": 300,
+   "kind": "plugin",
+   "kind_rank": 98,
+   "name": "save-to-spotify",
+   "source": "github",
+   "version": null,
+   "commit": "9d05c8cd8c8559552f84e27fe30f46b7693ce69a",
+   "repo": "spotify/save-to-spotify",
+   "path": "plugin",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/spotify/save-to-spotify.git@9d05c8cd8c8559552f84e27fe30f46b7693ce69a#plugin",
+   "url": "https://github.com/spotify/save-to-spotify/tree/9d05c8cd8c8559552f84e27fe30f46b7693ce69a/plugin",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 411,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/spotify/save-to-spotify"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-databricks-databricks-agent-skills-plugins-databricks-claude-169599",
+   "rank": 301,
+   "kind": "plugin",
+   "kind_rank": 99,
+   "name": "databricks",
+   "source": "github",
+   "version": null,
+   "commit": "c1964266c7aa6063d89036691d0594420ffa0129",
+   "repo": "databricks/databricks-agent-skills",
+   "path": "plugins/databricks/claude",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/databricks/databricks-agent-skills.git@c1964266c7aa6063d89036691d0594420ffa0129#plugins/databricks/claude",
+   "url": "https://github.com/databricks/databricks-agent-skills/tree/c1964266c7aa6063d89036691d0594420ffa0129/plugins/databricks/claude",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 407,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/databricks/databricks-agent-skills"
+   },
+   "selection": "official"
+  },
+  {
+   "id": "plugin-codspeedhq-codspeed-b6050e",
+   "rank": 302,
+   "kind": "plugin",
+   "kind_rank": 100,
+   "name": "codspeed",
+   "source": "github",
+   "version": null,
+   "commit": "59cfc90540bb3717d8acf4ad03f7b5531c8e1a3d",
+   "repo": "CodSpeedHQ/codspeed",
+   "path": "",
+   "marketplace": "anthropics/claude-plugins-official",
+   "spec": "git:https://github.com/CodSpeedHQ/codspeed.git@59cfc90540bb3717d8acf4ad03f7b5531c8e1a3d",
+   "url": "https://github.com/CodSpeedHQ/codspeed/tree/59cfc90540bb3717d8acf4ad03f7b5531c8e1a3d",
+   "popularity": {
+    "metric": "github_stars",
+    "value": 396,
+    "collected_at": "2026-11-20",
+    "source_url": "https://api.github.com/repos/CodSpeedHQ/codspeed"
+   },
+   "selection": "official"
   }
  ],
  "excluded": [
@@ -3467,6 +7613,296 @@
   {
    "repo": "DietrichGebert/ponytail",
    "path": "skills/ponytail-review",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "career-ops-hq/career-ops",
+   "path": "antigravity-directory/skills/career-ops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "career-ops-hq/career-ops",
+   "path": "claude-directory/skills/career-ops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "career-ops-hq/career-ops",
+   "path": "cursor-directory/skills/career-ops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "career-ops-hq/career-ops",
+   "path": "openai-directory/skills/career-ops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "ayghri/i-have-adhd",
+   "path": "skills/i-have-adhd",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/ab-testing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/ad-creative",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/ads",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/ai-seo",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/analytics",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/aso",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/attribution",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/churn-prevention",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/co-marketing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/cold-email",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/community-marketing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/competitor-profiling",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/competitors",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/content-strategy",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/conversion-tracking",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/copy-editing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/copywriting",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/cro",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/customer-research",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/directory-submissions",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/emails",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/events",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/free-tools",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/image",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/influencer-marketing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/launch",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/lead-magnets",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/link-building",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/marketing-council",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/marketing-ideas",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/marketing-loops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/marketing-plan",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/marketing-psychology",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/offers",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/onboarding",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/paywalls",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/popups",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/pricing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/product-marketing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/programmatic-seo",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/prospecting",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/public-relations",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/referrals",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/reverse-engineer-marketing",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/revops",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/sales-enablement",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/schema",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/seo-audit",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/signup",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/site-architecture",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/sms",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/social",
+   "reason": "already scanned as part of a selected plugin"
+  },
+  {
+   "repo": "coreyhaines31/marketingskills",
+   "path": "skills/video",
    "reason": "already scanned as part of a selected plugin"
   }
  ]

@@ -171,8 +171,11 @@ def test_shipped_targets_json_validates_and_has_the_agreed_split():
     doc = json.loads((ROOT / "report" / "targets.json").read_text())
     assert collect.validate_targets(doc) == []
     kinds = [t["kind"] for t in doc["targets"]]
-    assert (kinds.count("mcp"), kinds.count("skill"), kinds.count("plugin")) == (50, 30, 20)
-    assert len({t["id"] for t in doc["targets"]}) == 100
+    # User decision 2026-11-21: as many as pass the eligibility rules, up to 250 / 150 / 100 (the collect's caps),
+    # and at least the workflow's floors (100 / 40 / 80) so a broken collect is never shipped.
+    m, sk, pl = kinds.count("mcp"), kinds.count("skill"), kinds.count("plugin")
+    assert 100 <= m <= 250 and 40 <= sk <= 150 and 80 <= pl <= 100, (m, sk, pl)
+    assert len({t["id"] for t in doc["targets"]}) == len(kinds)
 
 
 @pytest.mark.parametrize("mutate, needle", [

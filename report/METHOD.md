@@ -1,12 +1,14 @@
-# Method: how the Top 100 were chosen and scanned
+# Method: how the targets were chosen and scanned
 
 This page records every choice behind the list in `report/targets.json` and the results built from
 it. The numbers in brackets are constants in `report/collect.py`; change them there and here together.
 
-## The 100
+## The list
 
-- **50 MCP servers, 30 skills and 20 plugins.** The split is a fixed editorial choice, not derived
-  from data: MCP servers are the most installed of the three and the most varied in code.
+- **Up to 250 MCP servers, 150 skills and 100 plugins**: as many as pass the eligibility rules below
+  (the 2026-11-20 scan: 138, 64 and 100). The caps are an editorial choice, not derived from data; the
+  eligibility rules, not the caps, limit MCP servers and skills. Before 2026-11-21 the report was a
+  fixed 50 / 30 / 20.
 - Every entry is **pinned**: npm and PyPI packages to the exact latest version at collection time,
   skills and plugins to a 40-character git commit SHA. The scan is of that pin, not of "latest".
 - Each entry records the popularity metric, its value, the date it was collected and the API URL it
@@ -41,7 +43,7 @@ it. The numbers in brackets are constants in `report/collect.py`; change them th
   The top 160 accepted npm candidates [NPM_POOL] are checked against the downloads API.
   `targets.json` lists the popular packages that were excluded and why under `excluded`.
 - **Official servers always included.** Every server in `modelcontextprotocol/servers/src` is included
-  whatever its rank, then the rest of the 50 are filled by downloads.
+  whatever its rank, then the rest are filled by downloads.
 - **Dedupe** is by registry and name. An npm and a PyPI package with the same name are different
   packages and can both appear.
 - Remote-only (hosted URL) servers are out of scope: a static scan needs code to read.
@@ -96,9 +98,12 @@ it. The numbers in brackets are constants in `report/collect.py`; change them th
 
 ## Review before publishing
 
-- Every target whose verdict is not clean is checked by a person before the site is published. Each
-  counted finding (severity medium or above) gets a status in `report/review.json`:
+- Every target whose verdict is not clean is reviewed before the site is published. Each counted finding (severity medium or above) gets a status in `report/review.json`:
   `confirmed`, `false-positive` (shown as "Known false alarm") or `expected-behaviour`, with a note.
+- Each entry names its reviewer. Since 2026-11-21 most reviews are AI-assisted (Claude reading the pinned
+  code, recorded as "Claude (AI-assisted review)"); a maintainer spot-checks the highest-risk targets
+  (every judgement call and every target the rules rated malicious), recorded as `spot_check`. The overview
+  states both counts.
 - `report/needs_review.py` writes the worklist (`report/out/needs-review.md`) with each open finding and
   the local copy of the downloaded files. It never writes reviews.
 - `report/build_site.py` refuses to build while any such finding lacks a review entry.

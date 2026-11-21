@@ -12,10 +12,10 @@ scanner, and watches Cursor, Codex CLI, Claude Desktop and VS Code.
 ![agent](https://img.shields.io/badge/agent-Claude%20Code-d97757)
 ![tests](https://img.shields.io/badge/tests-2900%2B%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![report](https://img.shields.io/badge/report-top%20100%20scan-0b5cad)](https://anasash.github.io/bawwab/)
+[![report](https://img.shields.io/badge/report-popular%20extensions%20scan-0b5cad)](https://anasash.github.io/bawwab/)
 
-**[See the Top-100 scan report →](https://anasash.github.io/bawwab/)** The 100 most popular MCP servers, skills and plugins,
-scanned by Bawwab's static rules, with hand-review notes on the flagged ones.
+**[See the scan report →](https://anasash.github.io/bawwab/)** The most popular MCP servers, skills and plugins (302 in
+the latest scan), scanned by Bawwab's static rules, with a reviewed note on every flagged finding.
 
 ```text
                       _____________
@@ -427,9 +427,9 @@ Bawwab is analysed from two sides:
 
 Both are checked against evidence: the [benchmark](#benchmark) (labelled malicious and benign samples,
 precision/recall/false-positive rate), a red-team set of attacks on Bawwab itself (`eval/redteam/`), and real
-popular packages that must come back clean. The [top-100 report](https://anasash.github.io/bawwab/) applies
-the same rules to the most popular MCP servers, skills and plugins, with every flagged finding hand-reviewed
-or labelled "Not yet reviewed".
+popular packages that must come back clean. The [scan report](https://anasash.github.io/bawwab/) applies
+the same rules to the most popular MCP servers, skills and plugins, with every flagged finding reviewed
+(AI-assisted, with a maintainer spot-check of the highest-risk ones) or labelled "Not yet reviewed".
 
 ## Honest limitations
 

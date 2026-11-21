@@ -64,9 +64,10 @@ def test_scan_job_has_no_secrets_and_no_stored_token(wf):
 
 def test_scan_job_steps(wf):
     scan = wf["jobs"]["scan"]
-    assert scan["timeout-minutes"] == 180
+    assert scan["timeout-minutes"] == 300  # ~300 targets; a job may run at most 360
     collect = _step(wf, "scan", "report/collect.py --refresh")
     assert collect["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert "--mcp 250 --skills 150 --plugins 100" in collect["run"]
     assert "--allow-unreviewed" in _step(wf, "scan", "report/build_site.py")["run"]
     assert "GITHUB_STEP_SUMMARY" in _step(wf, "scan", "report/needs_review.py")["run"]
     scan_step = _step(wf, "scan", "report/run_scan.sh")
@@ -78,7 +79,10 @@ def test_scan_job_steps(wf):
     assert pages["with"]["path"] == "report/out/site"
     data = next(s for s in _steps(wf, "scan") if "/upload-artifact@" in (s.get("uses") or ""))
     assert data["with"]["name"] == "report-data"
-    assert "report/targets.json" in data["with"]["path"] and "report/out/results.json" in data["with"]["path"]
+    assert "report/targets.json" in data["with"]["path"] and "report/results.json" in data["with"]["path"]
+    assert wf["env"]["RESULTS"] == "report/results.json"
+    for needle in ("report/build_site.py", "report/needs_review.py", "report/run_scan.sh"):
+        assert '"$RESULTS"' in _step(wf, "scan", needle)["run"], needle
 
 
 def test_short_or_failed_collect_stops_before_scanning(wf):
@@ -88,8 +92,19 @@ def test_short_or_failed_collect_stops_before_scanning(wf):
     i_check = next(i for i, r in enumerate(runs) if "collect.load_targets" in r)
     i_scan = next(i for i, r in enumerate(runs) if "report/run_scan.sh" in r)
     assert i_collect < i_check < i_scan
-    assert "100" in runs[i_check]
+    assert 'n["mcp"] >= 100' in runs[i_check] and 'n["plugin"] >= 80' in runs[i_check]  # floors, not exact counts
     assert all("continue-on-error" not in s for s in _steps(wf, "scan"))
+
+
+def test_schedule_always_rescans_and_a_manual_run_may_publish_committed_data(wf):
+    on = wf.get("on") or wf.get(True)
+    assert on["workflow_dispatch"]["inputs"]["rescan"] == {
+        "description": on["workflow_dispatch"]["inputs"]["rescan"]["description"], "type": "boolean", "default": True}
+    assert wf["env"]["RESCAN"] == "${{ github.event_name == 'schedule' || inputs.rescan }}"
+    gated = [s for s in _steps(wf, "scan") if any(k in (s.get("run") or "") for k in
+                                                   ("report/collect.py", "collect.load_targets", "report/run_scan.sh"))]
+    assert len(gated) == 3 and all(s.get("if") == "env.RESCAN == 'true'" for s in gated)
+    assert "if" not in _step(wf, "scan", "report/build_site.py")  # the build always runs
 
 
 def test_deploy_job(wf):
