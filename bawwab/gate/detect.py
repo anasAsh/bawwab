@@ -2553,6 +2553,11 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
 
 def _new_content(inp: HookInput, path: str) -> str:
     ti = inp.tool_input
+    if inp.tool_name == "NotebookEdit":
+        # The notebook Claude Code would write (cell lookup by id, insert/delete, cleared outputs) is not
+        # simulated: a mismatch would let the scan see a different file. Every NotebookEdit of a config file or
+        # into an install dir is protected instead (fail closed).
+        raise _Unevaluable
     if inp.tool_name == "Write":
         c = ti.get("content", "")
         if not isinstance(c, str):
@@ -2686,8 +2691,20 @@ def _install_write(inp: HookInput, path: str, acc: _Acc) -> None:
     acc.overlays.setdefault(t, {})[path] = content
 
 
+# IPython shell escapes: `!cmd`, `%sx cmd`, `%system cmd`, and the shell cell magics (%%bash, %%sh, %%script sh)
+_IPY_SHELL = re.compile(r"(?m)^([ \t]*)(?:!!?|%(?:sx|system)\b|%%(?:bash|sh|script[ \t]+\S+)[^\n]*$)")
+
+
+def _ipython_shell(src: str) -> str:
+    """A notebook cell's source with its shell escapes stripped, so `!bawwab approve X` reads as the command
+    it runs."""
+    return _IPY_SHELL.sub(r"\1", src)
+
+
 def _file_tool(inp: HookInput, acc: _Acc) -> None:
-    fp = inp.tool_input.get("file_path")
+    """Write/Edit/MultiEdit (file_path) and NotebookEdit (notebook_path, new_source, cell_id, cell_type,
+    edit_mode: Claude Code's tool schema)."""
+    fp = inp.tool_input.get("notebook_path" if inp.tool_name == "NotebookEdit" else "file_path")
     if not isinstance(fp, str) or not fp:
         return
     p = os.path.normpath(fp if os.path.isabs(fp) else os.path.join(inp.cwd or "/", fp))
@@ -2699,6 +2716,9 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
         new = _new_content(inp, p)
     except _Unevaluable:
         new = ""  # an edit that doesn't apply changes nothing
+        if inp.tool_name == "NotebookEdit":  # the cell's new text is what the R55/R56 checks read
+            src = inp.tool_input.get("new_source")
+            new = _ipython_shell(src) if isinstance(src, str) else ""
     if "bawwab" in new and _execs_bawwab(new):  # R55: a script that runs bawwab under another name
         acc.user_only("writes a script that runs bawwab")
     old = _read_text(p)
@@ -2881,7 +2901,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
                 _write_text_only(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")
-    elif inp.tool_name in ("Write", "Edit", "MultiEdit"):
+    elif inp.tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         try:
             _file_tool(inp, acc)
         except _TooComplex:  # e.g. more than _MAX_TARGETS servers in one config write

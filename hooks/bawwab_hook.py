@@ -12,8 +12,9 @@ changed, or (for any non-read-only tool) while something is quarantined. If it f
 install-like call, a quarantine or a changed config is denied (fail closed); an ordinary
 call with no config change is not.
 
-`post` (PostToolUse, Bash|Write|Edit|MultiEdit|NotebookEdit): when the fingerprint moved,
-`bawwab post` runs the effect check and blocks if something new was quarantined.
+`post` (PostToolUse, the tools that can change files: Bash|PowerShell|Monitor|Write|Edit|MultiEdit|NotebookEdit
+and every MCP tool, mcp__*, whose effects are opaque): when the fingerprint moved, `bawwab post` runs the effect
+check and blocks if something new was quarantined. Read-only tools never pay for it.
 
 When the watched config changed and the effect check fails for any reason (timeout,
 crash, bad output), the hook leaves $BAWWAB_HOME/effects.error and the quarantine flag and
@@ -67,7 +68,14 @@ def _setup_detects(data: dict) -> bool:
 # Allowed while something is quarantined: they change nothing. AskUserQuestion lets Claude ask the user
 # what to do with each item (the user still runs approve/reject).
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob", "LS", "TodoWrite", "NotebookRead", "AskUserQuestion"})
-POST_TOOLS = frozenset({"Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"})
+# PostToolUse effect check: the tools that can change files. MCP tools (mcp__<server>__<tool>, plugin servers
+# included) may write anything, so each gets the check right after the call, not only at the next pre-call
+# fingerprint. An unchanged fingerprint costs only the stat walk.
+POST_TOOLS = frozenset({"Bash", "PowerShell", "Monitor", "Write", "Edit", "MultiEdit", "NotebookEdit"})
+
+
+def _post_tool(name: object) -> bool:
+    return isinstance(name, str) and (name in POST_TOOLS or name.startswith("mcp__"))
 
 
 def _load_fingerprint():
@@ -652,7 +660,7 @@ def post() -> int:
         data = json.loads(raw)
     except ValueError:
         return 0
-    if not isinstance(data, dict) or data.get("tool_name") not in POST_TOOLS:
+    if not isinstance(data, dict) or not _post_tool(data.get("tool_name")):
         return 0
     _note_session(data)
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
