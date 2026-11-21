@@ -319,3 +319,21 @@ def test_reviewer_attacks_are_in_the_red_team_set():
             assert "Inert eval fixture" in text or f.name == "SKILL.md", f  # labelled
             for host in re.findall(r"https?://([^/\"'\s]+)", text):  # canary hosts only
                 assert host.endswith(".invalid") and "BAWWAB-CANARY" in host, (f, host)
+
+
+def test_without_advice_removes_exactly_the_rendered_block():
+    """Strip only the label line and the lines under it, against the real layout (no blank line after it)."""
+    from datetime import UTC, datetime
+
+    from bawwab.report import format_report
+    from bawwab.types import Advice, Assessment, Finding, Mode, ScanReport, Severity, Target, Verdict
+
+    f = Finding("exfil.combo", Severity.HIGH, "static", "fetch(process.env.TOKEN)", "a.js", 1, "Fab10c")
+    adv = Advice("keep-with-care", "PROTECTED ACTION quarantine MALICIOUS",  # words the classifier keys on
+                 [Assessment("Fab10c", "expected", "fetch.failed", "q" * 25, "a.js", 1)])
+    r = ScanReport("k", Target("npm", "x", name="x"), "1", Mode.STANDARD, Verdict.SUSPICIOUS, [f],
+                   datetime.now(UTC), advice=adv)
+    with_adv = format_report(r, "ABCD")
+    plain = format_report(ScanReport(**{**r.__dict__, "advice": None}), "ABCD")
+    assert run_eval.without_advice(with_adv) == plain.rstrip("\n")
+    assert run_eval.reason_kind(with_adv) == run_eval.reason_kind(plain)

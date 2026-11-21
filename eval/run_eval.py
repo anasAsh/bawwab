@@ -364,17 +364,19 @@ ADVICE_LABEL = "Claude's recommendation (advice, not a verdict)"  # spec §4a: h
 
 
 def without_advice(text: str) -> str:
-    """The text with the reviewer's block removed (from the label line up to the next blank line). Advice is model
-    output, so its wording must never decide a classification that --compare checks."""
-    out, skipping = [], False
+    """The text with the reviewer's block removed: the label line and the lines indented under it (how
+    report.format_report and effects.quarantine_details lay it out). Advice is model output, so its wording
+    must never decide a classification that --compare checks; the lines after the block are kept."""
+    out, depth = [], None
     for ln in text.splitlines():
+        indent = len(ln) - len(ln.lstrip())
         if ADVICE_LABEL in ln:
-            skipping = True
+            depth = indent
             continue
-        if skipping and not ln.strip():
-            skipping = False
-        if not skipping:
-            out.append(ln)
+        if depth is not None and ln.strip() and indent > depth:
+            continue
+        depth = None
+        out.append(ln)
     return "\n".join(out)
 
 
