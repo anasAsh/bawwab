@@ -28,3 +28,8 @@ git:https://github.com/obra/superpowers@22f0b463e7a5e579904dd6211a520321035526f7
 firecrawl-mcp@3.41.0                                     clean   mcp-server
 pypi:mcp-server-git==2026.11.18                          clean   mcp-server
 pypi:mcp-server-time==2026.11.18                         clean   mcp-server
+# ---- held-out set. Every line above was in the benchmark while the rules were tuned (all of them by 2026-11-22),
+# so none of them is held out. Add new packages below this line with "heldout" after the category, e.g.
+#   some-mcp-server@1.2.3   clean   mcp-server   heldout
+# Pick them before scanning them, and don't tune a rule on them. If a rule is changed because of one, drop its
+# "heldout" (it has been seen) and say so in its note.

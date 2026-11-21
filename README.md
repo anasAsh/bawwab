@@ -180,50 +180,94 @@ and into the trusted snapshot. Deep-mode limits:
 
 ## Benchmark
 
-Bawwab is measured against a labelled corpus in [`bench/`](bench/): handwritten malicious samples for every rule
-family (canary values and `.invalid` hosts only), samples written to talk the AI reviewer out of a finding,
-benign look-alikes, and popular real packages and skills at pinned versions. Real malware comes from the
-[DataDog malicious-software-packages dataset](https://github.com/DataDog/malicious-software-packages-dataset),
-unpacked by Bawwab's own safe extractor and never executed.
+Bawwab is measured against a labelled corpus in [`bench/`](bench/):
+
+- **Handwritten samples** in `bench/corpus/`: malicious samples for every rule family (canary values and
+  `.invalid` hosts only), samples written to talk the AI judge out of a finding, and benign look-alikes. The
+  look-alikes were written to resemble the malicious samples (a server that reads an API key, a skill that
+  explains AWS credentials, a native addon with a build step), so they are harder than typical packages.
+- **Real packages and skills** in `bench/safe-packages.txt`, at pinned versions: a set of 20 popular MCP
+  servers and skills (official servers, Playwright, Anthropic's and obra's skills) chosen by hand early in
+  development, plus six more popular servers. They were picked for popularity, not at random. When the 20 were
+  first scanned, 11 came back suspicious, and rules were narrowed until only the true positive stayed flagged
+  (`@wonderwhy-er/desktop-commander`, labelled suspicious for its install-time telemetry). They are tuning data.
+- **Real malware** from the
+  [DataDog malicious-software-packages dataset](https://github.com/DataDog/malicious-software-packages-dataset)
+  (a pinned sample of 100 npm and 100 PyPI packages), unpacked by Bawwab's own safe extractor and never executed.
 
 ```bash
-uv run python bench/run.py --static-only     # static rules only, no AI review
-uv run python bench/run.py                   # static + Claude review (needs ANTHROPIC_API_KEY)
-uv run python bench/run.py --static-only --datadog   # add the real-malware recall set
+uv run python bench/run.py --static-only     # static rules only, no AI judge
+uv run python bench/run.py                   # static rules + AI judge (needs ANTHROPIC_API_KEY)
+uv run python bench/run.py --static-only --datadog --guarddog   # add the real-malware set and a GuardDog baseline
 ```
 
-A sample counts as caught when its verdict is at least its label (clean < suspicious < malicious). Static
-rules alone stop at *suspicious* for prompt injection, hidden Unicode, tool shadowing and eval of fetched code;
-the Claude review is what raises those to *malicious*, so the static run below understates recall by design. CI runs the static
-benchmark on every push and fails above a 10% false-positive rate on the safe set.
+**What is measured is the verdict.** The full run adds the *AI judge*: Claude's check of model-facing text, which
+runs before the verdict and can only add findings (the "Claude review" row above). *Claude's recommendation*
+(the reviewer: keep, keep with care, don't install, can't tell) comes after the verdict and never changes it, so
+the benchmark doesn't run it and these numbers say nothing about it.
+
+**How to read the numbers.**
+
+- Two rates are given for samples labelled suspicious or malicious: **detected** (any verdict other than clean,
+  which is what blocks an install at the default level) and **exact verdict** (the verdict equals the label).
+  Static rules alone stop at *suspicious* for prompt injection, hidden Unicode, tool shadowing and eval of fetched
+  code; the AI judge is what can raise those to *malicious*, so the static exact-verdict rate is low by design.
+- The **false-positive rate** is over the safe samples above, pooled. It is a check on these chosen samples,
+  not an estimate for packages in general; the table also splits it by source.
+- A sample whose fetch or scan failed is **not scored**: it is listed apart and counts as neither detected nor a
+  false positive. (Before 2026-11-22 a failed fetch of a safe package counted as a false positive.)
+- **No held-out set yet.** Every sample in the table was in the corpus while the rules were tuned, and several
+  rules were changed because of a sample here, so these numbers show how well the rules fit this corpus. A sample
+  can be marked held out (`"heldout": true` in its `label.json`, or `heldout` after the category in
+  `safe-packages.txt`) and is then reported in its own row. Only samples added from 2026-11-22 on, picked before
+  being scanned and not used to change a rule, are marked; the held-out row means something once there are some.
+  The DataDog sample was also scanned during development and isn't held out either.
+
+CI runs the static benchmark on every push. It fails above a 10% false-positive rate, or when more than 10% of the
+samples could not be scored.
 
 <!-- bench:start -->
-Mode: **static-only**. 73 samples: 32 malicious or suspicious, 41 safe.
+Mode: **static-only**. 73 samples: 32 positive (labelled suspicious or malicious), 41 safe (labelled clean), 0 not scored.
 
-| Category | Samples | Caught | Precision | Recall |
+| Family | Detected | Exact verdict | False positives | Not scored |
 |---|---|---|---|---|
-| credential-exfil | 7 | 4/4 | 100% | 100% |
-| cross-server | 3 | 1/2 | 100% | 50% |
-| hidden-unicode | 3 | 0/2 | n/a | 0% |
-| install-script | 5 | 4/4 | 80% | 100% |
-| mcp-server | 17 | 0/0 | 0% | n/a |
-| obfuscation | 5 | 4/4 | 100% | 100% |
-| plugin-hooks | 4 | 2/2 | 100% | 100% |
-| prompt-injection | 6 | 0/5 | n/a | 0% |
-| remote-code | 4 | 0/3 | n/a | 0% |
-| skill | 11 | 0/0 | n/a | n/a |
-| telemetry | 1 | 1/1 | 100% | 100% |
-| tool-shadowing | 4 | 0/3 | n/a | 0% |
-| typosquat | 3 | 2/2 | 100% | 100% |
-| **all** | 73 | 18/32 | 90% | 56% |
+| credential-exfil | 4/4 (100%) | 4/4 (100%) | 0/3 (0%) | 0 |
+| cross-server | 2/2 (100%) | 1/2 (50%) | 0/1 (0%) | 0 |
+| hidden-unicode | 2/2 (100%) | 0/2 (0%) | 0/1 (0%) | 0 |
+| install-script | 4/4 (100%) | 4/4 (100%) | 1/1 (100%) | 0 |
+| mcp-server | n/a | n/a | 1/17 (6%) | 0 |
+| obfuscation | 4/4 (100%) | 4/4 (100%) | 0/1 (0%) | 0 |
+| plugin-hooks | 2/2 (100%) | 2/2 (100%) | 0/2 (0%) | 0 |
+| prompt-injection | 5/5 (100%) | 0/5 (0%) | 0/1 (0%) | 0 |
+| remote-code | 3/3 (100%) | 0/3 (0%) | 0/1 (0%) | 0 |
+| skill | n/a | n/a | 0/11 (0%) | 0 |
+| telemetry | 1/1 (100%) | 1/1 (100%) | n/a | 0 |
+| tool-shadowing | 1/3 (33%) | 0/3 (0%) | 0/1 (0%) | 0 |
+| typosquat | 2/2 (100%) | 2/2 (100%) | 0/1 (0%) | 0 |
+| **all** | 30/32 (94%) | 18/32 (56%) | 2/41 (5%) | 0 |
 
-- **False-positive rate on the safe set:** 5% (2/41)
-- **Flagged at all** (any non-clean verdict) among malicious samples: 94% (30/32)
-- **Adversarial samples** (written to talk the AI reviewer out of a finding): 3/6 caught
-- **Real malware** (DataDog dataset, npm): flagged 67/100 (67%), malicious 36/100; GuardDog 90/100
-- **Real malware** (DataDog dataset, pypi): flagged 80/100 (80%), malicious 13/100; GuardDog 99/100
+| Set | Detected | Exact verdict | False positives | Not scored |
+|---|---|---|---|---|
+| seen during tuning | 30/32 (94%) | 18/32 (56%) | 2/41 (5%) | 0 |
+| held out | n/a | n/a | n/a | 0 |
+| handwritten corpus (`bench/corpus/`) | 29/31 (94%) | 17/31 (55%) | 1/16 (6%) | 0 |
+| real packages (`bench/safe-packages.txt`) | 1/1 (100%) | 1/1 (100%) | 1/25 (4%) | 0 |
 
-Misclassified:
+No held-out samples yet: every sample above was seen while the rules were tuned, so these numbers show fit to this corpus, not performance on unseen samples.
+
+Definitions:
+
+- **Positive**: a sample labelled suspicious or malicious. **Safe**: a sample labelled clean.
+- **Detected**: a positive whose verdict is not clean (flagged at any level).
+- **Exact verdict**: a positive whose verdict equals its label (a malicious sample rated suspicious is detected but not exact).
+- **False positive**: a safe sample whose verdict is not clean. The rate is over safe samples that were scored.
+- **Not scored**: the fetch or scan failed (`fetch.failed`, `gate.error`, `rules.error`, `judge.unavailable`, or an error in the runner). Counted as neither detected nor a false positive, and listed separately.
+
+- **Adversarial samples** (written to talk the AI judge out of a finding): detected 5/6, exact verdict 3/6
+- **Real malware** (DataDog dataset, npm): detected 67/100 (67%), rated malicious 36/100; GuardDog 90/100
+- **Real malware** (DataDog dataset, pypi): detected 80/100 (80%), rated malicious 13/100; GuardDog 99/100
+
+Not an exact verdict, or a false positive:
 
 - `malicious/adv-quote-breakout`: expected malicious, got clean (no findings)
 - `malicious/adv-reviewer-preapproved`: expected malicious, got suspicious (injection.covert-action, injection.override)
@@ -241,8 +285,6 @@ Misclassified:
 - `malicious/unicode-zero-width-skill`: expected malicious, got suspicious (injection.hidden-unicode)
 - `safe/native-addon-gyp`: expected clean, got suspicious (install-script)
 - `package/@notionhq/notion-mcp-server@2.6.1`: expected clean, got suspicious (exfil.combo) — known FP (R49): bundled express deps call Function on runtime-built code, which trips the R47 untrusted-resolution switch; not tuned away
-
-Correct means the verdict is at least the label (clean < suspicious < malicious). Precision counts clean-labelled samples that were flagged as false positives.
 <!-- bench:end -->
 
 ## Install
@@ -402,7 +444,7 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
   listed under [Honest limitations](#honest-limitations).
 - **The review can only raise risk.** Claude's review sees the scanned text as quoted, untrusted data and is
   asked a narrow question. Its answer can raise a verdict, never lower one, and a garbled answer counts as
-  suspicious. Text written to talk the reviewer out of a finding is part of the benchmark.
+  suspicious. Text written to talk this review (the AI judge) out of a finding is part of the benchmark.
 - **Static findings always reach you.** No scanned text can suppress a static rule.
 - **Output is sanitised and framed.** Control characters, ANSI escapes and invisible format characters are
   stripped from the untrusted text Bawwab prints. MCP tool results mark the quoted part as data, not instructions.
@@ -432,7 +474,7 @@ Bawwab is analysed from two sides:
   the catalogue and the mapping in step.
 
 Both are checked against evidence: the [benchmark](#benchmark) (labelled malicious and benign samples,
-precision/recall/false-positive rate), a red-team set of attacks on Bawwab itself (`eval/redteam/`), and real
+detection and false-positive rates), a red-team set of attacks on Bawwab itself (`eval/redteam/`), and real
 popular packages that must come back clean. The [scan report](https://anasash.github.io/bawwab/) applies
 the same rules to the most popular MCP servers, skills and plugins, with every flagged finding reviewed
 (AI-assisted, with a maintainer spot-check of the highest-risk ones) or labelled "Not yet reviewed".
@@ -553,7 +595,7 @@ Yes, MIT licensed. The scan of the most popular MCP servers, skills and plugins 
 - [x] Session-start inventory and real-world precision tuning
 - [x] Effect check and quarantine
 - [x] MCP server tools: `scan_mcp_server`, `scan_skill`, `scan_plugin`, `diff_since_trusted`, `explain_finding`
-- [x] Labelled benchmark with published precision and recall, run in CI
+- [x] Labelled benchmark with published detection and false-positive rates, run in CI
 - [x] One-command Claude Code plugin (`/plugin install bawwab@bawwab`, published to the `plugin` branch on every push to main)
 - [x] Effectiveness evaluation: real-incident replicas and a red-team in a sandbox (bwrap; Docker runner untested, see `eval/RESULTS.md`)
 - [ ] Deep mode: Docker sandbox with canary credentials (built and unit-tested; not yet run against a live Docker daemon)

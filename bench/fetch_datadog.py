@@ -151,6 +151,9 @@ def recall(scanner, everything: bool = False, guarddog: bool = False, out: list 
                                  scanner.local_store)
                 verdict = r.verdict.value
                 rules = scanner.counted(r)
+                failed = scanner.error_of(r)  # the scan failed closed: not scored, not a detection
+                if failed:
+                    raise RuntimeError(failed)
             except Exception as e:  # noqa: BLE001 - one bad sample must not stop the run
                 d["errors"] += 1
                 print(f"  error      {eco}/{s['package']}: {type(e).__name__}: {e}", file=sys.stderr)
