@@ -287,8 +287,10 @@ def _norm(rel: str) -> str:
 def _own_location(root: _Root, f: Finding) -> str | None:
     """Where a finding's quote must come from: its tool-description label (exact) or its file (normalised), when
     that can be read. None when the finding has no citable location (identity, unresolved server, judge and
-    sandbox notes, a label or file that isn't available): such a finding can't be grounded."""
-    if not f.file:
+    sandbox notes, a label or file that isn't available): such a finding can't be grounded. A finding from a
+    plugin's bundled server ("[server x] …") has a path relative to that server's own package, which the reviewer
+    can't read, and the same relative path in the plugin root could be a decoy: no citable location either."""
+    if not f.file or f.evidence.startswith("[server "):
         return None
     if f.file in root.extra:
         return f.file

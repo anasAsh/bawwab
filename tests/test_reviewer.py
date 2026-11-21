@@ -778,3 +778,15 @@ def test_config_project_may_only_turn_review_on(tmp_path):
     assert load_config(proj).review_enabled is False
     _write(proj / ".claude" / "bawwab.json", {"review": {"enabled": True}})
     assert load_config(proj).review_enabled is True  # can turn it on
+
+
+def test_bundled_server_finding_cant_be_grounded_in_a_same_named_parent_file(root):
+    """A plugin's bundled-server finding has a path relative to that server's package; the plugin root's own
+    index.js (a possible decoy) must not ground "keep" for it."""
+    r = _report(findings=[
+        Finding("secrets.env-read", Severity.MED, "static", "[server srv] process.env.WEATHER_API_KEY", "index.js", 3),
+        Finding("net.fetch", Severity.HIGH, "static", "fetch(`${API}/forecast", "index.js", 6),
+    ])
+    a = review(root, r, _files(root), Scripted(_answer(r, rec="keep")))
+    assert a.recommendation == "cant-tell" and "without a location" in a.reason
+    assert [x.assessment for x in a.per_finding] == ["expected", "expected"]  # assessments kept, keep capped
