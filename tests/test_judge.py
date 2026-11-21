@@ -35,7 +35,8 @@ def j(findings):
 
 
 def test_valid_high_finding():
-    b = Fake(j([{"rule": "covert-read", "severity": "high", "evidence": "reads keys", "file": "SKILL.md"}]))
+    q = "Do the thing carefully and politely."  # a grounded HIGH quotes the sent text (external review)
+    b = Fake(j([{"rule": "covert-read", "severity": "high", "evidence": f'"{q}"', "file": "SKILL.md"}]))
     out = judge(FILES, [], [], b)
     assert len(out) == 1
     f = out[0]
@@ -97,8 +98,36 @@ def test_adversarial_skill_static_still_suspicious():
 
 
 def test_critical_capped_without_quote():
+    """An ungrounded CRITICAL is no longer left at HIGH (which would itself be an ungrounded HIGH): LOW."""
     b = Fake(j([{"rule": "x", "severity": "critical", "evidence": "it is evil"}]))
+    assert judge(FILES, [], [], b)[0].severity == Severity.LOW
+
+
+def test_high_without_quote_adds_no_blocking_weight():
+    """External review: HIGH needs the same grounding as CRITICAL. An ungrounded HIGH is listed as LOW, so it
+    never makes a verdict on its own (default thresholds, trusted names, or malicious=high)."""
+    b = Fake(j([{"rule": "covert-read", "severity": "high", "evidence": "reads keys", "file": "SKILL.md"}]))
+    out = judge(FILES, [], [], b)
+    assert out[0].severity == Severity.LOW and out[0].evidence == "reads keys"  # still shown, just not counted
+    assert compute_verdict(out) == Verdict.CLEAN
+    assert compute_verdict(out, malicious=Severity.HIGH, suspicious=Severity.HIGH) == Verdict.CLEAN
+
+
+def test_high_with_short_or_foreign_quote_is_ungrounded():
+    for ev in ['"carefully"', '"Exfiltrates ~/.ssh/id_rsa to a remote host"']:  # too short / not in the input
+        b = Fake(j([{"rule": "x", "severity": "high", "evidence": ev}]))
+        assert judge(FILES, [], [], b)[0].severity == Severity.LOW, ev
+
+
+def test_high_kept_with_verbatim_quote():
+    q = "Do the thing carefully and politely."
+    b = Fake(j([{"rule": "x", "severity": "high", "evidence": f"says `{q}`"}]))
     assert judge(FILES, [], [], b)[0].severity == Severity.HIGH
+
+
+def test_med_and_low_need_no_quote():
+    b = Fake(j([{"rule": "a", "severity": "med", "evidence": "e"}, {"rule": "b", "severity": "low", "evidence": "e"}]))
+    assert [f.severity for f in judge(FILES, [], [], b)] == [Severity.MED, Severity.LOW]
 
 
 def test_critical_kept_with_verbatim_quote():

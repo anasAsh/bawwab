@@ -299,3 +299,40 @@ def test_gate_and_hook_share_one_prefilter():
     spec.loader.exec_module(hook)
     assert hook.prefilter.__code__.co_filename == pf.prefilter.__code__.co_filename == str(Path(pf.__file__))
     assert gate_mod.prefilter is pf.prefilter
+
+
+# ------------------------------------------------------------- pin rewrite failure (external review)
+
+def _boom(*a, **kw):
+    raise RuntimeError("rewrite exploded")
+
+
+def test_failed_pin_rewrite_asks_instead_of_running_unpinned(store, monkeypatch):
+    """A clean scan is of one resolved version; an unpinned `npx -y pkg` may run another. If the pin was needed
+    and the rewrite fails, a human decides ("ask", no updatedInput) rather than the unpinned call going through."""
+    monkeypatch.setattr(gate_mod, "pin_changes", _boom)
+    out = run_gate(bash("claude mcp add gh -- npx -y @a/b"), scan=fake_scan({}), store=store)
+    assert decision(out) == "ask"
+    assert "updatedInput" not in out["hookSpecificOutput"]
+    r = reason(out)
+    assert "could not pin" in r and "@a/b" in r and "1.0.0" in r
+
+
+def test_failed_pin_rewrite_with_nothing_to_pin_is_unchanged(store, monkeypatch):
+    """No pin needed (already pinned, or an unusable resolved version): a failing rewrite changes nothing."""
+    monkeypatch.setattr(gate_mod, "pin_changes", _boom)
+    assert run_gate(bash("claude mcp add gh -- npx -y @a/b@1.0.0"), scan=fake_scan({}), store=store) is None
+    assert run_gate(bash("claude mcp add gh -- npx -y @a/b"), scan=fake_scan({}, version="unknown"),
+                    store=store) is None
+
+
+def test_failed_pin_rewrite_keeps_level_warning(store, monkeypatch):
+    """Below the level's threshold the warning still reaches the user alongside the ask."""
+    from bawwab.config import set_level
+
+    set_level("low")
+    monkeypatch.setattr(gate_mod, "pin_changes", _boom)
+    out = run_gate(bash("claude mcp add gh -- npx -y @a/b"), scan=fake_scan({"@a/b": Verdict.SUSPICIOUS}),
+                   store=store)
+    assert decision(out) == "ask" and "could not pin" in reason(out)
+    assert "not blocked" in out["systemMessage"]

@@ -143,6 +143,69 @@ def test_untrusted_med_is_suspicious(store, monkeypatch):
     assert r.verdict == Verdict.SUSPICIOUS
 
 
+# ---------------------------------------------- cache hits under the current policy (external review)
+
+def _cached_pair(store, monkeypatch, sev, name, cfg1, cfg2, advice=None):
+    """Scan once under cfg1, then again under cfg2; the second must be a cache hit (no judge, no reviewer)."""
+    from bawwab.types import Advice
+
+    monkeypatch.setattr(scan_mod, "fetch_target", _fake_fetch([Finding("x.f", sev, "static", "ev")], name))
+    reviews = []
+
+    def review(f, ctx, report, counted):
+        reviews.append(report.verdict)
+        return advice or Advice("keep-with-care", "looks expected", [], "")
+
+    monkeypatch.setattr(scan_mod, "_review_step", review)
+    b = Fake()
+    t = Target("npm", name, name=name)
+    r1 = scan_target(t, store=store, backend=b, cfg=cfg1)
+    calls, n_reviews = b.calls, len(reviews)
+    r2 = scan_target(t, store=store, backend=b, cfg=cfg2)
+    assert r2.key == r1.key and b.calls == calls and len(reviews) == n_reviews  # served from cache
+    return r1, r2
+
+
+def test_cache_hit_applies_current_trusted_list(store, monkeypatch):
+    """Cached as CLEAN because the name was trusted; once it is no longer trusted the MED finding counts."""
+    r1, r2 = _cached_pair(store, monkeypatch, Severity.MED, "@modelcontextprotocol/foo",
+                          Config(), Config(trusted=[]))
+    assert r1.verdict == Verdict.CLEAN and r1.advice is None
+    assert r2.verdict == Verdict.SUSPICIOUS
+    assert r2.advice is not None and r2.advice.recommendation == "cant-tell"  # no stale/absent recommendation
+    assert "settings" in r2.advice.reason
+
+
+def test_cache_hit_applies_current_thresholds(store, monkeypatch):
+    """A HIGH finding cached as SUSPICIOUS is MALICIOUS once the user sets malicious=high; the cached
+    keep-with-care (allowed only for SUSPICIOUS, spec §4a) must not be carried over."""
+    r1, r2 = _cached_pair(store, monkeypatch, Severity.HIGH, "other", Config(), Config(malicious=Severity.HIGH))
+    assert r1.verdict == Verdict.SUSPICIOUS and r1.advice.recommendation == "keep-with-care"
+    assert r2.verdict == Verdict.MALICIOUS
+    assert r2.advice.recommendation == "cant-tell"
+
+
+def test_cache_hit_may_relax_with_current_policy(store, monkeypatch):
+    """Current policy decides both ways: a looser threshold set by the user is honoured too."""
+    r1, r2 = _cached_pair(store, monkeypatch, Severity.MED, "other", Config(),
+                          Config(suspicious=Severity.HIGH))
+    assert r1.verdict == Verdict.SUSPICIOUS
+    assert r2.verdict == Verdict.CLEAN and r2.advice is None
+
+
+def test_cache_hit_same_verdict_keeps_advice(store, monkeypatch):
+    r1, r2 = _cached_pair(store, monkeypatch, Severity.MED, "other", Config(), Config())
+    assert r2.verdict == r1.verdict == Verdict.SUSPICIOUS
+    assert r2.advice.recommendation == "keep-with-care"
+
+
+def test_cache_hit_reverdict_leaves_stored_report(store, monkeypatch):
+    """The stored scan keeps what was found then; only the served copy reflects the current policy."""
+    r1, _ = _cached_pair(store, monkeypatch, Severity.HIGH, "other", Config(), Config(malicious=Severity.HIGH))
+    again = store.get_cached(r1.key)
+    assert again.verdict == Verdict.SUSPICIOUS and again.advice.recommendation == "keep-with-care"
+
+
 def test_fetch_error_fails_closed(store, monkeypatch):
     from bawwab.fetch import FetchError
 

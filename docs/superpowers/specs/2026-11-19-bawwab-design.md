@@ -536,7 +536,10 @@ Semgrep-style patterns and manifest parsers. Covers:
 Reads tool descriptions and skill instructions for intent ("does this try
 to steer the agent or hide something from the user?"), plus code around
 static findings. Scanned content is passed strictly as quoted data. Fixed
-JSON output schema; anything else is a failed scan (fail closed). No tools,
+JSON output schema; anything else is a failed scan (fail closed). A HIGH or
+CRITICAL judge finding must quote the sent text verbatim (≥ 20 chars); one
+that doesn't is kept at LOW, so an unsupported claim adds no blocking weight
+(fix after external review, 2026-11-22; CRITICAL used to fall only to HIGH). No tools,
 network or secrets are available to the judge. Backend: `claude -p`
 (user's existing auth, all tools disabled) or the Anthropic API.
 
@@ -575,6 +578,11 @@ report reviews did, built in. Config `"review": {"enabled": true}` (default on).
   (`ScanReport.advice`) and cached with it, and shown labelled **"Claude's recommendation (advice, not a
   verdict)"**: in the gate's block, as a column of the quarantine table, in `bawwab scan` and the MCP tools
   (inside the untrusted frame), and in the question the skill has Claude ask.
+- **Cache hits use today's settings** (fix after external review, 2026-11-22). The cache keeps findings, not
+  the decision: on a hit the verdict is recomputed from the cached findings with the current trusted list and
+  thresholds. If that changes the verdict, the cached recommendation is not shown (it was made for another
+  verdict); a non-clean result gets `cant-tell` saying so, and `bawwab scan --no-cache` gives a fresh one.
+  The reviewer is not re-run on a hit.
 - **Limit.** The quote check stops fabricated evidence, not a convincing misreading of real code: a
   well-built package could still win `keep` on a SUSPICIOUS item. The asymmetric rule bounds the damage;
   the threat model records the residual, and the red-team set adds attacks aimed at the reviewer, with the
