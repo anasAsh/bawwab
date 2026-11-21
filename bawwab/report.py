@@ -6,7 +6,7 @@ import unicodedata
 from bawwab.clicmd import cmd
 from bawwab.scan.rules.catalog import CATALOG
 from bawwab.store import Store
-from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
+from bawwab.types import Advice, Finding, Mode, ScanReport, Severity, Verdict
 
 MAX_LINE = 160
 _ANSI = re.compile(
@@ -48,6 +48,54 @@ def _loc(f: Finding) -> str:
     return f.source if f.source == "identity" else "—"
 
 
+ADVICE_TITLE = "Claude's recommendation (advice, not a verdict)"  # spec §4a: the label on every surface
+ADVICE_LABEL = {"keep": "keep it", "keep-with-care": "keep it, with care", "dont-install": "don't install",
+                "cant-tell": "can't tell"}
+ADVICE_SHORT = {"keep": "keep", "keep-with-care": "care", "dont-install": "don't", "cant-tell": "?"}
+_KEEPS = ("keep", "keep-with-care")
+
+
+def shown_advice(advice: Advice | None, verdict: Verdict) -> tuple[str, str] | None:
+    """(recommendation, reason) as displayed, or None. Fails to cant-tell: an unknown value, or a keep on MALICIOUS
+    (the reviewer never allows one; a stored report that has it is not trusted to say so)."""
+    if advice is None:
+        return None
+    rec, reason = advice.recommendation, advice.reason
+    if rec not in ADVICE_LABEL:
+        return "cant-tell", f"unknown recommendation {sanitise(rec, 30)!r}"
+    if rec in _KEEPS and verdict == Verdict.MALICIOUS:
+        return "cant-tell", "a keep recommendation is never allowed for a MALICIOUS verdict"
+    return rec, reason
+
+
+def advice_short(advice: Advice | None, verdict: Verdict) -> str:
+    """The quarantine table's ADVICE cell: keep / care / don't / ? , or - when there is none."""
+    shown = shown_advice(advice, verdict)
+    return ADVICE_SHORT[shown[0]] if shown else "-"
+
+
+def format_advice(advice: Advice | None, verdict: Verdict, indent: str = "") -> list[str]:
+    """The recommendation block: the label line, the reason for cant-tell, one line per assessed finding.
+    Everything in it is untrusted model output about scanned code, so every field is sanitised."""
+    shown = shown_advice(advice, verdict)
+    if shown is None:
+        return []
+    rec, reason = shown
+    head = f"{indent}{ADVICE_TITLE}: {ADVICE_LABEL[rec]}"
+    summary = sanitise(advice.summary, 300)
+    lines = [f"{head} — {summary}" if summary else head]
+    if rec == "cant-tell":
+        lines.append(f"{indent}    reason: {sanitise(reason, 200) or 'none given'}")
+    for x in advice.per_finding:
+        lines.append(f"{indent}    {sanitise(x.finding_id or '-', 12)} {sanitise(x.assessment, 12)}: "
+                     f"{sanitise(x.why, 200)}")
+        quote = sanitise(x.quote, 80)
+        if quote:
+            loc = sanitise(f"{x.file}:{x.line}" if x.line else x.file, 60)
+            lines.append(f"{indent}        \"{quote}\"" + (f" ({loc})" if loc else ""))
+    return lines
+
+
 def format_report(r: ScanReport, approval_id: str | None = None) -> str:
     ok = r.verdict == Verdict.CLEAN
     icon = "✅" if ok else "⛔"
@@ -66,6 +114,7 @@ def format_report(r: ScanReport, approval_id: str | None = None) -> str:
     for f in ordered:
         loc = sanitise(_loc(f), 40)
         lines.append(f"  {_SEV_LABEL[f.severity]:<4}  {sanitise(f.id or '-'):<6}  {loc:<20} {sanitise(f.evidence)}")
+    lines += format_advice(r.advice, r.verdict)
     pid = sanitise(approval_id) if approval_id else None
     if r.verdict == Verdict.SUSPICIOUS:
         if pid:

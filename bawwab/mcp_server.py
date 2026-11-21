@@ -46,6 +46,23 @@ def _clean_dict(d: dict) -> dict:
     ds = d.get("diff_summary")
     if ds:
         out["diff_summary"] = "\n".join(sanitise(l, MAX_LINE) for l in ds.splitlines()[:40])
+    if isinstance(d.get("advice"), dict):  # Claude's recommendation: untrusted model output about scanned code
+        from bawwab.report import ADVICE_TITLE, shown_advice
+        from bawwab.types import Advice, Verdict
+
+        a = d["advice"]
+        rec, reason = shown_advice(Advice(str(a.get("recommendation", "")), "", [], str(a.get("reason", ""))),
+                                   Verdict(d["verdict"]))  # same cap as the text: never keep on MALICIOUS
+        out["advice"] = {
+            "label": ADVICE_TITLE,
+            "recommendation": rec,
+            "summary": sanitise(a.get("summary", ""), 300),
+            "reason": sanitise(reason, 200),
+            "per_finding": [
+                {k: (sanitise(v, 200) if isinstance(v, str) else v) for k, v in x.items()}
+                for x in a.get("per_finding", []) if isinstance(x, dict)
+            ],
+        }
     return out
 
 
