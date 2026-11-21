@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -107,6 +107,34 @@ class Fetched:
     cleanup: Callable[[], None]
 
 
+RECOMMENDATIONS = ("keep", "keep-with-care", "dont-install", "cant-tell")  # spec §4a
+ASSESSMENTS = ("false-alarm", "expected", "real")
+
+
+@dataclass
+class Assessment:
+    """The reviewer's take on one counted finding, grounded in a quoted line of the cited file."""
+    finding_id: str
+    assessment: str  # one of ASSESSMENTS
+    why: str
+    quote: str
+    file: str
+    line: int
+
+
+@dataclass
+class Advice:
+    """Claude's recommendation (advice, not a verdict). It never changes the verdict, findings or approval."""
+    recommendation: str  # one of RECOMMENDATIONS
+    summary: str
+    per_finding: list[Assessment] = field(default_factory=list)
+    reason: str = ""  # why it is cant-tell (timeout, failed check...), or why a recommendation was capped
+
+    @classmethod
+    def cant_tell(cls, reason: str) -> "Advice":
+        return cls("cant-tell", "", [], reason)
+
+
 @dataclass
 class ScanReport:
     key: str
@@ -117,3 +145,4 @@ class ScanReport:
     findings: list[Finding]
     scanned_at: datetime
     diff_summary: str | None = None
+    advice: Advice | None = None

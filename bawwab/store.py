@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from bawwab.paths import bawwab_home
 from bawwab.ruleset import RULESET_VERSION
-from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
+from bawwab.types import Advice, Assessment, Finding, Mode, ScanReport, Severity, Target, Verdict
 
 PENDING_TTL = timedelta(hours=1)
 _ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"  # RFC 4648 base32
@@ -126,7 +126,21 @@ def report_to_dict(r: ScanReport) -> dict:
         ],
         "scanned_at": _iso(r.scanned_at),
         "diff_summary": r.diff_summary,
+        **({"advice": _advice_to_dict(r.advice)} if r.advice is not None else {}),
     }
+
+
+def _advice_to_dict(a: Advice) -> dict:
+    return {"recommendation": a.recommendation, "summary": a.summary, "reason": a.reason,
+            "per_finding": [{"finding_id": x.finding_id, "assessment": x.assessment, "why": x.why,
+                             "quote": x.quote, "file": x.file, "line": x.line} for x in a.per_finding]}
+
+
+def _advice_from_dict(d: dict | None) -> Advice | None:
+    if not isinstance(d, dict):
+        return None
+    return Advice(d["recommendation"], d.get("summary", ""),
+                  [Assessment(**x) for x in d.get("per_finding", [])], d.get("reason", ""))
 
 
 def _finding_from_dict(d: dict) -> Finding:
@@ -146,6 +160,7 @@ def report_from_dict(d: dict) -> ScanReport:
         findings=[_finding_from_dict(f) for f in d["findings"]],
         scanned_at=_utc(datetime.fromisoformat(d["scanned_at"])),
         diff_summary=d.get("diff_summary"),
+        advice=_advice_from_dict(d.get("advice")),
     )
 
 
