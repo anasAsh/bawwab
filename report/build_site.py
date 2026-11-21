@@ -525,7 +525,7 @@ The rule verdicts below are what the scanner said before anyone read the code; e
 <section aria-labelledby="h-limits"><h2 id="h-limits">Limits</h2>
 <ul>
 <li>Static rules see code patterns, not intent. "Not malicious, needs a look" means a pattern worth reading, not an accusation.</li>
-<li>No AI review was used, so findings that Bawwab's judge would normally clear are shown as raw rule hits with a reviewer's note instead.</li>
+<li>Static rules only: Bawwab's AI judge (which can only add findings, never remove them) was not run, so these are raw rule hits, each with a reviewer's note.</li>
 <li>Very large files are skipped by the scanner and reported as such; code that is downloaded or generated at run time is not seen.</li>
 <li>A clean result means no rule fired at this version. It is not a guarantee, and later versions may differ.</li>
 <li>Popularity numbers are a snapshot and can be inflated (bots, CI, star campaigns); they decide what was scanned, not how it scored.</li>

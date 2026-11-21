@@ -98,7 +98,10 @@ it. The numbers in brackets are constants in `report/collect.py`; change them th
 
 ## Review before publishing
 
-- Every target whose verdict is not clean is reviewed before the site is published. Each counted finding (severity medium or above) gets a status in `report/review.json`:
+- A manual publish (`report/build_site.py` without flags) refuses to build until every target whose verdict is
+  not clean is reviewed. The weekly automatic refresh publishes with `--allow-unreviewed`: a finding with no
+  review yet is shown as "Not yet reviewed: rule verdict only", and the overview counts how many are awaiting
+  review. Each counted finding (severity medium or above) gets a status in `report/review.json`:
   `confirmed`, `false-positive` (shown as "Known false alarm") or `expected-behaviour`, with a note.
 - Each entry names its reviewer. Since 2026-11-21 most reviews are AI-assisted (Claude reading the pinned
   code, recorded as "Claude (AI-assisted review)"); a maintainer spot-checks the highest-risk targets

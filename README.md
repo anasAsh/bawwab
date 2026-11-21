@@ -94,8 +94,10 @@ Bawwab checks at two points:
    `claude mcp add`, `claude plugin install`, edits to `.mcp.json` or `~/.claude.json`, copies into `~/.claude/skills`, and more.
    It downloads the target **without executing it** and scans it.
 2. **After the command runs (the effect check).** No parser understands every bash trick, so Bawwab also watches
-   what *actually changed* in Claude's config and install folders. Anything new and unscanned is scanned and quarantined.
-   While something is quarantined, every tool call except read-only ones is blocked until you approve or reject it.
+   what *actually changed* in Claude's config and install folders. Anything new or changed is scanned: clean items are
+   accepted, and the rest are quarantined or warned about depending on your [security level](#security-levels). While
+   something is quarantined, every tool call except read-only ones is blocked until you approve or reject it.
+   Quarantine pauses Claude; it doesn't undo what already ran (an install script may have executed by then).
 
 ### Security levels
 
@@ -108,9 +110,11 @@ You choose how much Bawwab blocks. On first start it asks; until you choose, the
 | Unscanned change to Claude's config | warns | quarantines if malicious | quarantines if not clean |
 
 A warning goes to you and to Claude, and Claude Code's normal permission prompts still apply. Two things hold at
-every level: Bawwab's **self-protection** (Claude can't run `approve`/`reject`, edit Bawwab's state or remove its
-hooks), and **only you can lower the level** (`! bawwab level medium` or `low`). Claude may raise it to high. A
-project's `.claude/bawwab.json` can only raise it.
+every level: Bawwab's **self-protection** (the gate refuses Claude running `approve`/`reject`, editing Bawwab's state
+or removing its hooks), and **lowering the level is kept for you** (`! bawwab level medium` or `low`); Claude may
+raise it to high. A project's `.claude/bawwab.json` can only raise it. Both hold against the tool calls the gate
+recognises, not against a program that runs as your user and edits Bawwab's files directly: Bawwab and Claude run
+as the same OS user (see [Honest limitations](#honest-limitations)).
 
 ### What it looks for
 
@@ -335,7 +339,7 @@ bawwab reject <id> [<id>…]     # refuse them; quarantined items are removed, w
 
 # Security level
 bawwab level                   # show it
-bawwab level high|medium|low   # set it (only you can lower it)
+bawwab level high|medium|low   # set it (lowering is refused when Claude runs it)
 
 # Understand a result
 bawwab explain <finding-id>    # plain-language reason + suggested fix
