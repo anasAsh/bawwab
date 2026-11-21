@@ -20,7 +20,7 @@ from bawwab.scan.rules.text import model_facing_text
 from bawwab.severity import compute_verdict
 from bawwab.store import Store, open_store, target_key
 from bawwab.trust import diff_snapshots, make_snapshot, merge_snapshots, trust_name
-from bawwab.types import Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
+from bawwab.types import Advice, Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
 
 __all__ = ["SandboxRunner", "scan_target", "synthetic_report"]
 
@@ -363,6 +363,19 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "")
     return out
 
 
+def _review_step(f: Fetched, ctx: _Ctx, report: ScanReport, counted: list[Finding]) -> Advice:
+    """Claude's recommendation (spec §4a), while f.root still exists. It never fails the scan and never
+    changes the verdict or findings: any error is cant-tell."""
+    try:
+        from bawwab.scan.review import review
+
+        files = ctx.parts[0][1] if ctx.parts else []
+        extra = [ExtraText(prefix + x.label, x.text) for prefix, _, xs, _ in ctx.parts for x in xs]
+        return review(f.root, report, files, ctx.backend, counted=counted, extra=extra)
+    except Exception as e:  # noqa: BLE001 - the reviewer is advice; the scan stands without it
+        return Advice.cant_tell(f"reviewer error: {type(e).__name__}")
+
+
 def _root_id(root: Path | None) -> str | None:
     import os
 
@@ -523,6 +536,8 @@ def scan_target(
         report = ScanReport(
             key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
         )
+        if verdict != Verdict.CLEAN and judge and mode in (Mode.STANDARD, Mode.DEEP) and cfg.review_enabled:
+            report.advice = _review_step(f, ctx, report, [x for x in counted if x.severity >= cfg.suspicious])
         store.put_report(report, snapshot=snap)
         if judge and verdict == Verdict.CLEAN and not unread and (prev is None or prev[1] != snap):
             store.put_snapshot(tname, key, snap)

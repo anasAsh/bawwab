@@ -4,15 +4,22 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+import bawwab.scan as scan_mod
+import bawwab.scan.review as review_pkg
+from bawwab.config import Config, load_config
+from bawwab.fetch import parse_target
+from bawwab.paths import bawwab_home
+from bawwab.scan import scan_target
 from bawwab.scan.files import ExtraText, ScanFile
 from bawwab.scan.review import Budget, review, validate
 from bawwab.scan.review.prompt import SCHEMA, SYSTEM
-from bawwab.store import provisional_finding_id
+from bawwab.store import Store, provisional_finding_id, report_to_dict
 from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
 
 CODE = """\
@@ -461,3 +468,197 @@ def test_advice_ids_follow_a_colliding_finding_id(root, tmp_path):
     s.put_report(r)
     assert r.findings[0].id != taken and r.advice.per_finding[0].finding_id == r.findings[0].id
     assert s.get_cached(r.key).advice.per_finding[0].finding_id == r.findings[0].id
+
+
+# ------------------------------------------------------------- Task 3: wired into scan_target
+
+FIX = Path(__file__).parent / "fixtures"
+_LISTED = re.compile(r"^\[(F[0-9a-f]+)\] \S+ \S+ \(\S+\) at ([^\s:]+):(\d+):", re.M)
+
+
+def _auto(fixture: str, rec: str, assessment: str):
+    """A reviewer reply that covers every listed finding, quoting its own line of the fixture."""
+    def reply(user: str) -> dict:
+        items = []
+        for fid, file, line in _LISTED.findall(user):
+            text = (FIX / fixture / file).read_text().splitlines()[int(line) - 1].strip()
+            items.append({"finding_id": fid, "assessment": assessment, "why": "scripted", "quote": text,
+                          "file": file, "line": int(line)})
+        return {"recommendation": rec, "summary": "scripted review", "per_finding": items}
+    return reply
+
+
+class Router:
+    """The judge gets no findings; reviewer calls (told apart by their schema) get the script."""
+
+    def __init__(self, *review_replies):
+        self.reviewer = Scripted(*review_replies)
+        self.judge_calls = 0
+
+    def complete(self, system, user, schema, timeout_s):
+        if schema == SCHEMA:
+            return self.reviewer.complete(system, user, schema, timeout_s)
+        self.judge_calls += 1
+        return '{"findings":[]}'
+
+
+def _scan(fixture, store, backend, **kw):
+    kw.setdefault("cfg", Config())
+    return scan_target(parse_target(str(FIX / fixture)), store=store, backend=backend, **kw)
+
+
+@pytest.fixture
+def store(tmp_path):
+    return Store(tmp_path / "t.db")
+
+
+def _without_advice(r: ScanReport) -> dict:
+    d = report_to_dict(r)
+    d.pop("advice", None)
+    d.pop("scanned_at")
+    return d
+
+
+def test_suspicious_scan_gets_advice_stored_with_it(store):
+    b = Router(_auto("text/inject_skill", "dont-install", "real"))
+    r = _scan("text/inject_skill", store, b)
+    assert r.verdict == Verdict.SUSPICIOUS and b.reviewer.calls == 1
+    assert r.advice.recommendation == "dont-install" and r.advice.reason == ""
+    assert sorted(a.finding_id for a in r.advice.per_finding) == sorted(f.id for f in r.findings)
+    assert store.get_cached(r.key).advice == r.advice
+
+
+def test_malicious_scan_keep_is_capped(store):
+    b = Router(_auto("code/postinstall_curl", "keep", "false-alarm"))
+    r = _scan("code/postinstall_curl", store, b)
+    assert r.verdict == Verdict.MALICIOUS
+    assert r.advice.recommendation == "cant-tell" and "MALICIOUS" in r.advice.reason
+    assert len(r.advice.per_finding) == len([f for f in r.findings if f.severity >= Severity.MED])
+
+
+@pytest.mark.parametrize("fixture", ["text/inject_skill", "code/postinstall_curl"])
+@pytest.mark.parametrize("reply", ["keep", "garbage", "crash"])
+def test_verdict_and_findings_identical_with_and_without_the_reviewer(tmp_path, fixture, reply):
+    script = {"keep": _auto(fixture, "keep", "false-alarm"), "garbage": "not json",
+              "crash": RuntimeError("boom")}[reply]
+    on = _scan(fixture, Store(tmp_path / "on.db"), Router(script))
+    off = _scan(fixture, Store(tmp_path / "off.db"), Router(), cfg=Config(review_enabled=False))
+    assert on.advice is not None and off.advice is None
+    assert json.dumps(_without_advice(on), sort_keys=True) == json.dumps(_without_advice(off), sort_keys=True)
+
+
+def test_clean_scan_never_reviews(store):
+    b = Router()
+    r = _scan("code/clean_server", store, b)
+    assert r.verdict == Verdict.CLEAN and r.advice is None and b.reviewer.calls == 0
+
+
+def test_static_only_scan_never_reviews(store):
+    b = Router()
+    r = _scan("text/inject_skill", store, b, judge=False)
+    assert r.verdict == Verdict.SUSPICIOUS and r.advice is None and b.reviewer.calls == 0
+
+
+def test_review_disabled_never_reviews(store):
+    b = Router()
+    r = _scan("text/inject_skill", store, b, cfg=Config(review_enabled=False))
+    assert r.verdict == Verdict.SUSPICIOUS and r.advice is None and b.reviewer.calls == 0
+
+
+def test_deep_mode_reviews(store):
+    b = Router(_auto("text/inject_skill", "dont-install", "real"))
+    r = _scan("text/inject_skill", store, b, mode=Mode.DEEP)
+    assert r.mode == Mode.DEEP and b.reviewer.calls == 1
+    assert r.advice.recommendation == "cant-tell"  # sandbox.unavailable has no line to quote: not grounded
+
+
+def test_reviewer_crash_never_fails_the_scan(store, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("reviewer exploded")
+
+    monkeypatch.setattr(review_pkg, "review", boom)
+    r = _scan("text/inject_skill", store, Router())
+    assert r.verdict == Verdict.SUSPICIOUS and not any(f.rule == "gate.error" for f in r.findings)
+    assert r.advice.recommendation == "cant-tell" and "RuntimeError" in r.advice.reason
+
+
+def test_backend_construction_failure_is_cant_tell(store, monkeypatch):
+    calls = []
+
+    def no_backend(cfg):
+        calls.append(cfg)
+        raise RuntimeError("no backend")
+
+    monkeypatch.setattr(scan_mod, "backend_for", no_backend)
+    r = scan_target(parse_target(str(FIX / "text/inject_skill")), store=store, cfg=Config())
+    assert r.verdict == Verdict.SUSPICIOUS and r.advice.recommendation == "cant-tell" and calls
+
+
+def test_review_runs_while_the_fetched_root_exists(store, monkeypatch):
+    seen = []
+    real = review_pkg.review
+
+    def spy(root, report, files, backend, *a, **k):
+        seen.append((root is not None and Path(root).is_dir(), report.findings[0].id, [f.rel for f in files]))
+        return real(root, report, files, backend, *a, **k)
+
+    monkeypatch.setattr(review_pkg, "review", spy)
+    _scan("text/inject_skill", store, Router("not json"))
+    assert seen == [(True, "", ["SKILL.md"])]  # before put_report: ids not yet assigned
+
+
+def test_review_is_asked_only_about_the_findings_behind_the_verdict(store, monkeypatch):
+    seen = []
+    real = review_pkg.review
+
+    def spy(*a, counted=None, **k):
+        seen.append(counted)
+        return real(*a, counted=counted, **k)
+
+    monkeypatch.setattr(review_pkg, "review", spy)
+    r = _scan("code/postinstall_curl", store, Router("not json"), cfg=Config(suspicious=Severity.HIGH))
+    assert r.verdict == Verdict.MALICIOUS
+    assert seen and seen[0] and all(f.severity >= Severity.HIGH for f in seen[0])
+    assert any(f.severity == Severity.MED for f in r.findings)  # listed, not counted, not asked about
+
+
+def test_cached_report_keeps_its_advice_and_is_not_reviewed_again(store):
+    b = Router(_auto("text/inject_skill", "dont-install", "real"))
+    r1 = _scan("text/inject_skill", store, b)
+    r2 = _scan("text/inject_skill", store, b)
+    assert b.reviewer.calls == 1 and r2.advice == r1.advice and r2.advice.recommendation == "dont-install"
+
+
+def test_a_report_cached_before_the_reviewer_has_none(store):
+    r1 = _scan("text/inject_skill", store, Router(), cfg=Config(review_enabled=False))
+    b = Router(_auto("text/inject_skill", "dont-install", "real"))
+    r2 = _scan("text/inject_skill", store, b)
+    assert r2.key == r1.key and r2.advice is None and b.reviewer.calls == 0  # the cache key is unchanged
+
+
+# ------------------------------------------------------------- Task 3: config
+
+def _write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
+
+
+def test_config_review_default_on():
+    assert Config().review_enabled is True and load_config(None).review_enabled is True
+
+
+def test_config_review_global_off_and_bad_values():
+    _write(bawwab_home() / "config.json", {"review": {"enabled": False}})
+    assert load_config(None).review_enabled is False
+    _write(bawwab_home() / "config.json", {"review": {"enabled": "no"}})  # bad value: the default
+    assert load_config(None).review_enabled is True
+
+
+def test_config_project_may_only_turn_review_on(tmp_path):
+    proj = tmp_path / "proj"
+    _write(proj / ".claude" / "bawwab.json", {"review": {"enabled": False}})
+    assert load_config(proj).review_enabled is True  # can't turn it off
+    _write(bawwab_home() / "config.json", {"review": {"enabled": False}})
+    assert load_config(proj).review_enabled is False
+    _write(proj / ".claude" / "bawwab.json", {"review": {"enabled": True}})
+    assert load_config(proj).review_enabled is True  # can turn it on
