@@ -1,8 +1,10 @@
 """What the Claude Code adapter watches. Stdlib only, no bawwab imports.
 
 hooks/fingerprint.py loads this file by path on every tool call, so it must stay a small, cheap table.
-Paths are templates: {home} is the user's home directory, {proj} a project directory. A session has several
-project directories (see project_dirs): the cwd, $CLAUDE_PROJECT_DIR and the cwd's git toplevel.
+Paths are templates: {cfg} is a Claude Code config dir and {cfgjson} a user config file (see config_dirs and
+user_config_files: ~/.claude and ~/.claude.json, plus their $CLAUDE_CONFIG_DIR counterparts when it is set),
+{proj} a project directory. A session has several project directories (see project_dirs): the cwd,
+$CLAUDE_PROJECT_DIR and the cwd's git toplevel.
 In a key path, "{project}" stands for every ~/.claude.json `projects` key that resolves to a project dir.
 """
 import json
@@ -20,11 +22,11 @@ SETTINGS_KEYS = (
 _SETTINGS = tuple((k,) for k in SETTINGS_KEYS)
 
 USER_JSON = (
-    ("{home}/.claude.json", (("mcpServers",), ("projects", "{project}", "mcpServers"))),
-    ("{home}/.claude/settings.json", _SETTINGS),
-    ("{home}/.claude/settings.local.json", _SETTINGS),
-    ("{home}/.claude/plugins/installed_plugins.json", ((),)),
-    ("{home}/.claude/plugins/known_marketplaces.json", ((),)),
+    ("{cfgjson}", (("mcpServers",), ("projects", "{project}", "mcpServers"))),
+    ("{cfg}/settings.json", _SETTINGS),
+    ("{cfg}/settings.local.json", _SETTINGS),
+    ("{cfg}/plugins/installed_plugins.json", ((),)),
+    ("{cfg}/plugins/known_marketplaces.json", ((),)),
 )
 PROJECT_JSON = (
     ("{proj}/.claude/settings.json", _SETTINGS),
@@ -57,8 +59,51 @@ def is_in_use_marker(path: str, item_root: str) -> bool:
         return False
     return m is not None and m.group(1).decode() == os.path.basename(path)
 
-USER_DIRS = ("{home}/.claude/skills", "{home}/.claude/commands", "{home}/.claude/agents")
+USER_DIRS = ("{cfg}/skills", "{cfg}/commands", "{cfg}/agents")
 PROJECT_DIRS = ("{proj}/.claude/skills", "{proj}/.claude/commands", "{proj}/.claude/agents")
+
+
+# ------------------------------------------------------------------ config dirs (CLAUDE_CONFIG_DIR)
+#
+# Claude Code's CLAUDE_CONFIG_DIR moves every ~/.claude path (settings*.json, plugins/, skills/, commands/,
+# agents/, projects/) under that directory, and the user config file ~/.claude.json to <dir>/.claude.json
+# (code.claude.com/docs/en/claude-directory and /env-vars). The variable never shrinks what bawwab watches
+# or protects: ~/.claude and ~/.claude.json stay in the lists whatever it says (an agent could set it to
+# hide a change there). bawwab.paths resolves through these functions; the hook's prefilter keeps a
+# stdlib copy of redirected_config_dir (tests keep the two in step).
+
+def redirected_config_dir() -> str | None:
+    """$CLAUDE_CONFIG_DIR as an absolute, normalised path ("~" expanded), or None when unset or empty."""
+    v = os.environ.get("CLAUDE_CONFIG_DIR")
+    if not v:
+        return None
+    return os.path.normpath(os.path.abspath(os.path.expanduser(v)))
+
+
+def config_dirs(home: str) -> list[str]:
+    """Claude Code's user config dirs: <home>/.claude, then $CLAUDE_CONFIG_DIR when set (and different)."""
+    out = [os.path.join(home, ".claude")]
+    d = redirected_config_dir()
+    if d and d != os.path.normpath(out[0]):
+        out.append(d)
+    return out
+
+
+def user_config_files(home: str) -> list[str]:
+    """Claude Code's user config files: <home>/.claude.json, then $CLAUDE_CONFIG_DIR/.claude.json when set."""
+    out = [os.path.join(home, ".claude.json")]
+    d = redirected_config_dir()
+    if d and os.path.join(d, ".claude.json") != os.path.normpath(out[0]):
+        out.append(os.path.join(d, ".claude.json"))
+    return out
+
+
+def _user_paths(home: str, tpl: str) -> list[str]:
+    if "{cfgjson}" in tpl:
+        return [tpl.replace("{cfgjson}", f) for f in user_config_files(home)]
+    if "{cfg}" in tpl:
+        return [tpl.replace("{cfg}", d) for d in config_dirs(home)]
+    return [tpl.replace("{home}", home)]
 
 
 def _git_toplevel(start: str, home: str) -> str | None:
@@ -88,33 +133,34 @@ def project_dirs(cwd: str, home: str | None = None) -> list[str]:
 
 
 def json_files(cwd: str, home: str) -> list[tuple[str, tuple]]:
-    out = [(t.replace("{home}", home), keys) for t, keys in USER_JSON]
+    out = [(p, keys) for t, keys in USER_JSON for p in _user_paths(home, t)]
     for p in project_dirs(cwd, home):
         out += [(t.replace("{proj}", p), keys) for t, keys in PROJECT_JSON]
     return out
 
 
 def dirs(cwd: str, home: str) -> list[str]:
-    out = [t.replace("{home}", home) for t in USER_DIRS]
+    out = [p for t in USER_DIRS for p in _user_paths(home, t)]
     for p in project_dirs(cwd, home):
         out += [t.replace("{proj}", p) for t in PROJECT_DIRS]
     return out
 
 
 def plugin_dirs(cwd: str, home: str) -> list[str]:
-    """Install paths of installed plugins (their content runs: watched like skills)."""
-    try:
-        with open(os.path.join(home, ".claude", "plugins", "installed_plugins.json"), "rb") as f:
-            data = json.loads(f.read())
-    except (OSError, ValueError, RecursionError):
-        return []
-    plugins = data.get("plugins") if isinstance(data, dict) else None
+    """Install paths of installed plugins, from every config dir (their content runs: watched like skills)."""
     out: list[str] = []
-    for entries in plugins.values() if isinstance(plugins, dict) else []:
-        for e in entries if isinstance(entries, list) else []:
-            p = e.get("installPath") if isinstance(e, dict) else None
-            if isinstance(p, str) and p and p not in out:
-                out.append(p)
+    for d in config_dirs(home):
+        try:
+            with open(os.path.join(d, "plugins", "installed_plugins.json"), "rb") as f:
+                data = json.loads(f.read())
+        except (OSError, ValueError, RecursionError):
+            continue
+        plugins = data.get("plugins") if isinstance(data, dict) else None
+        for entries in plugins.values() if isinstance(plugins, dict) else []:
+            for e in entries if isinstance(entries, list) else []:
+                p = e.get("installPath") if isinstance(e, dict) else None
+                if isinstance(p, str) and p and p not in out:
+                    out.append(p)
     return out
 
 

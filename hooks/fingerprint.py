@@ -290,15 +290,16 @@ def plugin_data_dirs(home: str) -> list[str]:
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd and os.path.isabs(pd) and is_bawwab_plugin_dir(pd):
         out.append(os.path.normpath(pd))
-    base = os.path.join(_claude_dir(home), "plugins", "data")
-    try:
-        names = sorted(os.listdir(base))
-    except OSError:
-        names = []
-    for n in names:
-        d = os.path.join(base, n)
-        if is_bawwab_plugin_dir(d) and os.path.isdir(d) and os.path.normpath(d) not in out:
-            out.append(os.path.normpath(d))
+    for cfg in _claude_dirs(home):
+        base = os.path.join(cfg, "plugins", "data")
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            names = []
+        for n in names:
+            d = os.path.join(base, n)
+            if is_bawwab_plugin_dir(d) and os.path.isdir(d) and os.path.normpath(d) not in out:
+                out.append(os.path.normpath(d))
     return out
 
 
@@ -306,28 +307,36 @@ def data_marker(home: str, name: str) -> bool:
     return any(os.path.exists(os.path.join(d, name)) for d in plugin_data_dirs(home))
 
 
-def _claude_dir(home: str) -> str:
-    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+def _claude_dirs(home: str) -> list:
+    """Claude Code's config dirs: ~/.claude and $CLAUDE_CONFIG_DIR (never only the latter: see the watch table)."""
+    return _watch_tables()[0].config_dirs(home)
+
+
+def _installed_entries(home: str) -> list:
+    """(key, entries) of every config dir's plugins/installed_plugins.json."""
+    out = []
+    for cfg in _claude_dirs(home):
+        try:
+            with open(os.path.join(cfg, "plugins", "installed_plugins.json")) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        plugins = data.get("plugins") if isinstance(data, dict) else None
+        if isinstance(plugins, dict):
+            out += list(plugins.items())
+    return out
 
 
 def plugin_installed_at(home: str) -> float | None:
     """When Claude Code installed bawwab as a plugin: the earliest installedAt of a `bawwab@*` entry (or the
-    entry at CLAUDE_PLUGIN_ROOT, when set) in installed_plugins.json; else None. Read from the file, never
+    entry at CLAUDE_PLUGIN_ROOT, when set) in any config dir's installed_plugins.json; else None. Read from the file, never
     from the process environment, so the user's `!` shell and the hooks agree."""
     from datetime import datetime, timezone
 
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     root = os.path.normpath(root) if root else None
-    try:
-        with open(os.path.join(_claude_dir(home), "plugins", "installed_plugins.json")) as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return None
-    plugins = data.get("plugins") if isinstance(data, dict) else None
-    if not isinstance(plugins, dict):
-        return None
     times = []
-    for key, entries in plugins.items():
+    for key, entries in _installed_entries(home):
         for e in entries if isinstance(entries, list) else [entries]:
             if not isinstance(e, dict):
                 continue
@@ -384,12 +393,13 @@ def session_after(home: str, at: float, current: str | None = None) -> bool:
     dir begins later). bawwab's SessionStart ran in it, so bawwab's state existed. A transcript written after
     `at` that doesn't say when it began counts (fail closed). Without `current` (the CLI from a `!` shell),
     the most recently written session is taken as the current one."""
-    proj = os.path.join(_claude_dir(home), "projects")
     sessions: dict[str, list] = {}  # id -> [newest mtime, started after at]
-    try:
-        dirs = [d.path for d in os.scandir(proj) if d.is_dir(follow_symlinks=False)]
-    except OSError:
-        return False
+    dirs = []
+    for cfg in _claude_dirs(home):  # every config dir's projects/ (CLAUDE_CONFIG_DIR moves it)
+        try:
+            dirs += [d.path for d in os.scandir(os.path.join(cfg, "projects")) if d.is_dir(follow_symlinks=False)]
+        except OSError:
+            pass
     for d in dirs:
         try:
             files = [(e.path, e.name, e.stat().st_mtime) for e in os.scandir(d)

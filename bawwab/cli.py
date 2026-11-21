@@ -449,15 +449,18 @@ def _plugin_roots() -> list[str]:
     root = running_root()
     if root:
         return [root]
-    from bawwab.paths import claude_home
+    from bawwab.paths import claude_config_dirs
 
-    try:
-        data = json.loads((claude_home() / "plugins" / "installed_plugins.json").read_text())
-        plugins = data.get("plugins") if isinstance(data, dict) else None
-    except (OSError, ValueError):
-        plugins = None
+    found = []  # every config dir's install record (~/.claude and $CLAUDE_CONFIG_DIR)
+    for cfg in claude_config_dirs():
+        try:
+            data = json.loads((cfg / "plugins" / "installed_plugins.json").read_text())
+            plugins = data.get("plugins") if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            plugins = None
+        found += list(plugins.items()) if isinstance(plugins, dict) else []
     out: list[str] = []
-    for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
+    for key, entries in found:
         if not (isinstance(key, str) and key.split("@", 1)[0] == "bawwab" and isinstance(entries, list)):
             continue
         for e in entries:
