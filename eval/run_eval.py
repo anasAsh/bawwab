@@ -17,6 +17,10 @@ the fake judge (BAWWAB_FAKE_JUDGE), and a `claude` guard on PATH refuses to run.
 HOME would resolve to the real home. On top of that, the whole run is re-executed inside an OS sandbox
 (eval/isolation.py: bubblewrap or Docker), which hides the real home, makes the repo read-only, has no network
 but loopback, and proves all three from the inside before any entry runs.
+
+Reviewer (spec §4a): each entry records the advice of every scan it wrote (read back from the scratch store), and
+summary.json gets a `reviewer` block (see `reviewer_summary`). A `keep` on a MALICIOUS report fails the run (exit
+4). --compare ignores advice: it is model output and nondeterministic.
 """
 from __future__ import annotations
 
@@ -185,6 +189,7 @@ class Sandbox:
             for v in ("v1", "v2"):
                 _copy_dir(REPLICAS / inc / v, self.vendor / f"{inc}-{v}")
         _copy_dir(EVAL / "fixtures" / "evil-skill", self.vendor / "evil-skill")
+        _copy_dir(EVAL / "fixtures" / "reviewer", self.vendor / "reviewer")  # attacks aimed at the reviewer (§4a)
         for i in range(self.latency_copies):
             _copy_dir(REPLICAS / "postmark_rugpull" / "v1", self.vendor / "lat" / f"clean{i}")
         self.git("init", "-q", "-b", "main")
@@ -355,10 +360,28 @@ class HookResult:
                 "reason": self.reason()[:700], "exit": self.code}
 
 
+ADVICE_LABEL = "Claude's recommendation (advice, not a verdict)"  # spec §4a: how the advice is shown
+
+
+def without_advice(text: str) -> str:
+    """The text with the reviewer's block removed (from the label line up to the next blank line). Advice is model
+    output, so its wording must never decide a classification that --compare checks."""
+    out, skipping = [], False
+    for ln in text.splitlines():
+        if ADVICE_LABEL in ln:
+            skipping = True
+            continue
+        if skipping and not ln.strip():
+            skipping = False
+        if not skipping:
+            out.append(ln)
+    return "\n".join(out)
+
+
 def reason_kind(text: str) -> str | None:
     if not text:
         return None
-    t = text
+    t = without_advice(text)
     if "refused —" in t:
         return "refused"
     if "quarantine" in t.lower() and ("blocked until" in t or "quarantined" in t):
@@ -412,9 +435,62 @@ def _call(sb: Sandbox, c: dict, extra: dict) -> dict:
     return sb.pre(c["tool_name"], **c["tool_input"])
 
 
+# ------------------------------------------------------------------ the reviewer's advice (spec §4a)
+#
+# The hooks scan in a child process, so the advice is read back from the scratch store (scans written during the
+# entry). Advice is model output: it is recorded and summarised, but never part of what --compare checks.
+
+def advice_record(advice: dict | None) -> dict | None:
+    """The recorded part of a report's advice (store dict form): the recommendation and its reason."""
+    if not isinstance(advice, dict):
+        return None
+    return {"recommendation": advice.get("recommendation"), "reason": advice.get("reason", "")}
+
+
+def store_scans(db: Path) -> dict[str, tuple[str, dict]]:
+    """key -> (scanned_at, report dict) for every scan in a bawwab store; {} when there is none. Read-only."""
+    import sqlite3
+
+    if not db.exists():
+        return {}
+    conn = sqlite3.connect(f"file:{quote(str(db))}?mode=ro", uri=True)
+    try:
+        rows = conn.execute("SELECT key, scanned_at, report FROM scans").fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    out = {}
+    for key, at, report in rows:
+        try:
+            out[key] = (at, json.loads(report))
+        except ValueError:
+            continue
+    return out
+
+
+def new_scans_advice(before: dict[str, tuple[str, dict]], after: dict[str, tuple[str, dict]]) -> list[dict]:
+    """One record per scan written (new, or rescanned) between the two store snapshots, in key order."""
+    recs = []
+    for key in sorted(after):
+        at, rep = after[key]
+        if key in before and before[key][0] == at:
+            continue
+        recs.append({"target": (rep.get("target") or {}).get("raw"), "verdict": rep.get("verdict"),
+                     "advice": advice_record(rep.get("advice"))})
+    return recs
+
+
 def run_entry(sb: Sandbox, e: dict) -> dict:
     """Replay one entry: setup, gate every call, write the effect, post, then probe."""
     sb.reset()
+    scans_before = store_scans(sb.bh / "bawwab.db")
+    rec = _run_entry(sb, e)
+    rec["advice"] = new_scans_advice(scans_before, store_scans(sb.bh / "bawwab.db"))
+    return rec
+
+
+def _run_entry(sb: Sandbox, e: dict) -> dict:
     extra: dict = {}
     rec: dict = {"id": e["id"], "family": e.get("family", "normal"), "title": e.get("title", "")}
     setup = e.get("setup") or {}
@@ -563,8 +639,10 @@ class FakeJudge:
 
 
 def _report(r) -> dict:
+    a = getattr(r, "advice", None)
     return {"verdict": r.verdict.value, "findings": sorted({f"{f.rule}:{f.severity.name}" for f in r.findings}),
-            "canary_in_diff": bool(r.diff_summary and "BAWWAB-CANARY" in r.diff_summary)}
+            "canary_in_diff": bool(r.diff_summary and "BAWWAB-CANARY" in r.diff_summary),
+            "advice": {"recommendation": a.recommendation, "reason": a.reason} if a is not None else None}
 
 
 def _npm_registry(packages: dict[str, dict[str, tuple[Path, str]]]):
@@ -726,7 +804,107 @@ def run_baseline(sb: Sandbox) -> dict:
 
 # ------------------------------------------------------------------ summary
 
-def summarise(attacks: list[dict], normal: list[dict]) -> dict:
+KEEPS = ("keep", "keep-with-care")
+
+
+class ReviewerInvariantBroken(RuntimeError):
+    """`keep` / `keep-with-care` on a report the scanner rated MALICIOUS: impossible by construction (spec §4a)."""
+
+
+def _replica_reports(rep, where: str = "replicas"):
+    """(where, report) for every scan in replicas.json (dicts with a verdict, walked recursively)."""
+    if isinstance(rep, dict):
+        if "verdict" in rep and "findings" in rep:
+            yield where, rep
+            return
+        for k, v in rep.items():
+            yield from _replica_reports(v, f"{where}/{k}")
+
+
+def _tally() -> dict:
+    return {"reports": 0, "keep": 0, "keep-with-care": 0, "dont-install": 0, "cant-tell": 0, "no_advice": 0,
+            "ids": []}
+
+
+def _count(t: dict, where: str, advice: dict | None) -> None:
+    t["reports"] += 1
+    rec = (advice or {}).get("recommendation")
+    if rec is None:
+        t["no_advice"] += 1
+        return
+    if rec in ("keep", "keep-with-care", "dont-install", "cant-tell"):
+        t[rec] += 1
+    else:  # not one of the four: shown, never silently folded into another
+        t["unknown"] = t.get("unknown", 0) + 1
+    if rec in KEEPS:
+        t["ids"].append(where)
+
+
+def reviewer_summary(attacks: list[dict], normal: list[dict], replicas: dict | None = None) -> dict:
+    """The reviewer metrics (spec §4a), per scan report. Attack entries are the malicious samples and normal tasks the
+    benign ones; replica scans count only toward (a), the invariant, which holds whatever the sample is.
+
+    (a) keep / keep-with-care on any report rated MALICIOUS: must be 0 (the reviewer can't produce it);
+    (b) the same on malicious samples rated only SUSPICIOUS: the residual the quote check can't stop;
+    (c) the benign set: keep / keep-with-care against dont-install / cant-tell;
+    (d) non-clean reports with no advice. CLEAN reports are never reviewed and are counted apart, as are the
+        replicas' static-only scans (static-only scans skip the reviewer by design)."""
+    on_malicious, rated_susp, benign = _tally(), _tally(), _tally()
+    a_hits: list[str] = []
+    no_advice = {"attacks": 0, "normal": 0, "replicas": 0}
+    clean = 0
+    static_only = 0
+
+    def seen(section: str, where: str, verdict: str | None, advice: dict | None, sample: dict | None) -> None:
+        nonlocal clean
+        if verdict == "clean":
+            clean += 1
+            return
+        if advice is None:
+            no_advice[section] += 1
+        if verdict == "malicious" and (advice or {}).get("recommendation") in KEEPS:
+            a_hits.append(where)
+        if sample is not None:
+            _count(sample, where, advice)
+
+    for a in attacks:
+        for s in a.get("advice") or []:
+            where = f"attacks/{a['id']}: {s.get('target')}"
+            sample = on_malicious if s.get("verdict") == "malicious" else rated_susp
+            seen("attacks", where, s.get("verdict"), s.get("advice"), sample)
+    for n in normal:
+        for s in n.get("advice") or []:
+            seen("normal", f"normal/{n['id']}: {s.get('target')}", s.get("verdict"), s.get("advice"), benign)
+    for where, r in _replica_reports(replicas or {}):
+        if "static" in where and r.get("advice") is None and r.get("verdict") != "clean":
+            static_only += 1
+            continue
+        seen("replicas", where, r.get("verdict"), r.get("advice"), None)
+    for t in (on_malicious, rated_susp, benign):
+        t["keep_or_care"] = t["keep"] + t["keep-with-care"]
+        t["dont_or_cant"] = t["dont-install"] + t["cant-tell"]
+    return {
+        "unit": "scan reports (non-clean) written during each entry; see run_eval.py: reviewer_summary",
+        "a_keep_on_malicious_verdict": {"count": len(a_hits), "where": a_hits, "must_be": 0},
+        "b_malicious_samples_rated_suspicious": rated_susp,
+        "malicious_samples_rated_malicious": on_malicious,
+        "c_benign_samples": benign,
+        "d_no_advice": {"total": sum(no_advice.values()), **no_advice},
+        "clean_not_reviewed": clean,
+        "static_only_not_reviewed": static_only,
+    }
+
+
+def check_reviewer_invariant(summary: dict) -> None:
+    """Raise when (a) is not 0. Called after the results are written, so the evidence is on disk."""
+    a = (summary.get("reviewer") or {}).get("a_keep_on_malicious_verdict") or {}
+    if a.get("count"):
+        raise ReviewerInvariantBroken(
+            f"{a['count']} report(s) rated MALICIOUS got keep/keep-with-care from the reviewer, which spec §4a "
+            f"rules out by construction: " + "; ".join(a.get("where", [])[:20]))
+
+
+def summarise(attacks: list[dict], normal: list[dict], replicas: dict | None = None) -> dict:
     fam: dict[str, dict] = {}
     for a in attacks:
         f = fam.setdefault(a["family"], {"n": 0, "blocked_before": 0, "caught_after_of_passed": 0, "passed_gate": 0,
@@ -748,14 +926,20 @@ def summarise(attacks: list[dict], normal: list[dict]) -> dict:
           "tasks_with_any_notice": sum(1 for n in normal if n["notices"]),
           "unexpected": [n["id"] for n in normal if n["notices"] and not n.get("by_design")],
           "by_design": [n["id"] for n in normal if n["notices"] and n.get("by_design")]}
-    return {"families": fam, "misses": misses, "false_positives": fp}
+    return {"families": fam, "misses": misses, "false_positives": fp,
+            "reviewer": reviewer_summary(attacks, normal, replicas)}
 
 
 # ------------------------------------------------------------------ reproducibility: compare two result sets
 
 def comparable(d: Path) -> dict:
     """The parts of a results dir that must not change between runs of the same tree: decisions, outcomes,
-    verdicts and findings. Timings, reason wording and the diff text are left out."""
+    verdicts and findings. Timings, reason wording and the diff text are left out.
+
+    So is everything the reviewer produced (spec §4a): the per-entry `advice` records, the replicas' `advice`, and
+    `summary.reviewer`. Advice is model output and not deterministic, and it never changes a verdict, a finding
+    or a decision, so two runs of the same tree may differ there and still match. (The gate's reason is
+    classified with the advice block removed, for the same reason: see `without_advice`.)"""
     def load(name):
         p = d / f"{name}.json"
         return json.loads(p.read_text()) if p.exists() else None
@@ -774,11 +958,11 @@ def comparable(d: Path) -> dict:
     if (rep := load("replicas")) is not None:
         def strip(x):
             if isinstance(x, dict):
-                return {k: strip(v) for k, v in x.items() if k != "diff_since_trusted"}
+                return {k: strip(v) for k, v in x.items() if k not in ("diff_since_trusted", "advice")}
             return x
         out["replicas"] = strip(rep)
     if (summ := load("summary")) is not None:
-        out["summary"] = summ
+        out["summary"] = {k: v for k, v in summ.items() if k != "reviewer"}
     # tuples -> lists, as they would come back from disk; mkdtemp suffixes (replicas-XXXXXXXX) don't count
     return json.loads(re.sub(r"replicas-[A-Za-z0-9_]{8}", "replicas-*", json.dumps(out)))
 
@@ -869,7 +1053,9 @@ def run_isolated(a, expected: dict | None = None, exec_=None) -> int:
             print(f"run_eval: refused: {e}", file=sys.stderr)
             return 2
         meta_p = spec.inner_out / "meta.json"
-        if code != 0 or not meta_p.exists():
+        # EXIT_REVIEWER: the inner run finished and wrote its results, but the reviewer invariant failed; copy the
+        # results out (the evidence) and still fail
+        if code not in (0, EXIT_REVIEWER) or not meta_p.exists():
             print(f"run_eval: the sandboxed run failed (exit {code})", file=sys.stderr)
             return code or 1
         meta = json.loads(meta_p.read_text())
@@ -884,9 +1070,13 @@ def run_isolated(a, expected: dict | None = None, exec_=None) -> int:
             out.mkdir(parents=True, exist_ok=True)
             for f in sorted(spec.inner_out.glob("*.json")):
                 shutil.copyfile(f, out / f.name)
+        if code == EXIT_REVIEWER:
+            print(f"run_eval: FAILED: the reviewer invariant (a) broke inside the sandbox (exit {code}); "
+                  "see summary.json: reviewer", file=sys.stderr)
         if a.compare:
-            return _report_compare(expected or {}, spec.inner_out, a.compare)
-        return 0
+            rc = _report_compare(expected or {}, spec.inner_out, a.compare)
+            return code or rc
+        return code
     finally:
         if not a.keep:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -955,7 +1145,8 @@ def main(argv: list[str] | None = None) -> int:
             results["latency"] = run_latency(sb)
         if "baseline" in parts:
             results["baseline"] = run_baseline(sb)
-        results["summary"] = summarise(results.get("attacks", []), results.get("normal", []))
+        results["summary"] = summarise(results.get("attacks", []), results.get("normal", []),
+                                       results.get("replicas"))
         results["guard_claude_invocations"] = sb.guard_log.read_text().splitlines() if sb.guard_log.exists() else []
         results["meta"] = {"method": f"hook replay (no live Claude), isolation: {iso['runner']}",
                            "python": sys.version.split()[0], "when": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -982,9 +1173,25 @@ def main(argv: list[str] | None = None) -> int:
         (out / "meta.json").write_text(dump({"meta": results["meta"],
                                              "guard_claude_invocations": results["guard_claude_invocations"]}) + "\n")
     print(json.dumps(results.get("summary", {}), indent=2))
+    broken = reviewer_failure(results.get("summary", {}))
     if a.compare and not a.no_write:
-        return _report_compare(expected or {}, Path(a.out), a.compare)
-    return 0
+        rc = _report_compare(expected or {}, Path(a.out), a.compare)
+        return EXIT_REVIEWER if broken else rc
+    return EXIT_REVIEWER if broken else 0
+
+
+EXIT_REVIEWER = 4  # the reviewer invariant (a) failed; the results are written so the evidence can be read
+
+
+def reviewer_failure(summary: dict) -> bool:
+    """Print the failure loudly and return True when (a) is not 0."""
+    try:
+        check_reviewer_invariant(summary)
+    except ReviewerInvariantBroken as e:
+        bar = "!" * 78
+        print(f"{bar}\nrun_eval: FAILED: reviewer invariant (a): {e}\n{bar}", file=sys.stderr)
+        return True
+    return False
 
 
 if __name__ == "__main__":

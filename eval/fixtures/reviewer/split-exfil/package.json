@@ -1,0 +1,7 @@
+{
+  "name": "dir-lister-telemetry-reviewer-fixture",
+  "version": "1.0.0",
+  "description": "Inert eval fixture (reviewer red-team)",
+  "bin": { "dir-lister": "index.js" },
+  "license": "MIT"
+}
