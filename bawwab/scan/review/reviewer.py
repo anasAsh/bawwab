@@ -279,6 +279,36 @@ def _check_quote(root: _Root, file: str, line: int, quote: str) -> None:
         raise _CantTell(f"a quote does not appear in {_clip(file)} near line {line}")
 
 
+def _norm(rel: str) -> str:
+    """A path as finding paths are written (`Path.relative_to(root).as_posix()`): no `.`, empty or leading parts."""
+    return "/".join(p for p in rel.strip().split("/") if p not in ("", "."))
+
+
+def _own_location(root: _Root, f: Finding) -> str | None:
+    """Where a finding's quote must come from: its tool-description label (exact) or its file (normalised), when
+    that can be read. None when the finding has no citable location (identity, unresolved server, judge and
+    sandbox notes, a label or file that isn't available): such a finding can't be grounded."""
+    if not f.file:
+        return None
+    if f.file in root.extra:
+        return f.file
+    loc = _norm(f.file)
+    try:
+        root.lines(loc)
+    except (_Unavailable, _Escape, OSError):
+        return None
+    return loc
+
+
+def _check_binding(f: Finding, loc: str, file: str, line: int) -> None:
+    """The cited location is the finding's own: its file, and within QUOTE_WINDOW lines of its line if it has one.
+    A decoy file or an unrelated line elsewhere in the file is refused, however verbatim the quote."""
+    if file != loc and _norm(file) != loc:
+        raise _CantTell(f"a quote for a finding in {_clip(loc)} cites another file ({_clip(file)})")
+    if f.line and abs(line - f.line) > QUOTE_WINDOW:
+        raise _CantTell(f"a quote for a finding at {_clip(loc)}:{f.line} cites line {line}, too far from it")
+
+
 def validate(
     answer: object, report: ScanReport, root: Path | _Root | None, *,
     counted: list[Finding] | None = None, threshold: Severity = Severity.MED, extra: Iterable[ExtraText] = (),
@@ -308,6 +338,7 @@ def _validate(answer: object, report: ScanReport, root: _Root, keyed: dict[str, 
         raise _CantTell("the reviewer's answer did not match the schema")
     seen: set[str] = set()
     out: list[Assessment] = []
+    ungrounded: list[str] = []
     for it in items:
         if not isinstance(it, dict):
             raise _CantTell("the reviewer's answer did not match the schema")
@@ -323,6 +354,12 @@ def _validate(answer: object, report: ScanReport, root: _Root, keyed: dict[str, 
             raise _CantTell(f"the reviewer assessed finding {fid} twice")
         seen.add(fid)
         _check_quote(root, file, line, quote)
+        loc = _own_location(root, keyed[fid])
+        if loc is None:
+            ungrounded.append(fid)  # its quote is checked wherever it is from, but it can't support a keep
+        else:
+            _check_binding(keyed[fid], loc, file, line)
+            file = loc
         out.append(Assessment(fid, ass, sanitise(why, MAX_WHY), sanitise(quote.strip(), MAX_QUOTE),
                               sanitise(file, MAX_FILE_LABEL), line))
     missing = [k for k in keyed if k not in seen]
@@ -334,6 +371,10 @@ def _validate(answer: object, report: ScanReport, root: _Root, keyed: dict[str, 
         rec = "cant-tell"
     elif rec in _KEEPS and any(a.assessment == "real" for a in out):
         reason = f"capped: the reviewer said {rec}, but assessed a finding as real"
+        rec = "cant-tell"
+    elif rec in _KEEPS and ungrounded:
+        reason = (f"capped: the reviewer said {rec}, but a finding without a location can't be grounded "
+                  f"({', '.join(ungrounded[:5])})")
         rec = "cant-tell"
     return Advice(rec, sanitise(summary, MAX_SUMMARY), out, reason)
 

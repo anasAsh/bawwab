@@ -556,8 +556,17 @@ report reviews did, built in. Config `"review": {"enabled": true}` (default on).
   and per counted finding: an assessment (`false-alarm` / `expected` / `real`), a reason, and a quoted
   line with its file and line.
 - **Checked by Bawwab; any failure is `cant-tell`.** Valid JSON; every counted finding covered; every quote
-  (≥ 20 chars) appears verbatim in the cited file within 5 lines of the cited line; any `real` assessment
-  rules out `keep`; a timeout, a garbled answer or a failed check gives `cant-tell` with the reason.
+  (≥ 20 chars, or a whole source line ≥ 6) appears verbatim in the cited file within 5 lines of the cited
+  line; any `real` assessment rules out `keep`; a timeout, a garbled answer or a failed check gives
+  `cant-tell` with the reason.
+- **Each quote is bound to its finding.** The cited file must be the finding's own (its path normalised as
+  finding paths are, or its tool-description label exactly), and when the finding has a line the cited line
+  must be within 5 lines of it (a finding with only a file may cite any line of it). A quote from a decoy
+  file or an unrelated line is refused. Other code the reviewer read may be named in `why`, never used as
+  the quote. A finding with no citable location (no file: identity, `plugin.unresolved-server`, judge and
+  sandbox notes; or a file or label that can't be read) can't be grounded: its quote is still checked
+  wherever it is from, but such a finding caps `keep` / `keep-with-care` to `cant-tell`, whatever its
+  severity (counted findings are MED or above anyway).
 - **Asymmetric (user decision).** `keep` and `keep-with-care` are allowed only for SUSPICIOUS. For MALICIOUS
   (a critical static finding) the result can only be `dont-install` or `cant-tell` ("read these lines"):
   the strongest signals can't be talked down.
