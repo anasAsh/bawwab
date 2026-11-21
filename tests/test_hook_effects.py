@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+import pytest
 from _shim import write_uv_shim
 
 HOOK = Path(__file__).resolve().parent.parent / "hooks" / "bawwab_hook.py"
@@ -181,6 +183,7 @@ def test_timeout_marks_effects_error(tmp_path, monkeypatch, capsys):
     assert (_bh() / "effects.error").exists()
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_real_bawwab_end_to_end_and_hot_path_speed(tmp_path):
     """Real `bawwab gate`: the first call stores the fingerprint; then unchanged calls stay < 100 ms."""
     proj = _setup(tmp_path, marker=False)

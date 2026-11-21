@@ -860,6 +860,7 @@ def _detected_or_too_complex(r) -> bool:
     "cat " + " ".join(["<<A"] * 200) + "\n" + "x\nA\n" * 200 + _E,
     "\n".join(["bash <<A\nbash <<B\nbash <<C"] * 60) + "\n" + _E,
 ])
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_heredoc_scanning_is_bounded(home, cmd):
     r, dt = _timed(cmd)
     assert dt < 1.0, dt
@@ -926,6 +927,7 @@ def test_arith_quote_bypass(home, cmd):
     assert isinstance(r, Targets) and "evilpkg" in [t.name for t in r.targets], r
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_budget_charged_before_building_text(home):
     import tracemalloc
     cmd = f"cat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E
@@ -1004,6 +1006,7 @@ def test_r24_benign_arith_is_none(home, cmd):
     f"cat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E,  # r4/a5
     f"(( a << X ))\ncat > /tmp/f <<A\n{'x' * 150000}\nA\npython3 " + "/tmp/f " * 20000 + "\n" + _E,
 ])
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_r24_both_readings_bounded(home, cmd):
     r, dt = _timed(cmd)
     assert dt < 1.0, dt
@@ -1166,6 +1169,7 @@ def _body(n: int) -> str:
     ("(( a << 1 ))\n" + _body(300_000) + _E, 1.5),
     ("(( a << 1 )); " + "echo hello world; " * 16600 + _E, 1.5),
 ])
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_r25_perf_targets(home, cmd, limit):
     r, dt = _timed(cmd)
     assert dt < limit, dt

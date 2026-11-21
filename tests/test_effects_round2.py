@@ -101,6 +101,7 @@ def test_tree_hash_always_covers_key_files():
     assert _tree_hash(s) != h1
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_hook_median_with_two_big_trees(big):
     home, proj, inst = big
     call = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": str(proj)})

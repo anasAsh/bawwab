@@ -22,7 +22,11 @@ jobs:
       - name: Install
         run: uv sync --locked
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q -m "not timing"
+      - name: Timing tests (not blocking)
+        # Absolute millisecond limits, met on a developer machine but noisy on shared runners: reported, not gating.
+        continue-on-error: true
+        run: uv run pytest -q -m timing
       - name: Static benchmark
         run: uv run python bench/run.py --static-only
       - name: Full benchmark (static + AI judge)

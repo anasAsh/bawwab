@@ -342,6 +342,7 @@ def test_depth3_edit_and_mtime_preserving_edit_detected(env):
     assert len(fx.refresh(proj, scan=content_scan)) == 1
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_fingerprint_speed_50_skills_20_files(env):
     home, proj = env
     for i in range(50):

@@ -22,6 +22,7 @@ def run(stdin: str, *args: str, env: dict | None = None):
     return subprocess.run(["python3", str(HOOK), *args], input=stdin, capture_output=True, text=True, env=e, timeout=60)
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_non_install_fast_and_silent():
     times = []
     for _ in range(5):

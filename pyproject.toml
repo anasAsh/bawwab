@@ -31,6 +31,7 @@ testpaths = ["tests"]
 markers = [
     "real_spawn: allow the test to spawn the real background inventory",
     "real_osv: use the real OSV client (against a fake server) instead of the no-network stub",
+    "timing: asserts an absolute time limit (run separately in CI, not blocking)",
 ]
 
 [dependency-groups]

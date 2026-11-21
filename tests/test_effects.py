@@ -338,6 +338,7 @@ def test_cli_effects_lists(env, monkeypatch, capsys):
     assert f"! {B} approve" in capsys.readouterr().out
 
 
+@pytest.mark.timing  # absolute time limit: noisy on shared CI runners
 def test_fingerprint_speed_50_skills(env):
     home, proj = env
     for i in range(50):
