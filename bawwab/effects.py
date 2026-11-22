@@ -34,7 +34,7 @@ from bawwab.paths import bawwab_home
 from bawwab.report import advice_short, format_advice, sanitise
 from bawwab.scan import TRANSIENT_RULES, scan_target, synthetic_report
 from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self_path
-from bawwab.store import Store, open_store, report_from_dict, report_to_dict
+from bawwab.store import Store, item_ids, open_store, report_from_dict, report_to_dict
 from bawwab.types import Advice, ScanReport, Target, Verdict
 
 # Allowed while something is quarantined: they change nothing. AskUserQuestion lets Claude ask the user
@@ -422,9 +422,26 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
     transient = any(f.source == "gate" and f.rule in TRANSIENT_RULES for f in r.findings)
     if r.verdict == Verdict.CLEAN and not transient:
         return True, r
-    if store.is_approved(r.key) or store.get_baseline().get(it.ident) == r.key:
+    if store.is_approved(r.key, _item_ids(it)) or store.get_baseline().get(it.ident) == r.key:
         return True, r
     return False, r
+
+
+def _item_ids(it: EffectItem) -> tuple[str, ...]:
+    """What approving this item binds to (store.item_ids): its ident, and a Claude Code server's `mcp:<name>`."""
+    return item_ids(it.ident, it.keypath[-1] if it.category == "servers" and it.keypath else None)
+
+
+def _q_item_ids(q: dict) -> tuple[str, ...]:
+    """_item_ids of a quarantine row (its item as recorded)."""
+    try:
+        item = json.loads(q["item"]) if q.get("item") else {}
+    except ValueError:
+        item = {}
+    kp = item.get("keypath") if isinstance(item, dict) else None
+    name = kp[-1] if isinstance(kp, list) and kp and isinstance(kp[-1], str) and item.get("category") == "servers" \
+        else None
+    return item_ids(q["ident"], name)
 
 
 def _is_quarantined(store: Store, it: EffectItem) -> bool:
@@ -432,7 +449,7 @@ def _is_quarantined(store: Store, it: EffectItem) -> bool:
 
 
 def _quarantine(store: Store, it: EffectItem, r: ScanReport, cwd: Path | None = None) -> str:
-    qid = store.create_pending(r)
+    qid = store.create_pending(r, items=_item_ids(it))  # approving it keeps this item, not every copy of its code
     item = it.to_dict()
     if it.category == "permissions":
         item["value"] = it.value  # approving it makes this the accepted projection
@@ -740,7 +757,7 @@ def quarantined(store: Store | None = None, status: str = "active") -> list[dict
     reissued: dict[str, str] = {}  # a batch shares one id: re-issue it once
     settled = False
     for q in store.quarantine_rows(status):
-        if store.is_approved(q["key"]) and not store.is_rejected(q["key"]):
+        if store.is_approved(q["key"], _q_item_ids(q)) and not store.is_rejected(q["key"]):
             store.set_quarantine(q["qrow"], status="approved")
             item = json.loads(q["item"]) if q["item"] else {}
             if q["ident"] != ERROR_IDENT and item.get("scope"):
@@ -760,7 +777,7 @@ def quarantined(store: Store | None = None, status: str = "active") -> list[dict
                     rep = report_from_dict(store.pending_report(q["id"]))
                     if rep.key != q["key"]:
                         raise ValueError(q["key"])
-                new_id = store.create_pending(rep)
+                new_id = store.create_pending(rep, items=_q_item_ids(q) if rep.key == q["key"] else None)
             except (ValueError, KeyError, TypeError, AttributeError):
                 new_id = store.create_pending(synthetic_report("quarantined item", q["key"]))
             store.set_quarantine(q["qrow"], qid=new_id)

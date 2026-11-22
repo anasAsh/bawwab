@@ -136,7 +136,7 @@ def check_agent(adapter, projects: list[str], scan=None, store: Store | None = N
                 warned.append(f"{effects.item_name({'ident': it.ident, 'item': json.dumps(it.to_dict())})} is "
                               f"{r.verdict.value}")
             continue
-        qid = store.create_pending(r)
+        qid = store.create_pending(r, items=effects._item_ids(it))
         store.add_quarantine(qid, it.ident, it.hash, r.key, it.to_dict(), report_to_dict(r), status=HELD)
         store.audit("watch.hold", agent=adapter.name, id=qid, ident=it.ident, key=r.key, verdict=r.verdict.value)
         new_ids.append(qid)

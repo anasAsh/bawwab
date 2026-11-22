@@ -49,6 +49,9 @@ class Targets:
     plain: list[str] = field(default_factory=list)
     # (protected reason, server entry hash): approving that reason also accepts the entry in the effect check
     env_entries: list[tuple[str, str]] = field(default_factory=list)
+    # target -> the config items it is installed as (`mcp:<name>`): approving a non-clean verdict binds to them,
+    # not to the code alone (store.item_ids), so a second server running the same code gets its own decision
+    items: dict[Target, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -111,6 +114,7 @@ class _Acc:
         self.script_bytes = 0  # bytes of file text read in this call
         self.file_scanned: set[tuple[str, str]] = set()  # `scanned` of file analyses (their reasons are filtered)
         self.env_entries: list[tuple[str, str]] = []  # (protected reason, server entry hash) for server env loaders
+        self.items: dict[Target, list[str]] = {}  # target -> the MCP server names it is installed as
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -123,6 +127,11 @@ class _Acc:
                 raise _TooComplex  # no real command installs this many things; scanning them all would not end
             self.targets.append(t)
         self.pinnable = self.pinnable or pinnable
+
+    def name(self, t: Target, server: str) -> None:
+        """t is installed as the MCP server `server` (Targets.items)."""
+        if server and server != "?" and f"mcp:{server}" not in self.items.setdefault(t, []):
+            self.items[t].append(f"mcp:{server}")
 
     def protect(self, reason: str) -> None:
         if reason not in self.protected:
@@ -139,7 +148,7 @@ class _Acc:
     def result(self) -> Targets | Protected | None:
         if self.targets:
             return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain,
-                           self._entries())
+                           self._entries(), {t: v for t, v in self.items.items() if t in self.targets})
         if self.protected or self.plain:
             return Protected("; ".join(self.protected + self.plain), list(self.plain),
                              "; ".join(self.protected) if self.plain else None, self._entries())
@@ -447,6 +456,7 @@ def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: 
         if script and not os.path.isabs(script):
             t = dataclasses.replace(t, path=_abspath(posixpath.dirname(script) or ".", cwd))
     acc.add(t, pinnable=True)
+    acc.name(t, name)
     from bawwab.fetch.target import runner_extras
 
     extras, reasons = runner_extras(cmd, args)
@@ -454,6 +464,7 @@ def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: 
         acc.protect(f"{r} ({name})")
     for e in extras:
         acc.add(e, pinnable=False)
+        acc.name(e, name)
 
 
 def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
@@ -462,7 +473,9 @@ def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
     url = spec.get("url")
     if isinstance(url, str) and url:
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(url, spec.get("type")), pinnable=True)
+        t = _target_from_url(url, spec.get("type"))
+        acc.add(t, pinnable=True)
+        acc.name(t, name)
         return
     cmd, args = spec.get("command"), spec.get("args", [])
     if isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
@@ -1023,7 +1036,9 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
         return
     if transport in ("http", "sse") or cmd.startswith(("http://", "https://")):
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(cmd, transport), pinnable=True)
+        t = _target_from_url(cmd, transport)
+        acc.add(t, pinnable=True)
+        acc.name(t, name)
         return
     before = len(acc.protected)
     _add_server(name, cmd, cargs, env, cwd, acc)
@@ -1842,6 +1857,8 @@ def _raw_merge(src: _Acc, acc: _Acc, narrow: bool) -> None:
         acc.add(t, src.pinnable)
         if t in src.overlays:
             acc.overlays.setdefault(t, src.overlays[t])
+        for item in src.items.get(t, ()):
+            acc.name(t, item[len("mcp:"):])
     for reason in src.protected:
         if not narrow or reason.startswith(_RAW_NARROW):
             acc.protect(reason)

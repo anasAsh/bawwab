@@ -89,7 +89,47 @@ def _migrate_6(conn: sqlite3.Connection) -> None:
     _add_column(conn, "quarantine", "dstate", "TEXT")
 
 
-_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4, _migrate_5, _migrate_6]
+_CONTENT_KINDS = ("npm", "pypi", "git", "local", "remote", "docker")  # types.TargetKind: target_key's prefix
+
+
+def content_key(key: str) -> bool:
+    """A scan's content key (store.target_key: kind:name@version#hash), as opposed to a synthetic key that already
+    names one item or action (effect:<ident>#..., effect-batch:..., protected:..., self:...)."""
+    return isinstance(key, str) and key.split(":", 1)[0] in _CONTENT_KINDS
+
+
+def item_ids(ident: str, server: str | None = None) -> tuple[str, ...]:
+    """What the approval of a non-clean verdict binds to besides the content key: the item's ident, and for a
+    Claude Code MCP server also `mcp:<name>`, the form the gate knows from `claude mcp add <name> ...` (so an
+    install approved at the gate is accepted by the effect check, under that name only)."""
+    out = (ident,)
+    if server and ident.startswith("claude-code:mcp:"):
+        out += (f"mcp:{server}",)
+    return out
+
+
+def _migrate_7(conn: sqlite3.Connection) -> None:
+    """Approval of a non-clean verdict binds to the item, not only to its code (0.1.6): a second entry running the
+    same code gets its own decision. Approvals already given through the quarantine (one item each, by the user)
+    are bound to that item; an older approval not tied to one (the gate, `bawwab scan`) is claimed by the first
+    item that uses it (Store.is_approved), so nothing the user decided is asked again."""
+    _add_column(conn, "pending", "items", "TEXT")
+    _add_column(conn, "approvals", "claimed_by", "TEXT")
+    conn.execute("CREATE TABLE IF NOT EXISTS item_approvals (item TEXT NOT NULL, key TEXT NOT NULL,"
+                 " approved_at TEXT NOT NULL, PRIMARY KEY (item, key))")
+    rows = conn.execute(
+        "SELECT q.ident, q.key, a.approved_at FROM quarantine q JOIN approvals a ON a.key = q.key"
+        " WHERE q.status = 'approved' UNION"
+        " SELECT e.ident, e.key, a.approved_at FROM effect_state e JOIN approvals a ON a.key = e.key"
+        " WHERE e.status = 'approved' ORDER BY 3").fetchall()
+    for ident, key, at in rows:
+        if not content_key(key):
+            continue
+        conn.execute("INSERT OR IGNORE INTO item_approvals(item, key, approved_at) VALUES (?,?,?)", (ident, key, at))
+        conn.execute("UPDATE approvals SET claimed_by=? WHERE key=? AND claimed_by IS NULL", (ident, key))
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4, _migrate_5, _migrate_6, _migrate_7]
 # quarantine.dstate: "pending" (the plan is recorded, the config may not be changed yet), "done" (switched off),
 # "restored" (approved: switched back on), "kept" (rejected or replaced: nothing to switch back on)
 DISABLE_STATES = ("pending", "done", "restored", "kept")
@@ -271,9 +311,13 @@ class Store:
             return None
 
     # --- approvals ---
-    def create_pending(self, r: ScanReport, now: datetime | None = None) -> str:
+    def create_pending(self, r: ScanReport, now: datetime | None = None, items: tuple | list | None = None) -> str:
+        """items: what approving this id binds to (item_ids; several when one gate block names more than one
+        server). None: the content key alone (the gate when it can't name the item, `bawwab scan`); such an
+        approval is claimed by the first item that uses it (is_approved)."""
         now = _utc(now or _now())
         data = json.dumps(report_to_dict(r))
+        items_json = json.dumps(sorted(set(items))) if items else None
         with self._tx():
             while True:
                 pid = _gen_id()
@@ -285,11 +329,23 @@ class Store:
                 (r.key, _iso(now)),
             )
             self._conn.execute(
-                "INSERT OR REPLACE INTO pending(id, key, report, created_at, expires_at, status)"
-                " VALUES (?,?,?,?,?, 'pending')",
-                (pid, r.key, data, _iso(now), _iso(now + PENDING_TTL)),
+                "INSERT OR REPLACE INTO pending(id, key, report, created_at, expires_at, status, items)"
+                " VALUES (?,?,?,?,?, 'pending', ?)",
+                (pid, r.key, data, _iso(now), _iso(now + PENDING_TTL), items_json),
             )
         return pid
+
+    @staticmethod
+    def _items_of(row) -> list[str]:
+        try:
+            got = json.loads(row["items"]) if row["items"] else []
+        except (ValueError, TypeError, IndexError, KeyError):
+            return []
+        return [i for i in got if isinstance(i, str)] if isinstance(got, list) else []
+
+    def pending_items(self, pid: str) -> list[str]:
+        row = self._conn.execute("SELECT items FROM pending WHERE id=?", (pid.strip().upper(),)).fetchone()
+        return self._items_of(row) if row else []
 
     def approve(self, pid: str, force: bool = False, now: datetime | None = None) -> tuple[bool, str]:
         pid = pid.strip().upper()
@@ -299,9 +355,10 @@ class Store:
             if row is None:
                 return False, "unknown id"
             key = row["key"]
-            if row["status"] == "approved" and self._conn.execute(
-                "SELECT 1 FROM approvals WHERE key=?", (key,)
-            ).fetchone():
+            items = self._items_of(row) if content_key(key) else []
+            if row["status"] == "approved" and (all(self._conn.execute(
+                    "SELECT 1 FROM item_approvals WHERE item=? AND key=?", (i, key)).fetchone() for i in items)
+                    if items else self._conn.execute("SELECT 1 FROM approvals WHERE key=?", (key,)).fetchone()):
                 return True, key
             if datetime.fromisoformat(row["expires_at"]) <= now:
                 return False, "expired"
@@ -322,15 +379,20 @@ class Store:
                     verdict = Verdict.MALICIOUS  # corrupt current scan: fail closed
             if verdict == Verdict.MALICIOUS and not force:
                 return False, "malicious: use --force"
-            self._conn.execute(
-                "INSERT OR REPLACE INTO approvals(key, approved_at) VALUES (?,?)", (key, _iso(now))
-            )
+            if items:  # this item (or these) only: another entry running the same code gets its own decision
+                for i in items:
+                    self._conn.execute("INSERT OR REPLACE INTO item_approvals(item, key, approved_at) VALUES (?,?,?)",
+                                       (i, key, _iso(now)))
+            else:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO approvals(key, approved_at, claimed_by) VALUES (?,?, NULL)",
+                    (key, _iso(now)))
             self._conn.execute("DELETE FROM rejections WHERE key=?", (key,))
             self._conn.execute("UPDATE pending SET status='approved' WHERE id=?", (pid,))
             self._trust_scan_snapshot(key, now)
             self._conn.execute(
                 "INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
-                (_iso(now), "approve", json.dumps({"id": pid, "key": key, "force": force})),
+                (_iso(now), "approve", json.dumps({"id": pid, "key": key, "force": force, "items": items})),
             )
         return True, key
 
@@ -354,7 +416,7 @@ class Store:
         pid = pid.strip().upper()
         now = _utc(now or _now())
         with self._tx():
-            row = self._conn.execute("SELECT key FROM pending WHERE id=?", (pid,)).fetchone()
+            row = self._conn.execute("SELECT key, items FROM pending WHERE id=?", (pid,)).fetchone()
             if row is None:
                 return False, "unknown id"
             key = row["key"]
@@ -362,6 +424,8 @@ class Store:
                 "INSERT OR REPLACE INTO rejections(key, rejected_at) VALUES (?,?)", (key, _iso(now))
             )
             self._conn.execute("DELETE FROM approvals WHERE key=?", (key,))  # reject revokes
+            for i in self._items_of(row):
+                self._conn.execute("DELETE FROM item_approvals WHERE item=? AND key=?", (i, key))
             self._conn.execute("UPDATE pending SET status='rejected' WHERE key=?", (key,))
             self._conn.execute(
                 "INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
@@ -369,8 +433,30 @@ class Store:
             )
         return True, key
 
-    def is_approved(self, key: str) -> bool:
-        return self._conn.execute("SELECT 1 FROM approvals WHERE key=?", (key,)).fetchone() is not None
+    def is_approved(self, key: str, items: tuple | list | None = None) -> bool:
+        """key is approved. With items (one item's item_ids) and a content key, it must be approved for that item:
+        an approval bound to it, or an approval of the key not yet bound to any item, which this call binds to it
+        (claims), so the next item with the same code gets its own decision. A clean scan needs no approval and
+        is never looked up here; synthetic keys already name one item or action and ignore items."""
+        if not items or not content_key(key):
+            return self._conn.execute("SELECT 1 FROM approvals WHERE key=?", (key,)).fetchone() is not None
+        items = tuple(dict.fromkeys(items))
+        marks = ",".join("?" * len(items))
+        if self._conn.execute(f"SELECT 1 FROM item_approvals WHERE key=? AND item IN ({marks})",
+                              (key, *items)).fetchone():
+            return True
+        with self._tx():
+            row = self._conn.execute("SELECT approved_at, claimed_by FROM approvals WHERE key=?", (key,)).fetchone()
+            if row is None or (row["claimed_by"] is not None and row["claimed_by"] not in items):
+                return False
+            self._conn.execute("UPDATE approvals SET claimed_by=? WHERE key=? AND claimed_by IS NULL",
+                               (items[0], key))
+            for i in items:
+                self._conn.execute("INSERT OR IGNORE INTO item_approvals(item, key, approved_at) VALUES (?,?,?)",
+                                   (i, key, row["approved_at"]))
+            self._conn.execute("INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
+                               (_iso(_now()), "approval.claimed", json.dumps({"key": key, "items": list(items)})))
+        return True
 
     def is_rejected(self, key: str) -> bool:
         return self._conn.execute("SELECT 1 FROM rejections WHERE key=?", (key,)).fetchone() is not None

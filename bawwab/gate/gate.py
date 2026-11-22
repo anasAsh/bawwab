@@ -244,16 +244,22 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         blocks.append(_user_only_block(det.plain))
     level = load_config(Path(inp.cwd) if inp.cwd else None).level if results else DEFAULT_LEVEL
     warnings: list[str] = []
+    named = det.items if isinstance(det, Targets) else {}
     for t, r in results:
         keys.append(r.key)
         build = other_build(t.origin or t.path) if t.kind == "local" and r.verdict == Verdict.SUSPICIOUS else None
+        # a non-clean verdict's approval is per item: each server name this install creates needs it, not just
+        # the code (two servers running the same code are two decisions); unnamed targets bind on first use
+        items = named.get(t) or None
+        approved = r.verdict != Verdict.CLEAN and (all(store.is_approved(r.key, (i,)) for i in items) if items
+                                                   else store.is_approved(r.key))
         if store.is_rejected(r.key):
             blocks.append(f"⛔ bawwab: previously rejected — {_label(r)}\n{format_report(r)}")
-        elif build and not store.is_approved(r.key):  # self-protection: held at every level, in one line
+        elif build and not approved:  # self-protection: held at every level, in one line
             blocks.append(_build_block(t, build, store.create_pending(r)))
-        elif r.verdict != Verdict.CLEAN and not store.is_approved(r.key):
+        elif r.verdict != Verdict.CLEAN and not approved:
             if blocks_at(level, r.verdict):
-                blocks.append(format_report(r, store.create_pending(r)))
+                blocks.append(format_report(r, store.create_pending(r, items=items)))
             else:  # below this level's threshold: warn, don't block
                 warnings.append(f"⚠ bawwab ({level} level, not blocked): {_label(r)} is {r.verdict.value}\n"
                                 f"{format_report(r)}")
