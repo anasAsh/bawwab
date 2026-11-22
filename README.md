@@ -445,9 +445,13 @@ Reports come back framed as untrusted data, with bawwab's own instructions kept 
   "mode": "standard",
   "llm": { "backend": "claude-cli", "model": "claude-sonnet-5-5" },
   "thresholds": { "malicious": "critical", "suspicious": "med" },
-  "trusted": ["@modelcontextprotocol/*"]
+  "trusted": ["@modelcontextprotocol/*"],
+  "quiet": false
 }
 ```
+
+`"quiet": true` hides the one-line `bawwab: scanned <item>: clean` status after an install passes. Only
+`~/.bawwab/config.json` sets it; warnings and blocks are never hidden.
 
 ## How it resists prompt injection
 

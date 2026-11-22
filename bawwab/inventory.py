@@ -82,20 +82,20 @@ def _lbl(label: str) -> str:
     return sanitise(label, 80)
 
 
-def _warn(store, text: str, out: list[str]) -> None:
+def _warn(store, text: str, out: list[str], key: str | None = None) -> None:
     text = sanitise(text, 400)
-    store.add_warning(text)
+    store.add_warning(text, key=key)
     out.append(text)
 
 
-def _warn_once(store, ident: str, what: str, state: str, text: str, out: list[str]) -> None:
+def _warn_once(store, ident: str, what: str, state: str, text: str, out: list[str], key: str | None = None) -> None:
     """A warning about one installed item, given again only when its state changes. Unpinned items have no
     fingerprint, so they are rescanned every session; without this the same line reached every session."""
     k = f"told:{what}:{ident}"
     if store.get_meta(k) == state:
         return
     store.set_meta(k, state)
-    _warn(store, text, out)
+    _warn(store, text, out, key)
 
 
 def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
@@ -125,8 +125,9 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
             _warn(store, f"bawwab: {_lbl(item.label)} could not be scanned ({type(e).__name__})", warnings)
             continue
         approved = r.verdict != Verdict.CLEAN and store.is_approved(r.key)
-        if r.verdict != Verdict.CLEAN and not approved:
-            _warn_once(store, item.ident, "verdict", r.key, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! {cli_cmd("scan")} {_scan_spec(t)}", warnings)
+        if r.verdict != Verdict.CLEAN and not approved and not store.is_rejected(r.key):
+            # keyed: dropped untold if the user approves or rejects it (e.g. its quarantine) before the next prompt
+            _warn_once(store, item.ident, "verdict", r.key, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! {cli_cmd("scan")} {_scan_spec(t)}", warnings, key=r.key)
         if item.unpinned:
             pinned = _pinned_command(item, r.resolved_version)
             if pinned:  # advice: once per item

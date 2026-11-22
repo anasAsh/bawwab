@@ -1221,4 +1221,26 @@ def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
             store.drop_effect(ident)  # gone since install: nothing left to trust
     store.audit("effects.full_scan", cwd=str(cwd), warnings=len(warnings), quarantined=len(new_ids))
     _sync_flag(store)
+    counted = [it for it in items.values() if it.category not in ("toggles", "permissions")
+               and not (it.target is not None and is_self_path(it.target.path))]
+    scan_done(store, len(counted))
     return new_ids
+
+
+def held_notice(store: Store) -> str | None:
+    """SessionStart's line for the user while something is on hold (Claude gets the full block in its context)."""
+    groups = _groups(quarantined(store))
+    if not groups:
+        return None
+    names = ", ".join(_group_name(g) for g in list(groups.values())[:3]) + (" …" if len(groups) > 3 else "")
+    n = len(groups)
+    return (f"bawwab: {n} change{'s' if n != 1 else ''} on hold ({names}); Claude's tools are paused until you "
+            f"decide (! {cmd('effects')})")
+
+
+def scan_done(store: Store, n: int) -> None:
+    """One line at the next prompt when a full scan the user asked for (init --scan, scan --all; it runs in the
+    background) ends: how many items, how many on hold. The per-session background inventory says nothing."""
+    held = len(_groups(store.active_quarantine()))
+    tail = f", {held} on hold (! {cmd('effects')})" if held else ", nothing on hold"
+    store.add_warning(f"bawwab: full scan done: {n} item{'s' if n != 1 else ''}{tail}")

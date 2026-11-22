@@ -53,7 +53,7 @@ def test_held_server_is_switched_off_and_approve_puts_it_back(env, capsys):
     assert fx.refresh(proj, scan=scan, force=True) == [] and len(_active()) == 1  # still held, nothing new
     assert "switched off" in fx.quarantine_text(fx.quarantined())
     assert main(["approve", qid]) == 0
-    assert capsys.readouterr().out == f"approved MCP server evil ({qid})\n"  # same output as before
+    assert capsys.readouterr().out == f"approved MCP server evil ({qid}): switched back on\n"  # and says so
     assert _cj(home)["mcpServers"]["evil"] == EVIL and _active() == []
     assert fx.refresh(proj, scan=scan, force=True) == [] and _active() == []  # no re-quarantine loop
     assert fx.refresh(proj, scan=scan) == []
@@ -63,7 +63,8 @@ def test_reject_removes_the_switched_off_server(env, capsys):
     home, proj = env
     qid = _hold_server(home, proj)
     assert main(["reject", qid]) == 0
-    assert "rejected and removed: MCP server evil" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert out.startswith(f"rejected MCP server evil ({qid}): removed from ") and "switched off while on hold" in out
     assert "evil" not in _cj(home)["mcpServers"] and _active() == []
     assert fx.refresh(proj, scan=FakeScan(evil=Verdict.SUSPICIOUS), force=True) == []
     d = _cj(home)

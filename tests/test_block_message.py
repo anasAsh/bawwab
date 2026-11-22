@@ -68,7 +68,8 @@ def test_approve_several_ids_names_them(held, capsys):
     _, ids = held
     assert main(["approve", "--force", ids["plugin p1"], ids["plugin p2"]]) == 0
     out = capsys.readouterr().out.splitlines()
-    assert out == [f"approved plugin p1 ({ids['plugin p1']})", f"approved plugin p2 ({ids['plugin p2']})"]
+    assert out == [f"approved plugin p1 ({ids['plugin p1']}): switched back on",
+                   f"approved plugin p2 ({ids['plugin p2']}): switched back on"]
     assert open_store().active_quarantine() == []
 
 

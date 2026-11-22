@@ -195,11 +195,21 @@ def _decide(args) -> int:
         if not ok:
             failed += 1
             print(f"error: {sanitise(qid, 8)}: {sanitise(msg, 300)}")
-        elif verb == "rejected and removed":
-            print(f"{verb}: {what} — {sanitise(msg, 300)}")
+        elif verb == "rejected and removed":  # msg says what was removed, and from where
+            print(f"rejected {what}: {sanitise(msg, 300)}")
+        elif verb == "approved" and q is not None and _switched_back_on(store, q):
+            print(f"{verb} {what}: switched back on")
         else:
             print(f"{verb} {what}")
     return 1 if failed else 0
+
+
+def _switched_back_on(store, q: dict) -> bool:
+    """Every item of q's id that bawwab had switched off is on again (approve restored it)."""
+    ids = {q["id"]}
+    rows = [x for x in store.quarantine_rows("approved") if x["id"] in ids or x["qrow"] == q["qrow"]]
+    off = [x for x in rows if x.get("disabled")]
+    return bool(off) and all(x.get("dstate") == "restored" for x in off)
 
 
 def _gate() -> int:
@@ -288,6 +298,10 @@ def _inventory(args) -> int:
             return 0
         inv.spawn_background(cwd)
         warnings = store.take_warnings()
+        from bawwab.effects import held_notice
+
+        notice = held_notice(store)  # the user hears of a hold from bawwab, not from Claude's first failed call
+        warnings = ([notice] if notice else []) + warnings
         out = inv.hook_output("SessionStart", warnings) if warnings else {}
         if ctx:
             out["hookSpecificOutput"] = {"hookEventName": "SessionStart", "additionalContext": ctx}
