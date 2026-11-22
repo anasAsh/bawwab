@@ -91,6 +91,10 @@ _DOCKER_VALUE_FLAGS = {
 }
 
 
+# node / bun / deno flags whose value is code to run, not a file (deno uses `eval` as a subcommand).
+_INLINE_CODE_FLAGS = frozenset({"-e", "--eval", "-p", "--print", "eval"})
+
+
 def target_from_command(command: str, args: list[str]) -> Target | None:
     if not command:
         return None
@@ -118,6 +122,8 @@ def target_from_command(command: str, args: list[str]) -> Target | None:
             return _local(raw, posixpath.dirname(script) or ".")
         return None
     if exe in ("node", "bun", "deno"):
+        if any(x in _INLINE_CODE_FLAGS or x.startswith(("--eval=", "--print=")) for x in args):
+            return None  # inline code (`node -e '...'`): no script file to scan
         script = next((x for x in args if not x.startswith("-")), None)
         if script and script != "run":
             return _local(raw, posixpath.dirname(script) or ".")

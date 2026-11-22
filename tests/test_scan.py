@@ -319,3 +319,46 @@ def test_local_package_name_never_trusted(store, tmp_path):
     finally:
         mp.undo()
     assert r.verdict == Verdict.SUSPICIOUS
+
+
+def test_plugin_server_with_inline_code_does_not_crash(store, tmp_path):
+    """fp-corpus run 2026-11-22: claude-mem's `node -e '<long code>'` server crashed the scan (ENAMETOOLONG from
+    Path(arg).is_dir()), outside the fail-closed handler. It is just not a local server path."""
+    p = tmp_path / "plug"
+    (p / ".claude-plugin").mkdir(parents=True)
+    code = "require('child_process').spawn(process.execPath,[" + "'x'," * 200 + "])"
+    (p / ".claude-plugin/plugin.json").write_text(
+        json.dumps({"name": "x", "mcpServers": {"inline": {"command": "node", "args": ["-e", code]}}}))
+    r = scan_target(parse_target(str(p)), store=store, backend=Fake(), cfg=Config())
+    assert r.verdict in (Verdict.SUSPICIOUS, Verdict.MALICIOUS)  # an unresolvable server never reads as clean
+
+
+def test_child_prefetch_failure_fails_closed(store, tmp_path, monkeypatch):
+    import bawwab.scan as scan_mod
+
+    p = tmp_path / "plug"
+    (p / ".claude-plugin").mkdir(parents=True)
+    (p / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "x"}))
+
+    def boom(*a, **k):
+        raise OSError(36, "File name too long")
+
+    monkeypatch.setattr(scan_mod, "_prefetch_children", boom)
+    r = scan_target(parse_target(str(p)), store=store, backend=Fake(), cfg=Config(), no_cache=True)
+    assert r.verdict == Verdict.SUSPICIOUS and any(f.rule == "gate.error" for f in r.findings)
+
+
+def test_bare_relative_server_script_resolves_inside_the_plugin(tmp_path, monkeypatch):
+    """`node server.js` in a plugin runs the plugin's server.js; it must never resolve against the scanner's cwd."""
+    from bawwab.scan import _child_target
+
+    plug, elsewhere = tmp_path / "plug", tmp_path / "cwd"
+    (plug / "srv").mkdir(parents=True)
+    (plug / "srv/server.js").write_text("// plugin's server\n")
+    elsewhere.mkdir()
+    (elsewhere / "server.js").write_text("// unrelated cwd file\n")
+    monkeypatch.chdir(elsewhere)
+    t = _child_target({"command": "node", "args": ["srv/server.js"]}, plug)
+    assert t is not None and Path(t.path).resolve() == (plug / "srv").resolve()
+    assert _child_target({"command": "node", "args": ["server.js"]}, plug) is None  # not in the plugin: unresolved
+    assert _child_target({"command": "node", "args": ["-e", "console.log(1)"]}, plug) is None

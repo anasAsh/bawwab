@@ -99,7 +99,17 @@ def _bundled_servers(root: Path) -> dict[str, dict]:
 def _child_target(spec: dict, root: Path) -> Target | None:
     def sub(s: str) -> str:
         s = s.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
-        return str(root / s) if s.startswith(("./", "../")) else s
+        if s.startswith(("./", "../")):
+            return str(root / s)
+        # a bare relative script ("server.js", "dist/index.js") is relative to the plugin, never to the scanner's
+        # own working directory
+        if s and not s.startswith(("-", "/", "~", "$")) and "\n" not in s and len(s) < 4096:
+            try:
+                if (root / s).exists():
+                    return str(root / s)
+            except (OSError, ValueError):
+                pass
+        return s
 
     if isinstance(spec.get("url"), str) and spec["url"]:
         return target_from_url(spec["url"], spec.get("type"))
@@ -109,8 +119,13 @@ def _child_target(spec: dict, root: Path) -> Target | None:
     if _package_manager_run(cmd, args):
         return None  # R53: never resolved; see _package_manager_findings
     t = target_from_command(sub(cmd), [sub(a) for a in args])
-    if t is not None and t.kind == "local" and not (t.path and Path(t.path).is_dir()):
-        return None
+    if t is not None and t.kind == "local":
+        try:
+            inside = bool(t.path) and Path(t.path).is_dir() and Path(t.path).resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError):  # e.g. a path too long to stat: not a server dir
+            inside = False
+        if not inside:  # a local server outside the plugin (or the scanner's cwd) is not this plugin's code
+            return None
     return t
 
 
@@ -520,7 +535,17 @@ def scan_target(
     ctx = None
     try:
         ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox, judge=judge)
-        child_material = _prefetch_children(f, ctx)
+        try:
+            child_material = _prefetch_children(f, ctx)
+        except Exception as e:  # noqa: BLE001 - a bundled server that can't be prepared fails closed, never crashes
+            from bawwab.report import sanitise
+
+            r = synthetic_report(sanitise(f"could not prepare the bundled servers: {type(e).__name__}: {e}", 200),
+                                 _fetch_key(t), t, "gate.error", mode)
+            r.resolved_version = f.resolved_version
+            store.put_report(r)
+            store.audit("scan", key=r.key, verdict=r.verdict.value, mode=mode.value)
+            return r
         chash = f.content_hash
         if child_material:
             chash = hashlib.sha256(f"{chash}\n{child_material}".encode()).hexdigest()
