@@ -3010,6 +3010,202 @@ def _write_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
         acc.user_only(f"in text written to a file: {_APPROVAL}")
 
 
+# ------------------------------------------------------------------ text that only reads as an approval (P4)
+#
+# The raw backstop reads quoted text as commands (R25), so a search for the words `bawwab approve`, or a commit
+# message that quotes the user's command, came back "bawwab approval via tool call". These two shapes drop that
+# one reason, and only when the command means the same under any reading: the command is analysed again with the
+# literal text blanked, and the reason must go away (so nothing outside the literal produced it). Every other
+# reason stays. Anything else (a pipe into a shell, $(…), backquotes, eval, xargs, -exec, a redirect, a prefix or
+# wrapper word, rg --pre, git -c / -O, an unquoted mention) keeps the block as before.
+
+# grep/rg (search tools) and `git log|grep`: the pattern is an argument the program reads, never runs
+_LITERAL_SEARCH = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "ugrep"}
+_LITERAL_GIT = {"log", "grep"}
+# readers a search may be piped into (they run nothing either)
+_LITERAL_SINKS = {"head", "tail", "wc", "sort", "uniq", "cut", "cat", "less", "more", "tr"}
+# options that make the program run a command or write a file: rg --pre, git grep -O/--open-files-in-pager,
+# git --config-env, --exec-path, --ext-diff, --textconv, --output
+_LITERAL_EXEC_OPT = re.compile(r"--pre(?:=|$)|-O|--open-files-in-pager|--config-env|--exec-path|--ext-diff"
+                               r"|--textconv|--output")
+
+
+def _literal_word(w: str, cwd: str) -> bool:
+    """A bare program name that resolves to a system program (or a search tool name that isn't bawwab and isn't
+    redefined in this call: rg is a shell function in Claude Code's shell)."""
+    if "/" in w or w != os.path.basename(w):
+        return False
+    return _known_system(w, cwd, True) or _search_tool(w, cwd)
+
+
+def _literal_search(cmd: str, cwd: str) -> list[tuple[int, int]] | None:
+    """The spans of the quoted literals naming bawwab in a read-only search (see above), or None when the command
+    isn't one. One line, no `$`, backquote or backslash anywhere (so double quotes are as literal as single
+    quotes), balanced quotes; one simple command (grep, rg, ..., `git log`, `git grep`) optionally piped into
+    readers; no redirect, heredoc, prefix word or exec-capable option; and every `bawwab` sits inside quotes."""
+    if "\n" in cmd or any(c in cmd for c in "$`\\") or not _balanced(cmd):
+        return None
+    try:
+        segs = _segments(_tokens(cmd))
+    except ValueError:
+        return None
+    if not segs or len(segs) > 4 or any(seg.redirs or seg.inputs for seg in segs):
+        return None
+    if any(seg.piped != (i > 0) for i, seg in enumerate(segs)):
+        return None  # `a; b`, `a && b`: only a single command, or a plain pipeline of readers
+    first = segs[0].words
+    if not first or _strip_prefix(first) != first or not _literal_word(first[0], cwd):
+        return None
+    if first[0] == "git":
+        if len(first) < 2 or first[1] not in _LITERAL_GIT:
+            return None  # no `git -c x=y log`, no other subcommand
+    elif first[0] not in _LITERAL_SEARCH:
+        return None
+    if any(_LITERAL_EXEC_OPT.match(a) for a in first[1:]):
+        return None
+    for seg in segs[1:]:
+        w = seg.words
+        if not w or w[0] not in _LITERAL_SINKS or not _literal_word(w[0], cwd) or _strip_prefix(w) != w:
+            return None
+    spans: list[tuple[int, int]] = []
+    q = None
+    start = 0
+    for i, c in enumerate(cmd):
+        if q is None and c in "'\"":
+            q, start = c, i
+        elif q is not None and c == q:
+            spans.append((start, i + 1))
+            q = None
+    outside = "".join(cmd[a:b] for a, b in zip([0] + [e for _, e in spans], [s for s, _ in spans] + [len(cmd)]))
+    hits = [(a, b) for a, b in spans if "bawwab" in cmd[a:b]]
+    if "bawwab" in outside or not hits:
+        return None
+    return hits
+
+
+# Claude Code's commit idiom: git commit|tag -m "$(cat <<'EOF'\n…\nEOF\n)", the delimiter quoted (no expansion);
+# `git` at a command start (no VAR=x, env or other prefix word before it)
+_LITERAL_MSG = re.compile(
+    r"(?:^|(?<=[;&|(\n]))[ \t]*git[ \t]+(?:commit|tag)\b[^\n;&|`$<>]*?[ \t](?:-m|--message)(?:[ \t]+|=)"
+    r"\"\$\(cat[ \t]+<<(-)?[ \t]*'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*\n(.*?)\n(?(1)\t*)\2\n\)\"", re.S)
+_GIT_HOOKS_READING_MSG = ("commit-msg", "prepare-commit-msg", "applypatch-msg")
+
+
+def _git_config_redirects_hooks(paths: list[Path]) -> bool:
+    """Any of these git config files sets core.hooksPath, includes another file, or can't be read."""
+    for p in paths:
+        try:
+            if not p.exists():
+                continue
+            text = p.read_text(errors="replace")
+        except OSError:
+            return True
+        if re.search(r"(?im)^\s*(?:hookspath\s*=|\[\s*include)", text):
+            return True
+    return False
+
+
+def _hooks_read_the_message(cwd: str) -> bool:
+    """The repo has a hook that gets the commit message (commit-msg, prepare-commit-msg, applypatch-msg), or a
+    git config file (repo, worktree, ~/.gitconfig, XDG, /etc) sets core.hooksPath or includes another file, or it
+    can't tell. A hook Claude wrote could run the message text."""
+    home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+    if _git_config_redirects_hooks([home / ".gitconfig", xdg / "git" / "config", Path("/etc/gitconfig")]):
+        return True
+    if any(k in ("GIT_DIR", "GIT_COMMON_DIR") or k.startswith("GIT_CONFIG") for k in os.environ):
+        return True  # another repo or config than the one read here
+    d = Path(cwd)
+    for cur in [d, *d.parents]:
+        dotgit = cur / ".git"
+        if dotgit.is_file():  # a worktree: hooks and config live in the common dir
+            try:
+                line = dotgit.read_text(errors="replace").strip()
+            except OSError:
+                return True
+            if not line.startswith("gitdir:"):
+                return True
+            gitdir = Path(line[len("gitdir:"):].strip())
+            gitdir = gitdir if gitdir.is_absolute() else cur / gitdir
+            try:
+                common = (gitdir / "commondir").read_text().strip() if (gitdir / "commondir").exists() else "."
+            except OSError:
+                return True
+            common_dir = Path(common) if os.path.isabs(common) else gitdir / common
+            configs, hooks = [common_dir / "config", gitdir / "config.worktree"], common_dir / "hooks"
+        elif dotgit.is_dir():
+            configs, hooks = [dotgit / "config", dotgit / "config.worktree"], dotgit / "hooks"
+        else:
+            continue
+        return _git_config_redirects_hooks(configs) or any(os.path.lexists(hooks / h)
+                                                            for h in _GIT_HOOKS_READING_MSG)
+    return False
+
+
+def _literal_message_bodies(cmd: str, cwd: str) -> list[tuple[int, int]] | None:
+    """The spans of the commit idiom's heredoc bodies (above) when each is only text: no backquote or `$(`,
+    balanced parentheses and even quote counts (so shells whose $(…) parsing differs, such as bash 3.2, read it
+    the same), no line equal to its delimiter before the end; git and cat are system programs and no hook reads
+    the message."""
+    spans = []
+    for m in _LITERAL_MSG.finditer(cmd):
+        strip, delim, body = m.group(1) == "-", m.group(2), m.group(3)
+        if any((ln.lstrip("\t") if strip else ln) == delim for ln in body.split("\n")):
+            return None
+        if "`" in body or "$(" in body or body.count("'") % 2 or body.count('"') % 2:
+            return None
+        depth = 0
+        for c in body:
+            depth += (c == "(") - (c == ")")
+            if depth < 0:
+                return None
+        if depth:
+            return None
+        spans.append(m.span(3))
+    if not spans or not _known_system("git", cwd, True) or not _known_system("cat", cwd, True):
+        return None
+    if _hooks_read_the_message(cwd):
+        return None
+    return spans
+
+
+def _again_without(cmd: str, cwd: str, spans: list[tuple[int, int]], blank) -> _Acc | None:
+    """The command analysed again with each span (exactly there, nowhere else) replaced by blank(text)."""
+    out, last = [], 0
+    for a, b in sorted(spans):
+        if a < last:
+            return None
+        out += [cmd[last:a], blank(cmd[a:b])]
+        last = b
+    blanked = "".join(out) + cmd[last:]
+    if blanked == cmd:
+        return None
+    again = _Acc(4 * len(blanked) + 1_000_000)
+    again.root = blanked
+    try:
+        _whole_command_checks(blanked, again)
+        _bash(blanked, cwd, again)
+    except _TooComplex:
+        return None
+    return again
+
+
+def _literal_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
+    """Drop the approval reason when it came only from a search pattern or a commit-message heredoc (above)."""
+    if _APPROVAL not in acc.protected:
+        return
+    spans = _literal_search(cmd, cwd)
+    if spans is not None:
+        again = _again_without(cmd, cwd, spans, lambda t: t[0] + "x" + t[-1])
+    else:
+        spans = _literal_message_bodies(cmd, cwd)
+        if spans is None:
+            return
+        again = _again_without(cmd, cwd, spans, lambda t: "x" + re.sub(r"[^\n]", "", t))
+    if again is not None and _APPROVAL not in again.protected and not again.plain:
+        acc.protected.remove(_APPROVAL)
+
+
 def detect_install(inp: HookInput) -> Targets | Protected | None:
     _RESOLVED.clear()  # files may have changed since the last call
     _TEXTS.clear()
@@ -3025,6 +3221,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
                 _whole_command_checks(cmd, acc)
                 _bash(cmd, inp.cwd, acc)
                 _write_text_only(cmd, inp.cwd, acc)
+                _literal_text_only(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")
     elif inp.tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
