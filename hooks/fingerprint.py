@@ -346,7 +346,9 @@ def semantic_digest(cwd: str, home: str, agents=None) -> str:
             with open(p, "rb") as f:
                 data = _parse(t, f.read(), p)
             parsed[p] = data
-            part = [_pick(data, kp, cwd, home, tables) for kp in keypaths]
+            proj = getattr(t, "project_value", None)  # e.g. permissions: only what broadens counts
+            part = [proj(kp, v) if proj else v for kp, v in ((kp, _pick(data, kp, cwd, home, tables))
+                                                             for kp in keypaths)]
         except FileNotFoundError:
             part = "-"
         except (OSError, ValueError, RecursionError):

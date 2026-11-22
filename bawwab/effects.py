@@ -28,6 +28,7 @@ from bawwab.clicmd import cmd
 from bawwab.config import blocks
 from bawwab.envkeys import entry_meta_key
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
+from bawwab.agents import claude_code_watch as cc_watch
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
 from bawwab.report import advice_short, format_advice, sanitise
@@ -286,6 +287,8 @@ def take_install_baseline(store: Store, cwd: Path) -> int:
     items = _retry_unreadable(lambda: [it for a in ADAPTERS for it in a.install_items(Path(cwd))])
     for it in items:
         store.put_effect(it.ident, it.hash, it.scope, "provisional", only_new=True)
+        if it.category == "permissions":
+            _perm_keep(store, it.ident, it.value, only_new=True)
     return len(items)
 
 
@@ -296,7 +299,8 @@ def _synthetic_key(it: EffectItem) -> str:
 
 
 def _unscannable_report(it: EffectItem) -> ScanReport:
-    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting", "toggles": "effects.toggle"}.get(
+    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting", "toggles": "effects.toggle",
+            "permissions": "effects.permissions"}.get(
         it.category, "effects.unscannable")
     what = json.dumps(it.value, sort_keys=True, default=str)
     reason = f"{it.label} was added or changed outside a scanned install: {what}"
@@ -340,6 +344,47 @@ def _accepted_now(store: Store, ident: str, current: dict[str, str]) -> bool:
     return row is not None and row["status"] in _ACCEPTED and current.get(ident) == row["hash"]
 
 
+# ------------------------------------------------------------------ permissions (only a broadening is held)
+
+def _perm_meta(ident: str) -> str:
+    return f"perm:{ident}"
+
+
+def _perm_old(store: Store, ident: str) -> dict | None:
+    try:
+        v = json.loads(store.get_meta(_perm_meta(ident)) or "null")
+    except ValueError:
+        return None
+    return v if isinstance(v, dict) else None
+
+
+def _perm_keep(store: Store, ident: str, value: object, only_new: bool = False) -> None:
+    """Record value as the accepted permissions projection of ident (the old side of the next comparison)."""
+    if not isinstance(value, dict) or (only_new and store.get_meta(_perm_meta(ident)) is not None):
+        return
+    text = json.dumps(value, sort_keys=True)
+    if store.get_meta(_perm_meta(ident)) != text:
+        store.set_meta(_perm_meta(ident), text)
+
+
+def _permissions(store: Store, it: EffectItem) -> tuple[bool, ScanReport]:
+    """A settings file's permissions changed. Accepted, and silent, unless the change lets more run without a
+    prompt (watch.permissions_broadened: a wildcard/unscoped Bash or Write allow, defaultMode bypassPermissions or
+    acceptEdits, a deny or ask rule removed). The first time a file's permissions are seen (an install from before
+    0.1.4), what is there is taken as accepted, like the install-time baseline."""
+    old = _perm_old(store, it.ident)
+    broad = [] if old is None else cc_watch.permissions_broadened(old, it.value)
+    key = _synthetic_key(it)
+    path = it.file or it.label
+    r = synthetic_report(sanitise(f"{path}: lets more run without a prompt: {'; '.join(broad)}", 600), key,
+                         Target("local", it.ident, name=it.label), rule="effects.permissions")
+    if not broad:
+        return True, r
+    if store.is_rejected(r.key):
+        return False, r
+    return store.is_approved(r.key), r
+
+
 def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) -> tuple[bool, ScanReport]:
     """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean, or bawwab's own
     installed plugin recognised by its running code (R52: accepted, not scanned; `bawwab effects` lists it)."""
@@ -347,6 +392,11 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
         store.audit("effects.self", ident=it.ident, hash=it.hash)
         return True, synthetic_report(f"{it.label}: {SELF_LABEL}", f"{SELF_KEY_PREFIX}{it.hash}",
                                       Target("local", it.ident, name=it.label), rule="effects.self")
+    if it.category == "permissions":
+        ok, r = _permissions(store, it)
+        if ok:
+            _perm_keep(store, it.ident, it.value)
+        return ok, r
     if it.category == "toggles":
         r = _unscannable_report(it)
         if store.is_rejected(r.key):
@@ -383,7 +433,10 @@ def _is_quarantined(store: Store, it: EffectItem) -> bool:
 
 def _quarantine(store: Store, it: EffectItem, r: ScanReport) -> str:
     qid = store.create_pending(r)
-    store.add_quarantine(qid, it.ident, it.hash, r.key, it.to_dict(), report_to_dict(r))
+    item = it.to_dict()
+    if it.category == "permissions":
+        item["value"] = it.value  # approving it makes this the accepted projection
+    store.add_quarantine(qid, it.ident, it.hash, r.key, item, report_to_dict(r))
     store.audit("effects.quarantine", id=qid, ident=it.ident, key=r.key, verdict=r.verdict.value)
     return qid
 
@@ -431,6 +484,8 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
             store.set_quarantine(held["qrow"], status="resolved")  # bawwab never holds itself (e.g. a dev run did)
             store.audit("effects.self_released", id=held["id"], ident=it.ident)
             del active[(it.ident, it.hash)]
+        if row and row["hash"] == it.hash and it.category == "permissions":
+            _perm_keep(store, it.ident, it.value)  # accepted as it is now (approved, or a row from before)
         if (row and row["hash"] == it.hash) or (it.ident, it.hash) in active:
             continue
         ok, r = _evaluate(it, scan, cfg, store, current)
@@ -616,6 +671,8 @@ def quarantined(store: Store | None = None, status: str = "active") -> list[dict
             item = json.loads(q["item"]) if q["item"] else {}
             if q["ident"] != ERROR_IDENT and item.get("scope"):
                 store.put_effect(q["ident"], q["hash"], item["scope"], "approved", q["key"])
+                if item.get("category") == "permissions":
+                    _perm_keep(store, q["ident"], item.get("value"))
             store.audit("effects.approved", id=q["id"], ident=q["ident"], key=q["key"])
             continue
         if q["id"] in reissued:

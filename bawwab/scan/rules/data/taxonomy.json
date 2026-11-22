@@ -746,6 +746,17 @@
       "cwe": [],
       "note": "A code-running or config-steering setting changed outside a scanned install."
     },
+    "effects.permissions": {
+      "owasp_llm": [
+        "LLM06"
+      ],
+      "owasp_agentic": [
+        "ASI03"
+      ],
+      "atlas": [],
+      "cwe": [],
+      "note": "Claude Code permissions widened outside a scanned install: unscoped Bash/Write allows, a prompt-skipping defaultMode, or removed deny/ask rules."
+    },
     "effects.toggle": {
       "owasp_llm": [
         "LLM03"

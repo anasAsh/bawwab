@@ -17,9 +17,79 @@ NAME = "claude-code"
 SETTINGS_KEYS = (
     "hooks", "disableAllHooks", "enabledPlugins", "extraKnownMarketplaces", "apiKeyHelper", "statusLine",
     "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper", "env", "enableAllProjectMcpServers",
-    "enabledMcpjsonServers",
+    "enabledMcpjsonServers", "permissions",
 )
 _SETTINGS = tuple((k,) for k in SETTINGS_KEYS)
+
+# ------------------------------------------------------------------ permissions: only what broadens matters
+# `permissions` is watched through a projection: the allow rules that let any command or any write run without a
+# prompt, a defaultMode that skips prompts, and the deny/ask rules (removing one broadens what runs). A narrow
+# allow (`Bash(npm test)`, `Read(...)`, `Bash(git add:*)`) is not in it, so adding one doesn't even move the
+# semantic digest. Shared by the fingerprint (semantic digest) and the effect item (bawwab/agents/claude_code.py).
+DANGEROUS_MODES = frozenset({"bypassPermissions", "acceptEdits"})
+_RUN_TOOLS = frozenset({"Bash", "PowerShell"})
+_WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+# commands that run whatever follows them: a prefix rule for one of these is as wide as an unscoped Bash rule
+_SHELL_PREFIXES = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish", "sudo", "eval", "exec", "sh -c", "bash -c",
+                             "zsh -c", "env", "xargs", "command", "nohup", "doas"})
+_RULE = re.compile(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\((.*)\))?\s*", re.S)
+
+
+def _only_wild(spec: str) -> bool:
+    return not spec.replace("*", "").replace(":", "").replace("/", "").replace("~", "").replace(".", "").strip()
+
+
+def dangerous_allow(rule: object) -> bool:
+    """An allow rule that lets any shell command, or a write to any path, run without a prompt: `Bash`,
+    `Bash(*)`, `Bash(:*)`, a shell or sudo prefix (`Bash(bash:*)`, `Bash(sudo:*)`), `Write`, `Edit(**)`,
+    `Edit(//**)`, `Write(~/**)`. A rule for one command or one folder is narrow."""
+    if not isinstance(rule, str):
+        return False
+    m = _RULE.fullmatch(rule)
+    if m is None:
+        return False
+    tool, spec = m.group(1), m.group(2)
+    if tool in _RUN_TOOLS:
+        if spec is None or _only_wild(spec):
+            return True
+        s = spec.strip()
+        if s.startswith("*"):
+            return True  # `Bash(* foo)`: any command first
+        prefix = s[:-2] if s.endswith(":*") else s[:-1] if s.endswith("*") else None
+        return prefix is not None and prefix.strip() in _SHELL_PREFIXES
+    if tool in _WRITE_TOOLS:
+        return spec is None or _only_wild(spec)
+    return False
+
+
+def permissions_projection(value: object) -> dict:
+    """What of a settings `permissions` value can broaden what runs without a prompt."""
+    v = value if isinstance(value, dict) else {}
+
+    def rules(k: str) -> list:
+        x = v.get(k)
+        return sorted({r for r in x if isinstance(r, str)}) if isinstance(x, list) else []
+
+    mode = v.get("defaultMode")
+    return {"allow": sorted(r for r in rules("allow") if dangerous_allow(r)),
+            "mode": mode if isinstance(mode, str) and mode in DANGEROUS_MODES else None,
+            "deny": rules("deny"), "ask": rules("ask")}
+
+
+def project_value(keypath: tuple, value: object) -> object:
+    """The value the semantic digest records for a watched key: `permissions` through its projection."""
+    return permissions_projection(value) if tuple(keypath) == ("permissions",) else value
+
+
+def permissions_broadened(old: dict | None, new: dict) -> list:
+    """How new broadens old (both projections): the allows and mode it adds, the deny/ask rules it drops."""
+    old = old or permissions_projection(None)
+    out = [f"allow {r}" for r in new["allow"] if r not in old.get("allow", [])]
+    if new["mode"] and new["mode"] != old.get("mode"):
+        out.append(f"defaultMode {new['mode']}")
+    out += [f"removes deny {r}" for r in old.get("deny", []) if r not in new["deny"]]
+    out += [f"removes ask {r}" for r in old.get("ask", []) if r not in new["ask"]]
+    return out
 
 USER_JSON = (
     ("{cfgjson}", (("mcpServers",), ("projects", "{project}", "mcpServers"))),

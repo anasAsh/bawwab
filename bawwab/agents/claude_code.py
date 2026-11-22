@@ -355,9 +355,14 @@ def _hook_id(value: dict) -> str:
 def _settings_items(label: str, scope: str, path: Path, data: object, projs: list[str],
                     mcpjson: dict[str, EffectItem], plugin_req=None) -> list[EffectItem]:
     """plugin_req(spec): the plugin idents an enabledPlugins entry needs (default: ~/.claude's plugin)."""
+    # always one permissions item per settings file (absent file: no rules), so a file created with a broad allow
+    # is a change from "nothing", not a first sight; its value is only what can broaden (watch.permissions_projection)
+    perm = data.get("permissions") if isinstance(data, dict) else None
+    out: list[EffectItem] = [EffectItem(f"{_P}setting:{label}:permissions", "permissions",
+                                        watch.permissions_projection(perm), scope, f"setting permissions ({path})", None,
+                                        str(path), ("permissions",))]
     if not isinstance(data, dict):
-        return []
-    out: list[EffectItem] = []
+        return out
     hooks = data.get("hooks")
     for event, groups in (hooks.items() if isinstance(hooks, dict) else []):
         for g in groups if isinstance(groups, list) else []:

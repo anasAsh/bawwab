@@ -28,11 +28,13 @@ class InstalledItem:
     spec: dict = field(default_factory=dict)
 
 
-CATEGORIES = ("servers", "plugins", "hooks", "exec_settings", "skills", "toggles")
+CATEGORIES = ("servers", "plugins", "hooks", "exec_settings", "skills", "toggles", "permissions")
 # Config that runs commands but has nothing to download and scan: quarantined unless approved.
 # Toggles (enabledPlugins, enableAllProjectMcpServers, enabledMcpjsonServers) are accepted when what they
 # switch on (`requires`) is accepted.
 UNSCANNABLE = ("hooks", "exec_settings", "toggles")
+# Permissions (settings `permissions`, as watch.permissions_projection) are accepted unless a change broadens what
+# runs without a prompt (bawwab/effects.py _permissions).
 
 
 def value_hash(value: object) -> str:

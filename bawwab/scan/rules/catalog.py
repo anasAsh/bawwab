@@ -55,6 +55,7 @@ CATALOG: dict[str, RuleInfo] = dict(
         _r("fetch.docker-unscanned", "Docker image was not scanned", "Container images are not statically scanned, so their contents are unreviewed.", "Run a deep scan in the sandbox or review the image manually."),
         _r("effects.hook", "Hook added or changed by hand", "A hook runs a command on Claude's events; this one was added outside a scanned install, so nothing reviewed it.", "Keep it only if you or a tool you trust added it."),
         _r("effects.setting", "Setting changed by hand", "This setting can run code or change which servers, plugins or environment Claude uses, and it changed outside a scanned install.", "Keep it only if you made the change."),
+        _r("effects.permissions", "Permissions widened by hand", "A settings change lets more run without asking you: any shell command or any file write allowed, prompts skipped (bypassPermissions or acceptEdits), or a deny or ask rule removed.", "Keep it only if you made the change."),
         _r("effects.toggle", "Plugin or server switched on by hand", "Something was enabled outside a scanned install.", "Keep it only if you enabled it."),
         _r("effects.unscannable", "Changed outside a scanned install", "This item changed and could not be scanned.", "Keep it only if you made the change."),
         _r("fetch.failed", "Target could not be fetched", "The package or server could not be downloaded, so nothing was reviewed.", "Check the name, version and network, then retry."),
