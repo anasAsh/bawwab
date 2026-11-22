@@ -161,11 +161,16 @@ def _lit_hit(v: str, lits: set) -> bool:
 _PY_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.Module)
 _PY_NONPAY_ATTRS = {"status_code", "status", "ok", "headers", "url", "reason", "code", "elapsed", "encoding",
                     "cookies", "is_redirect", "history", "raise_for_status", "getcode", "geturl", "info", "close",
-                    "length", "closed"}
+                    "length", "closed",
+                    # socket bookkeeping: a local listening socket's address or descriptor is not fetched content
+                    "getsockname", "getpeername", "fileno", "family", "settimeout", "gettimeout", "setsockopt",
+                    "bind", "listen", "pid", "returncode"}
 _PY_SANITIZERS = {"len", "int", "float", "bool", "isinstance", "hasattr", "type", "id", "print", "callable", "range",
                   "enumerate.__len__", "logging.info", "logging.debug", "logger.info", "logger.debug"}
 _PY_COLLECT = {"append", "extend", "add", "insert", "update", "put", "appendleft", "setdefault"}
-_PY_EVAL = {"exec", "eval", "compile", "builtins.exec", "builtins.eval", "builtins.compile", "marshal.loads"}
+# compile() alone runs nothing (a syntax check of a fetched file is common); compile's result reaching exec / eval
+# is caught there, because a call made from a payload is a payload.
+_PY_EVAL = {"exec", "eval", "builtins.exec", "builtins.eval", "marshal.loads"}
 _PY_LOAD_LEAVES = {"run_path", "load_source", "load_dynamic", "SourceFileLoader", "ExtensionFileLoader",
                    "spec_from_file_location", "import_module", "__import__", "CDLL", "WinDLL", "OleDLL", "PyDLL",
                    "LoadLibrary", "zipimporter", "load_module"}
@@ -552,14 +557,18 @@ class _Py:
             return re.sub(r"\{[^{}]*\}", lambda _m: next(it, X), str(e.func.value.value))
         if isinstance(e, ast.Call) and _py_dotted(e.func).endswith(("shlex.join", "join")) and e.args and isinstance(e.args[0], (ast.List, ast.Tuple)):
             return self.marker(e.args[0], depth + 1)
+        if isinstance(e, ast.Starred):
+            return self.marker(e.value, depth + 1)
+        if isinstance(e, ast.Name) and self.key(e.id, e) not in self.dkeys:
+            # A command built in a variable is read by its structure: a list holding one remote value is not a
+            # remote command.
+            dv = self.defs.get(self.key(e.id, e))
+            if isinstance(dv, (ast.Constant, ast.JoinedStr, ast.List, ast.Tuple, ast.BinOp)):
+                return self.marker(dv, depth + 1)
         if self.refers(e):
             return K
         if self.is_pay(e):
             return P
-        if isinstance(e, ast.Name):
-            dv = self.defs.get(self.key(e.id, e))
-            if isinstance(dv, (ast.Constant, ast.JoinedStr, ast.List, ast.Tuple, ast.BinOp)):
-                return self.marker(dv, depth + 1)
         return X
 
     def sinks(self) -> list[Hit]:
@@ -573,7 +582,7 @@ class _Py:
             leaf = d.rsplit(".", 1)[-1] if d else (n.func.attr if isinstance(n.func, ast.Attribute) else "")
             a0 = n.args[0] if n.args else None
             kind, how = "", ""
-            if d in _PY_EVAL or (raw in ("exec", "eval", "compile")):
+            if d in _PY_EVAL or raw in ("exec", "eval"):
                 if self.is_pay(a0):
                     kind, how = "payload", f"downloaded content passed to {leaf}()"
                 elif self.refers(a0):
@@ -604,7 +613,7 @@ class _Py:
                 if target is not None and self.refers(target) and self._exec_mode(mode):
                     kind, how = "dropped", "a downloaded file is made executable (chmod)"
             if kind:
-                out.append(Hit(n.lineno, kind, how, self._verified(n)))
+                out.append(Hit(n.lineno, kind, how, self._verified(n, kind)))
         return out
 
     @staticmethod
@@ -619,9 +628,19 @@ class _Py:
         lines = self.text.split("\n")
         return "\n".join(lines[s.lineno - 1: (s.end_lineno or s.lineno)])
 
-    def _verified(self, n) -> bool:
-        scopes = [self.scope(n), *self.drop_scopes[:8]]
-        return any(verified(self._scope_text(s)) for s in scopes)
+    def _verified(self, n, kind: str) -> bool:
+        return any(verified(self._scope_text(s)) for s in _check_scopes(self.scope(n), kind, self.drop_scopes, self.tree))
+
+
+def _check_scopes(sink_scope, kind: str, drop_scopes: list, module) -> list:
+    """Where a verification counts: the sink's function; for a dropped file also the functions that wrote it.
+    The whole module counts only when the sink itself is module-level code."""
+    out = [sink_scope]
+    if kind == "dropped":
+        for s in drop_scopes:
+            if s != module and all(s != x for x in out) and len(out) < 9:  # ast: identity; tree-sitter: same node
+                out.append(s)
+    return out
 
 
 def _py_hits(text: str, net_pos: frozenset, norm) -> list[Hit]:
@@ -1134,14 +1153,14 @@ class _Js:
                 return self.marker(e.child_by_field_name("left"), depth + 1) + self.marker(e.child_by_field_name("right"), depth + 1)
         if t == "array":
             return " ".join(_argv_tok(self.marker(c, depth + 1)) for c in e.named_children)
+        if t == "identifier" and self.key(self.txt(e), e) not in self.dkeys:
+            dv = self.defs.get(self.key(self.txt(e), e))
+            if dv is not None and dv.type in ("string", "template_string", "array", "binary_expression"):
+                return self.marker(dv, depth + 1)
         if self.refers(e):
             return K
         if self.is_pay(e):
             return P
-        if t == "identifier":
-            dv = self.defs.get(self.key(self.txt(e), e))
-            if dv is not None and dv.type in ("string", "template_string", "array", "binary_expression"):
-                return self.marker(dv, depth + 1)
         return X
 
     def sinks(self) -> list[Hit]:
@@ -1199,7 +1218,7 @@ class _Js:
                         kind, how = "payload", f"downloaded content handed to {self.txt(a)}"
                         break
             if kind:
-                out.append(Hit(n.start_point[0] + 1, kind, how, self._verified(n)))
+                out.append(Hit(n.start_point[0] + 1, kind, how, self._verified(n, kind)))
         return out
 
     def _exec_mode(self, mode) -> bool:
@@ -1212,9 +1231,8 @@ class _Js:
             return True
         return bool(v & 0o111)
 
-    def _verified(self, n) -> bool:
-        scopes = [self.scope(n), *self.drop_scopes[:8]]
-        return any(verified(self.txt(s)) for s in scopes)
+    def _verified(self, n, kind: str) -> bool:
+        return any(verified(self.txt(s)) for s in _check_scopes(self.scope(n), kind, self.drop_scopes, self.root))
 
 
 # ---------------------------------------------------------------- entry
