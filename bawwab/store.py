@@ -83,7 +83,16 @@ def _migrate_5(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS quarantine_id ON quarantine(id)")
 
 
-_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4, _migrate_5]
+def _migrate_6(conn: sqlite3.Connection) -> None:
+    """Quarantine disables the item (0.1.4): how it was switched off (JSON) and where that stands."""
+    _add_column(conn, "quarantine", "disabled", "TEXT")
+    _add_column(conn, "quarantine", "dstate", "TEXT")
+
+
+_MIGRATIONS = [_migrate_1, _migrate_2, _migrate_3, _migrate_4, _migrate_5, _migrate_6]
+# quarantine.dstate: "pending" (the plan is recorded, the config may not be changed yet), "done" (switched off),
+# "restored" (approved: switched back on), "kept" (rejected or replaced: nothing to switch back on)
+DISABLE_STATES = ("pending", "done", "restored", "kept")
 INIT_STATES = ("none", "scanned", "skipped")
 _VERDICT_RANK = {Verdict.CLEAN: 0, Verdict.SUSPICIOUS: 1, Verdict.MALICIOUS: 2}
 
@@ -467,15 +476,32 @@ class Store:
             ).rowcount
 
     def add_quarantine(self, qid: str, ident: str, hash_: str, key: str, item: dict, report: dict,
-                       status: str = "active") -> None:
+                       status: str = "active") -> int:
         """status "active": Claude Code's quarantine (the hook blocks while any is active). "held": an item of an
         agent bawwab has no blocking hook for (the watcher's hold: recorded and reported, never blocking)."""
         with self._tx():
-            self._conn.execute(
+            cur = self._conn.execute(
                 "INSERT INTO quarantine(id, ident, hash, key, item, report, status, created_at)"
                 " VALUES (?,?,?,?,?,?,?,?)",
                 (qid, ident, hash_, key, json.dumps(item), json.dumps(report), status, _iso(_now())),
             )
+        return int(cur.lastrowid)
+
+    def set_disabled(self, qrow: int, plan: dict | None, state: str | None) -> None:
+        """How a quarantined item was switched off (bawwab/agents/claude_code.py disable_plan) and its state."""
+        if state is not None and state not in DISABLE_STATES:
+            raise ValueError(state)
+        with self._tx():
+            self._conn.execute("UPDATE quarantine SET disabled=?, dstate=? WHERE qrow=?",
+                               (None if plan is None else json.dumps(plan), state, qrow))
+
+    def disabled_rows(self, status: str, states: tuple = ("pending", "done")) -> list[dict]:
+        """Quarantine rows with that status whose item bawwab switched off and has not settled yet."""
+        marks = ",".join("?" * len(states))
+        rows = self._conn.execute(
+            f"SELECT * FROM quarantine WHERE status=? AND dstate IN ({marks}) ORDER BY qrow", (status, *states)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def active_quarantine(self) -> list[dict]:
         return self.quarantine_rows("active")

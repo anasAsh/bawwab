@@ -544,6 +544,19 @@ class ClaudeCodeAdapter:
             state[it.category][it.ident] = it.value
         return state
 
+    # --- quarantine: switch the item off until the user decides (0.1.4)
+    def disable_plan(self, item: dict, value: object) -> dict | None:
+        return disable_plan(item, value)
+
+    def apply_disable(self, plan: dict, cwd: Path) -> tuple[bool, str]:
+        return apply_disable(plan, cwd)
+
+    def restore(self, plan: dict) -> tuple[bool, str]:
+        return restore(plan)
+
+    def reject_disabled(self, item: dict, plan: dict, cwd: Path) -> tuple[bool, str]:
+        return reject_disabled(item, plan, cwd)
+
     # --- reject
     def remove(self, item: dict) -> tuple[bool, str]:
         cat, file, keypath, path = item.get("category"), item.get("file"), item.get("keypath") or [], item.get("path")
@@ -640,3 +653,264 @@ def _remove_hook(hooks: dict, event: str, item: dict) -> bool:
                     del hooks[event]
                 return True
     return False
+
+
+# ------------------------------------------------------------------ quarantine: switch off, switch back on
+# While an item is quarantined it is switched off, so it doesn't start or run at the next launch either:
+# - an MCP server entry, a code-running setting (env, statusLine, apiKeyHelper, disableAllHooks, ...): the entry
+#   leaves its config file; the plan keeps it, and approve puts the same entry back at the same key path;
+# - a settings hook: that one hook leaves its event (approve adds it back to its matcher's group);
+# - a skill dir or a command/agent file: moved to <bawwab home>/disabled/ (approve moves it back);
+# - a plugin: enabledPlugins[spec] set to false in each settings file in view where it was true (approve sets
+#   exactly those back to true).
+# Every step is idempotent and re-run (crash recovery, or the entry came back unchanged), and every change is
+# compared with what the plan recorded: something that differs is left alone. Not switched off: toggles (what they
+# enable is itself held and switched off), marketplaces (nothing runs until a plugin is installed), permissions
+# (the hold already denies every tool call that could use them), bawwab itself, and install-time batches.
+
+_DISABLED_EXEC = frozenset({"apiKeyHelper", "statusLine", "awsAuthRefresh", "awsCredentialExport",
+                            "otelHeadersHelper", "env", "disableAllHooks"})
+_MISSING = object()
+
+
+def _bawwab_ref(v: object) -> bool:
+    """A value that names the running bawwab's own files (its hook script, launcher, root): never switched off."""
+    from bawwab.selfid import running_root
+
+    root = running_root()
+    return bool(root) and root in json.dumps(v, default=str)
+
+
+def disable_plan(item: dict, value: object) -> dict | None:
+    """How to switch a quarantined item off, or None when it isn't (see above). Reads nothing but the item."""
+    cat, file, kp, path = item.get("category"), item.get("file"), list(item.get("keypath") or []), item.get("path")
+    ident = str(item.get("ident") or "")
+    if cat == "servers" and file and kp:
+        spec = value.get("spec") if isinstance(value, dict) and "payload" in value and "spec" in value else value
+        return None if _bawwab_ref(spec) else {"how": "json", "file": file, "keypath": kp, "value": spec}
+    if cat == "exec_settings" and file and len(kp) == 1 and kp[0] in _DISABLED_EXEC and ":setting:" in ident:
+        return None if _bawwab_ref(value) else {"how": "json", "file": file, "keypath": kp, "value": value}
+    if cat == "hooks" and file and len(kp) == 2 and isinstance(value, dict):
+        return None if _bawwab_ref(value) else {"how": "hook", "file": file, "event": value.get("event"),
+                                                "matcher": value.get("matcher"), "hook": value.get("hook"),
+                                                "id": ident.rsplit(":", 1)[-1]}
+    if cat == "skills" and path:
+        dest = bawwab_home() / "disabled" / f"{_stamp()}-{Path(path).name}"
+        return {"how": "move", "from": path, "to": str(dest)}
+    if cat == "plugins" and len(kp) == 2 and kp[0] == "plugins" and ":copy:" not in ident:
+        from bawwab.gate.detect import _is_bawwab_plugin
+        from bawwab.selfid import is_self
+
+        if _is_bawwab_plugin(kp[1]) or is_self(path):
+            return None  # bawwab's own plugin id is never switched off, whoever installed this copy
+        return {"how": "plugin", "spec": kp[1], "files": []}
+    return None
+
+
+def _at(data: object, kp: list) -> object:
+    for k in kp:
+        if not isinstance(data, dict) or k not in data:
+            return _MISSING
+        data = data[k]
+    return data
+
+
+def _write_json(file: Path, original: str, data: object) -> None:
+    backups = bawwab_home() / "backups"
+    backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if original:
+        backup = backups / f"{_stamp()}-{file.name}"
+        backup.write_text(original)
+        os.chmod(backup, 0o600)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = file.with_name(f".{file.name}.bawwab-{os.getpid()}.tmp")
+    tmp.write_text(_dump_like(original or "{\n  \"x\": 1\n}\n", data))
+    try:
+        os.chmod(tmp, os.stat(file).st_mode & 0o777)
+    except OSError:
+        pass
+    os.replace(tmp, file)
+
+
+def _edit_json(file: Path, fn) -> tuple[bool, str]:
+    """fn(data) -> (changed, message) edits the parsed file in place; written (with a backup) only if changed."""
+    try:
+        original = file.read_text() if file.exists() else ""
+        data = json.loads(original) if original.strip() else {}
+    except (OSError, ValueError) as e:
+        return False, f"could not read {file}: {type(e).__name__}"
+    if not isinstance(data, dict):
+        return False, f"{file} is not a JSON object"
+    changed, msg = fn(data)
+    if changed:
+        try:
+            _write_json(file, original, data)
+        except OSError as e:
+            return False, f"could not write {file}: {type(e).__name__}"
+    return True, msg
+
+
+def _settings_files(cwd: Path) -> list[Path]:
+    out = [d / n for d in claude_config_dirs() for n in ("settings.json", "settings.local.json")]
+    for p in watch.project_dirs(str(cwd), str(Path.home())):
+        out += [Path(p) / ".claude" / n for n in ("settings.json", "settings.local.json")]
+    return list(dict.fromkeys(out))
+
+
+def apply_disable(plan: dict, cwd: Path) -> tuple[bool, str]:
+    """Switch the item off as the plan says (idempotent). For a plugin, plan["files"] gains every settings file
+    newly switched to false. (ok, message); not ok: nothing could be changed, try again later."""
+    how = plan.get("how")
+    if how == "json":
+        file, kp = Path(plan["file"]), list(plan["keypath"])
+
+        def drop(data):
+            cur = _at(data, kp)
+            if cur is _MISSING:
+                return False, f"already off in {file}"
+            if cur != plan["value"]:
+                return False, f"{file} holds a different entry now; left as it is"
+            parent = _at(data, kp[:-1]) if len(kp) > 1 else data
+            del parent[kp[-1]]
+            return True, f"switched off: taken out of {file}"
+        return _edit_json(file, drop)
+    if how == "hook":
+        file = Path(plan["file"])
+
+        def drop(data):
+            hooks = data.get("hooks")
+            item = {"ident": f"x:{plan['id']}"}
+            if isinstance(hooks, dict) and _remove_hook(hooks, plan["event"], item):
+                return True, f"switched off: hook taken out of {file}"
+            return False, f"hook already off in {file}"
+        return _edit_json(file, drop)
+    if how == "move":
+        src, dst = Path(plan["from"]), Path(plan["to"])
+        if dst.exists() or dst.is_symlink():
+            return True, f"already moved to {dst}"
+        if not src.exists() and not src.is_symlink():
+            return True, f"{src} is gone"
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            shutil.move(str(src), str(dst))
+        except OSError as e:
+            return False, f"could not move {src}: {type(e).__name__}"
+        return True, f"switched off: moved {src} to {dst}"
+    if how == "plugin":
+        spec, msgs, ok = plan["spec"], [], True
+        for f in _settings_files(cwd):
+            if not f.exists():
+                continue
+
+            def off(data, f=f):
+                ep = data.get("enabledPlugins")
+                if isinstance(ep, dict) and ep.get(spec) is True:
+                    ep[spec] = False
+                    return True, str(f)
+                return False, ""
+            good, msg = _edit_json(f, off)
+            ok = ok and good
+            if good and msg:
+                if msg not in plan["files"]:
+                    plan["files"].append(msg)
+                msgs.append(msg)
+        return ok, (f"switched off: enabledPlugins {spec}=false in {', '.join(msgs)}" if msgs else
+                    f"plugin {spec} is not switched on in any settings file in view")
+    return False, f"unknown plan {how!r}"
+
+
+def restore(plan: dict) -> tuple[bool, str]:
+    """Switch the item back on exactly as it was (idempotent); something else in its place is left alone."""
+    how = plan.get("how")
+    if how == "json":
+        file, kp = Path(plan["file"]), list(plan["keypath"])
+
+        def put(data):
+            cur = _at(data, kp)
+            if cur == plan["value"]:
+                return False, f"already back in {file}"
+            if cur is not _MISSING:
+                return False, f"{file} holds another entry there now; the held one was not put back"
+            parent = data
+            for k in kp[:-1]:
+                if not isinstance(parent.get(k), dict):
+                    parent[k] = {}
+                parent = parent[k]
+            parent[kp[-1]] = plan["value"]
+            return True, f"switched back on in {file}"
+        return _edit_json(file, put)
+    if how == "hook":
+        file = Path(plan["file"])
+
+        def put(data):
+            hooks = data.setdefault("hooks", {})
+            if not isinstance(hooks, dict):
+                return False, f"hooks in {file} are not an object; the hook was not put back"
+            groups = hooks.setdefault(plan["event"], [])
+            if not isinstance(groups, list):
+                return False, f"hooks.{plan['event']} in {file} is not a list; the hook was not put back"
+            for g in groups:
+                if isinstance(g, dict) and g.get("matcher") == plan["matcher"] and isinstance(g.get("hooks"), list):
+                    if plan["hook"] in g["hooks"]:
+                        return False, f"hook already back in {file}"
+                    g["hooks"].append(plan["hook"])
+                    return True, f"hook switched back on in {file}"
+            g = {"hooks": [plan["hook"]]} if plan["matcher"] is None else {"matcher": plan["matcher"],
+                                                                             "hooks": [plan["hook"]]}
+            groups.append(g)
+            return True, f"hook switched back on in {file}"
+        return _edit_json(file, put)
+    if how == "move":
+        src, dst = Path(plan["from"]), Path(plan["to"])
+        if src.exists() or src.is_symlink():
+            return (True, f"{src} is already there") if not dst.exists() else \
+                (False, f"{src} exists again; the held copy stays at {dst}")
+        if not dst.exists() and not dst.is_symlink():
+            return True, f"nothing to move back ({dst} is gone)"
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(dst), str(src))
+        except OSError as e:
+            return False, f"could not move {dst} back: {type(e).__name__}"
+        return True, f"switched back on: moved back to {src}"
+    if how == "plugin":
+        spec, msgs, ok = plan["spec"], [], True
+        for name in plan.get("files") or []:
+            f = Path(name)
+
+            def on(data):
+                ep = data.get("enabledPlugins")
+                if isinstance(ep, dict) and ep.get(spec) is False:
+                    ep[spec] = True
+                    return True, str(f)
+                return False, ""
+            good, msg = _edit_json(f, on)
+            ok = ok and good
+            if good and msg:
+                msgs.append(msg)
+        return ok, (f"switched back on: enabledPlugins {spec}=true in {', '.join(msgs)}" if msgs else
+                    f"plugin {spec}: nothing to switch back on")
+    return False, f"unknown plan {how!r}"
+
+
+def reject_disabled(item: dict, plan: dict, cwd: Path) -> tuple[bool, str]:
+    """Reject an item bawwab switched off: make sure it is off, then remove what is left as reject always did
+    (a moved skill goes to <bawwab home>/quarantine/, a plugin's entry and install dir go too)."""
+    ok, msg = apply_disable(plan, cwd)
+    if not ok:
+        return False, msg
+    how = plan.get("how")
+    if how == "json":
+        return True, f"removed: it was already out of {plan['file']} (the entry is kept in bawwab's state)"
+    if how == "hook":
+        return True, f"removed: the hook was already out of {plan['file']}"
+    if how == "move":
+        dst = Path(plan["to"])
+        if not dst.exists() and not dst.is_symlink():
+            return True, f"removed ({plan['from']} was already gone)"
+        good, m = _move_to_quarantine(dst)
+        return good, m.replace(str(dst), plan["from"], 1) if good else m
+    if how == "plugin":
+        good, m = ClaudeCodeAdapter().remove(item)
+        return good, m
+    return False, f"unknown plan {how!r}"
