@@ -52,6 +52,8 @@ def _build() -> argparse.ArgumentParser:
     sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
     fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
     fx.add_argument("--cwd", help="project directory (default: the current directory)")
+    fx.add_argument("-v", "--verbose", action="store_true",
+                    help="also list bawwab's own plugin (accepted as the running code, not scanned)")
     fx.add_argument("--retry", action="store_true",
                     help="after a failed check or lost state: repair, rebuild by scanning, clear the error (user)")
     w = sub.add_parser("watch", help="watch every coding agent's config: scan new or changed MCP servers, skills and "
@@ -395,7 +397,7 @@ def _effects(args) -> int:
         effects.retry(cwd)
     else:
         effects.refresh(cwd, force=True)
-    own = effects.self_text()
+    own = effects.self_text() if args.verbose else ""  # bawwab's own plugin, accepted unscanned: on request
     if own:
         print(own)
     entries = effects.quarantined()

@@ -348,7 +348,9 @@ def test_effect_check_accepts_self_and_scans_lookalike(plugins, capsys):
     assert not rows["claude-code:plugin:bawwab@evil-mkt"]["key"].startswith(selfid.SELF_KEY_PREFIX)
     capsys.readouterr()
     main(["effects", "--cwd", str(proj)])
-    assert "bawwab@bawwab is bawwab (running code, not scanned)" in capsys.readouterr().out
+    assert "running code, not scanned" not in capsys.readouterr().out  # not on every run
+    main(["effects", "--verbose", "--cwd", str(proj)])
+    assert "bawwab@bawwab is bawwab (running code, not scanned)" in capsys.readouterr().out  # shown, on request
 
 
 def test_effect_check_scans_self_symlinked_install(plugins, tmp_path):

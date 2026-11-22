@@ -357,10 +357,8 @@ def status_text(store: Store | None = None) -> tuple[str, int]:
         lines.append(f"{sanitise(name, 40)} — {len(qs)} on hold.")
         lines += _rows(qs)
     n = len(effects._groups(active)) + len(effects._groups(held))
-    if n:
-        lines += ["", f"  keep:     {cmd('approve')} <ID>   (malicious: {cmd('approve --force')} <ID>)",
-                  f"  remove:   {cmd('reject')} <ID>   (removes the entry from the agent's config, with a backup)",
-                  f"  details:  {cmd('effects')}"]
+    if n:  # the same command lines as every block: `!`, the real ids, each naming its items
+        lines += ["", *effects.group_commands(active + held)]
     lines += ["", watcher_status()]
     return "\n".join(lines), n
 
@@ -368,9 +366,8 @@ def status_text(store: Store | None = None) -> tuple[str, int]:
 def _rows(entries: list[dict]) -> list[str]:
     out = []
     for qid, g in effects._groups(entries).items():
-        verdict, findings = effects._report_of(g[0])
-        name = f"{len(g)} existing hooks/settings" if len(g) > 1 else effects.item_name(g[0])
-        out.append(f"  {sanitise(qid, 8):<8}  {name:<40}  {verdict.lower():<10}  {effects._why(g[0], findings)}")
+        _, name, verdict, _, why = effects.group_row(sanitise(qid, 8), g)
+        out.append(f"  {sanitise(qid, 8):<8}  {name:<40}  {verdict.lower():<10}  {why}")
     return out
 
 
@@ -378,7 +375,7 @@ def watcher_status() -> str:
     st = _read_state()
     hb = st.get("heartbeat")
     unit = unit_path()
-    installed = f"service installed ({unit})" if unit.exists() else f"service not installed (`{cmd('watch --install')}`)"
+    installed = f"service installed ({unit})" if unit.exists() else f"service not installed (! {cmd('watch --install')})"
     if isinstance(hb, (int, float)):
         when = datetime.fromtimestamp(hb, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         return f"watcher: {installed}; last pass {when}"

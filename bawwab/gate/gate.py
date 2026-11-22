@@ -292,6 +292,10 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         protected = [approvable] if approvable else []
     else:
         protected = list(det.protected)
+    if det.plain and any(_APPROVAL in r for r in det.plain):
+        # the same bawwab call is refused plainly (R57: the user runs it): a pending approval for it as well would
+        # be an id that can't make the call pass. One refusal, no id.
+        protected = [p for p in protected if p != _APPROVAL]
     results = _scan_all(inp, det, scan, store, protected) if isinstance(det, Targets) else []
     blocks: list[str] = []
     keys: list[str] = []

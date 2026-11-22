@@ -969,15 +969,17 @@ def quarantine_details(entries: list[dict]) -> str:
     for qid, g in groups.items():
         qid = sanitise(qid, 8)
         out.append("")
-        if len(g) > 1:
-            out.append(f"{qid}  {len(g)} hooks and settings that were already configured when bawwab was installed "
+        if _is_batch(g):
+            what = f"{len(g)} hooks and settings that were" if len(g) > 1 else "a hook or setting that was"
+            out.append(f"{qid}  {what} already configured when bawwab was installed "
                        "(other plugins' and tools'; nothing to scan) — SUSPICIOUS until approved:")
             out += [f"    - {sanitise(_label_of(q), 200)}" for q in g[:MAX_BATCH_SHOWN]]
             if len(g) > MAX_BATCH_SHOWN:
                 out.append(f"    … and {len(g) - MAX_BATCH_SHOWN} more")
-            name, force = "existing hooks/settings", ""
+            name, force = _group_name(g), ""
         else:
             verdict, findings = _report_of(g[0])
+            findings = distinct_findings(findings)
             name = item_name(g[0])
             out.append(f"{qid}  {sanitise(_label_of(g[0]), 200)} — {verdict}")
             for f in findings[:MAX_SHOWN_FINDINGS]:
@@ -1091,7 +1093,7 @@ def ask_context(cwd: Path) -> str:
     from bawwab.config import level_is_set
     from bawwab.inventory import list_installed
 
-    items = list_installed(cwd)
+    items = [i for i in list_installed(cwd) if not is_self_path(i.target.path)]  # bawwab itself is never scanned
     n = {k: sum(1 for i in items if i.kind == k) for k in ("mcp", "skill", "plugin")}
     total = len(items)
     secs = total * SECONDS_PER_ITEM
