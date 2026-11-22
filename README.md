@@ -338,8 +338,11 @@ The plugin adds:
 - **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
 - **The `bawwab` command** (`bin/bawwab`, a small launcher for the plugin's own copy, in the same virtualenv as
   the hooks). Claude Code puts it on the `PATH` of Claude's Bash tool, so you don't need the CLI install below.
-  Your `!` shell may not have it on its `PATH`; when it doesn't, Bawwab's messages print the launcher's full
-  path instead of `bawwab`, so you can copy the command as shown.
+  Your `!` shell may not have it on its `PATH`, so Bawwab's messages print a launcher path instead of `bawwab`
+  (as `~/…`), and you can copy the command as shown. With a plugin installed from a marketplace, that path is a
+  stable launcher in the plugin's data folder (`~/.claude/plugins/data/bawwab-<marketplace>/bin/bawwab`), which
+  Bawwab points at the installed version at every session start, so a command you copied earlier still works
+  after an upgrade.
 
 If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
 once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
@@ -413,9 +416,8 @@ bawwab status                  # what is quarantined or on hold, across every ag
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
-In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. If `bawwab` isn't on your
-shell's `PATH` (plugin only), use the command exactly as Bawwab's message prints it, which names the plugin's
-launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
+In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. With the plugin only,
+use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`). Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
 and `level high`, but never `approve`, `reject`, `init --skip` or a lower level, by any name or path.
 
 ### MCP tools

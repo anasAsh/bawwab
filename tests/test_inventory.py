@@ -13,7 +13,7 @@ from bawwab.store import open_store
 from bawwab.types import Finding, ScanReport, Severity, Target, Verdict, Mode
 from datetime import UTC, datetime
 
-from bawwab.clicmd import exe as _clicmd_exe
+from conftest import clicmd_exe as _clicmd_exe
 
 B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
 

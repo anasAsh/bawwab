@@ -31,9 +31,9 @@ configuration. Only the user can approve what it blocks.
    no other package manager or a renamed command, no disabling or uninstalling Bawwab, and no changes to
    Bawwab's own files or `~/.bawwab`. If the user wants the item, they approve it.
 4. **Offer the user their options**, as `!` commands they type themselves. Copy each command exactly as the
-   Bawwab message prints it: it says `bawwab` when that is on the user's PATH, and otherwise the full path of
-   the plugin's launcher (`…/bin/bawwab`), because a plugin-only install may have no `bawwab` in the user's
-   shell. Below, `bawwab` stands for whichever form the message used.
+   Bawwab message prints it: usually the path of the plugin's launcher (`~/…/bin/bawwab`), because a
+   plugin-only install may have no `bawwab` in the user's shell. Below, `bawwab` stands for whichever form the
+   message used.
    - `! bawwab approve <id> [<id>…]` keeps them (a MALICIOUS verdict needs `--force`). Then retry the same
      command.
    - `! bawwab reject <id> [<id>…]` refuses them; a quarantined item is removed, with a backup.

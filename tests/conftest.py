@@ -18,6 +18,24 @@ def _boot_token() -> str:
     return m._boot_token()
 
 
+def clicmd_exe() -> str:
+    """How bawwab renders its own command under the tests' HOME (a temp dir, so never `~/…`). Test modules
+    compute this at import, before _isolated_env swaps HOME, so the real HOME is hidden here too."""
+    import os
+
+    from bawwab import clicmd
+
+    old = os.environ.get("HOME")
+    os.environ["HOME"] = "/nonexistent-bawwab-test-home"
+    try:
+        return clicmd.exe()
+    finally:
+        if old is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old
+
+
 @pytest.fixture(autouse=True)
 def _isolated_env(tmp_path_factory, monkeypatch, request):
     root = tmp_path_factory.mktemp("iso")

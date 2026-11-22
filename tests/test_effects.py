@@ -16,7 +16,7 @@ from bawwab.paths import bawwab_home
 from bawwab.store import open_store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Verdict
 
-from bawwab.clicmd import exe as _clicmd_exe
+from conftest import clicmd_exe as _clicmd_exe
 
 B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
 

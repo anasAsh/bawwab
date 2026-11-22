@@ -19,7 +19,7 @@ from bawwab.trust import (
 )
 from bawwab.types import Mode, Severity, Target, ToolInfo, Verdict
 
-from bawwab.clicmd import exe as _clicmd_exe
+from conftest import clicmd_exe as _clicmd_exe
 
 B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
 

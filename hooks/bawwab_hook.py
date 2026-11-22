@@ -143,18 +143,50 @@ def _deny(reason: str) -> str:
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
-def _cli(args: str) -> str:
-    """The command line to show for `bawwab <args>`: the one helper, bawwab/clicmd.py (R54), loaded by path."""
+def _clicmd():
+    """bawwab/clicmd.py (R54), loaded by path."""
     import importlib.util
 
+    spec = importlib.util.spec_from_file_location("_bawwab_clicmd", os.path.join(PLUGIN_ROOT, "bawwab", "clicmd.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _cli(args: str) -> str:
+    """The command line to show for `bawwab <args>`: the one helper, bawwab/clicmd.py (R54)."""
     try:
-        spec = importlib.util.spec_from_file_location("_bawwab_clicmd", os.path.join(PLUGIN_ROOT, "bawwab",
-                                                                                     "clicmd.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.cmd(args)
+        return _clicmd().cmd(args)
     except Exception:  # noqa: BLE001
         return f"bawwab {args}"
+
+
+def _refresh_stable_launcher() -> None:
+    """In Claude Code's plugin cache, (re)write <data dir>/bin/bawwab, the stable launcher the printed commands
+    name, so it runs this version (clicmd.stable_text). Only in bawwab's own existing data dir (derived from this
+    tree's path, never from env), never through a symlink, only when its bytes differ. Never raises."""
+    try:
+        c = _clicmd()
+        d, launcher = _installed_data_dir(), os.path.realpath(os.path.join(PLUGIN_ROOT, "bin", "bawwab"))
+        if d is None or d != c.data_dir(PLUGIN_ROOT) or not os.path.isfile(launcher):
+            return
+        bindir = os.path.join(d, "bin")
+        if os.path.islink(bindir):
+            return
+        os.makedirs(bindir, mode=0o700, exist_ok=True)
+        path, text = os.path.join(bindir, "bawwab"), c.stable_text(launcher)
+        if os.path.islink(path) or not os.path.isdir(bindir) or os.path.islink(bindir):
+            return
+        if _read(path) == text and c.stable_ok(launcher):
+            return
+        tmp = f"{path}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o755)
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, path)
+    except Exception:  # noqa: BLE001 - the printed commands fall back to this version's own launcher
+        pass
 
 
 def _bawwab_cmd(sub: str) -> list[str]:
@@ -528,6 +560,7 @@ def bootstrap(foreground: bool = False) -> int:
             except OSError:
                 pass
         _write(os.path.join(d, BOOT_DONE), token)
+        _refresh_stable_launcher()
         rc = 0
         if foreground:
             _say(SETUP_OK)
@@ -720,6 +753,8 @@ def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
         elif told:
             print(_context_json(event, told))
         return 0
+    if sub == "inventory":
+        _refresh_stable_launcher()  # a new session: the stable launcher runs the version Claude Code loaded
     extra = _take_boot_context() if sub == "notify" else None
     out = None
     if run:
