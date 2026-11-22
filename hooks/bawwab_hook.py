@@ -576,6 +576,76 @@ def bootstrap(foreground: bool = False) -> int:
     return rc if foreground else 0
 
 
+def link(unlink: bool = False) -> int:
+    """`bawwab setup --link` (the user's own command; the gate refuses it from Claude): write a 3-line shim named
+    `bawwab` into the first of ~/.local/bin, ~/bin on PATH, running the stable launcher (plugin cache) or this
+    tree's launcher, so Bawwab's messages can print bare `bawwab` while the shim verifies (clicmd.linked).
+    Never replaces a file it didn't write, and refuses when another `bawwab` comes first on PATH.
+    `--unlink` removes the shims it wrote."""
+    import shutil
+
+    c = _clicmd()
+    if unlink:
+        gone = []
+        for d in c.SHIM_DIRS:
+            p = os.path.join(os.path.expanduser(d), "bawwab")
+            if not os.path.islink(p) and c.is_shim(_read(p) or ""):
+                os.unlink(p)
+                gone.append(p)
+        _say(f"bawwab: removed {', '.join(gone)}; messages print the launcher's path again." if gone else
+             "bawwab: no `bawwab` shim written by `bawwab setup --link` was found; nothing removed.")
+        return 0
+    launcher = os.path.realpath(os.path.join(PLUGIN_ROOT, "bin", "bawwab"))
+    if not os.path.isfile(launcher):
+        _say("bawwab setup --link: this install has no launcher (bin/bawwab); nothing to link.", True)
+        return 1
+    _refresh_stable_launcher()
+    target = c.shim_target(launcher)
+    if target != launcher and not c.stable_ok(launcher):
+        _say("bawwab setup --link: the plugin's stable launcher isn't ready; start a Claude Code session (or run "
+             f"`{_cli('setup --retry')}`), then try again.", True)
+        return 1
+    dirs = c.shim_dirs()
+    if not dirs:
+        _say("bawwab setup --link: neither ~/.local/bin nor ~/bin is on your PATH, so a `bawwab` there would not "
+             "be found. Add one of them to PATH, then run this again.", True)
+        return 1
+    d = dirs[0]
+    entries = c._path_entries()
+    before = entries[:entries.index(d)]
+    if not all(os.path.isabs(e) for e in before):
+        _say(f"bawwab setup --link: your PATH has a relative entry before {d}; Bawwab only trusts a `bawwab` it "
+             "can locate the same way from any directory. Not linked.", True)
+        return 1
+    other = shutil.which("bawwab", path=os.pathsep.join(before)) if before else None
+    if other:
+        _say(f"bawwab setup --link: {other} comes before {d} on your PATH and would run instead. Remove it (or "
+             "reorder PATH), then run this again. Not linked.", True)
+        return 1
+    dest = os.path.join(d, "bawwab")
+    if os.path.lexists(dest) and (os.path.islink(dest) or not c.is_shim(_read(dest) or "")):
+        _say(f"bawwab setup --link: {dest} already exists and wasn't written by Bawwab; not replaced.", True)
+        return 1
+    try:
+        os.makedirs(d, mode=0o755, exist_ok=True)
+        tmp = f"{dest}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o755)
+        with os.fdopen(fd, "w") as f:
+            f.write(c.shim_text(target))
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, dest)
+    except OSError as e:
+        _say(f"bawwab setup --link: could not write {dest} ({e}).", True)
+        return 1
+    if c.linked(launcher):
+        _say(f"bawwab: wrote {dest} (runs {c.show_path(target)}). Bawwab's messages now print `bawwab …`, checked "
+             "each time: if that file changes or another `bawwab` comes first on PATH, they go back to the full "
+             "path. Undo: `bawwab setup --unlink`.")
+    else:
+        _say(f"bawwab: wrote {dest}, but it doesn't verify on this PATH, so messages keep printing the full path.")
+    return 0
+
+
 def _setup_failed() -> bool:
     return os.path.exists(os.path.join(_boot_dir(), BOOT_FAILED))
 
@@ -792,8 +862,12 @@ def main(argv: list[str]) -> int:
         print(_venv_dir())
         return 0
     if argv[1:2] == ["setup"]:
+        if argv[2:] in (["--link"], ["--unlink"]):
+            return link(unlink=argv[2] == "--unlink")
         if argv[2:] not in ([], ["--retry"]):
-            _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)", True)
+            _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)\n"
+                 "       bawwab setup --link     (put a `bawwab` command in ~/.local/bin or ~/bin; user only)\n"
+                 "       bawwab setup --unlink   (remove it)", True)
             return 2
         return bootstrap(foreground=True)
     if argv[1:2] == ["gate"]:

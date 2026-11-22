@@ -1224,6 +1224,30 @@ def _check_dest(p: str, acc: _Acc) -> None:
         acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
     if _bawwab_path(p):
         acc.protect("bawwab state change")
+    if _bawwab_on_path(p):
+        acc.protect(_ON_PATH)
+
+
+_ON_PATH = "puts a `bawwab` command on PATH"
+_USER_BIN = ("~/.local/bin", "~/bin")  # bawwab/clicmd.py SHIM_DIRS: where `bawwab setup --link` writes its shim
+
+
+def _bawwab_on_path(p: str) -> bool:
+    """The opt-in shim (`bawwab setup --link`): messages print bare `bawwab` while the first `bawwab` on PATH is
+    the shim bawwab wrote. A write, copy, move or link that creates or changes a file named `bawwab` in a PATH dir
+    (this process's PATH, or ~/.local/bin, ~/bin) could stand in for it, so it is protected."""
+    if os.path.basename(p) != "bawwab":
+        return False
+    d = os.path.normpath(os.path.dirname(p))
+    dirs = {os.path.normpath(e) for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e)}
+    dirs |= {os.path.normpath(os.path.expanduser(x)) for x in _USER_BIN}
+    if d in dirs:
+        return True
+    try:
+        real = os.path.realpath(d)
+        return any(real == os.path.realpath(x) for x in dirs)
+    except (OSError, ValueError):
+        return True
 
 
 def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
@@ -1488,7 +1512,14 @@ def _protected_tail(args: list[str]) -> bool:
         return any(a.startswith("--re") for a in rest)
     if sub == "level":
         return _lowers_level(rest)
+    if sub == "setup":
+        return _links(rest)
     return False
+
+
+def _links(rest: list[str]) -> bool:
+    """`setup --link` (any abbreviation argparse accepts): makes messages print bare `bawwab`; the user's choice."""
+    return any(a.startswith("--l") for a in rest)
 
 
 def _lowers_level(rest: list[str]) -> bool:
@@ -1534,6 +1565,8 @@ def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd:
             return any(a.startswith("--re") for a in rest)
         if w == "level":
             return _lowers_level(rest)
+        if w == "setup":
+            return _links(rest)
         return False
     if not tail:
         return False
@@ -1558,7 +1591,7 @@ def _search_tool(w: str, cwd: str) -> bool:
 
 
 _MAX_RESOLVE = 8  # words examined for a bawwab executable before the subcommand
-_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level"})
+_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level", "setup"})
 
 
 _INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")
@@ -1911,6 +1944,9 @@ _PATH_TOKEN = re.compile(_CMD_START + r"([^\s;&|('\"`,\[\]{}$]*/[^\s;&|('\"`,\[\
 _ARG_TOKEN = re.compile(r"[;&|]+|[^\s'\",\[\](){};&|]+")
 _IMPORTS_BAWWAB = re.compile(r"(?:from|import)\s+bawwab\b")
 _QUOTED_SUB = re.compile(r"['\"](?:approve|reject)['\"]")
+# a shell alias or function named bawwab (an rc file): the user's `! bawwab …` would run it instead of the shim
+_BAWWAB_ALIAS = re.compile(r"(?:^|[\s;&|({])(?:alias\s+(?:-\S+\s+)*['\"]?bawwab['\"]?=|function\s+bawwab\b"
+                           r"|bawwab\s*\(\s*\))")
 _QUOTED_PAIRS = ((re.compile(r"['\"]init['\"]"), re.compile(r"['\"]--sk(?:ip)?['\"]")),
                  (re.compile(r"['\"]effects['\"]"), re.compile(r"['\"]--re(?:try)?['\"]")))
 
@@ -1944,10 +1980,11 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
         if imports and (_QUOTED_SUB.search(s) or any(f.search(s) for f in pairs)):
             out.add(s)
             continue
-        if "bawwab" in s and any(_protected_args(s[m.end():]) for m in _BW_WORD.finditer(s)):
+        if "bawwab" in s and (_BAWWAB_ALIAS.search(s) or any(_protected_args(s[m.end():])
+                                                            for m in _BW_WORD.finditer(s))):
             out.add(s)
             continue
-        if "/" in s and re.search(r"\b(?:approve|reject|init|effects)\b", s):
+        if "/" in s and re.search(r"\b(?:approve|reject|init|effects|setup)\b", s):
             for m in _PATH_TOKEN.finditer(s):
                 paths += 1
                 if paths > 256:
@@ -1962,7 +1999,7 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
 
 def _new_protected(new: str, old: str, cwd: str) -> bool:
     """`new` holds a protected bawwab invocation that `old` didn't (an edit elsewhere in a doc passes)."""
-    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects)\b", new):
+    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects|setup)\b", new):
         return False
     return bool(_protected_lines(new, cwd) - _protected_lines(old, cwd))
 
@@ -2808,6 +2845,8 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
             new = _ipython_shell(src) if isinstance(src, str) else ""
     if "bawwab" in new and _execs_bawwab(new):  # R55: a script that runs bawwab under another name
         acc.user_only("writes a script that runs bawwab")
+    if any(_bawwab_on_path(c) for c in cands):
+        acc.protect(_ON_PATH)
     old = _read_text(p)
     if old is None:
         old = ""  # unreadable or too large: every protected line counts as new

@@ -343,6 +343,15 @@ The plugin adds:
   stable launcher in the plugin's data folder (`~/.claude/plugins/data/bawwab-<marketplace>/bin/bawwab`), which
   Bawwab points at the installed version at every session start, so a command you copied earlier still works
   after an upgrade.
+- **Optional, a short `bawwab` command:** run `! bawwab setup --link` yourself (with the launcher path the
+  messages show). It writes a 3-line `bawwab` script into `~/.local/bin` (or `~/bin`), whichever is on your
+  `PATH`, that runs the launcher. From then on, messages print `! bawwab approve <id>`, but only while the first
+  `bawwab` on `PATH` is exactly that script; if it changes, or another `bawwab` comes first, they go back to the
+  full path. Claude can't run `setup --link`, and the gate refuses, in the forms it recognises, Claude writing a
+  file called `bawwab` into a `PATH` dir or a `bawwab` alias or function into a file. Undo with
+  `! bawwab setup --unlink`. The trade-off: a full path can't be
+  shadowed; a bare name is checked when the message is printed, not when you type it, and Bawwab can't see your
+  shell's own aliases, functions or `PATH` order. See [the threat model](docs/threat-model.md) (5.7).
 
 If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
 once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
@@ -417,8 +426,10 @@ bawwab status                  # what is quarantined or on hold, across every ag
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
 In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. With the plugin only,
-use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`). Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
-and `level high`, but never `approve`, `reject`, `init --skip` or a lower level, by any name or path.
+use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`),
+or `bawwab` after `setup --link`. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`,
+`setup --unlink`, `level` and `level high`, but never `approve`, `reject`, `init --skip`, `setup --link` or a
+lower level, by any name or path.
 
 ### MCP tools
 

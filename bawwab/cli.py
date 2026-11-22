@@ -73,7 +73,11 @@ def _build() -> argparse.ArgumentParser:
     sb = sub.add_parser("sandbox", help="deep mode: build the Docker sandbox image, or check that it can run")
     sb.add_argument("action", choices=("build", "check"))
     st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
-    st.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
+    sg = st.add_mutually_exclusive_group()
+    sg.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
+    sg.add_argument("--link", action="store_true",
+                    help="put a `bawwab` command in ~/.local/bin or ~/bin, so messages print `bawwab …` (user only)")
+    sg.add_argument("--unlink", action="store_true", help="remove the command --link wrote")
     return p
 
 
@@ -471,12 +475,13 @@ def _setup(args) -> int:
         print("bawwab setup: no bawwab plugin install found; nothing to set up (the CLI needs no setup)",
               file=sys.stderr)
         return 1
+    flag = "--link" if args.link else "--unlink" if args.unlink else "--retry"
     rc = 0
-    for root in roots:
+    for root in roots[:1] if flag != "--retry" else roots:  # one shim: the plugin this code runs from, or the first
         from bawwab.limits import child_argv
 
         # the setup runs `uv sync`: it must not inherit this process's scan memory limit
-        r = subprocess.run(child_argv([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", "--retry"]))
+        r = subprocess.run(child_argv([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", flag]))
         rc = rc or r.returncode
     return rc
 
