@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -24,7 +25,7 @@ from bawwab.gate.pin import pin_changes, pins_needed
 from bawwab.gate.prefilter import prefilter
 from bawwab.report import format_report, sanitise
 from bawwab.scan import scan_target, synthetic_report
-from bawwab.selfid import is_self_path
+from bawwab.selfid import is_self_path, other_build
 from bawwab.store import Store, open_store
 from bawwab.types import ScanReport, Target, Verdict
 
@@ -155,6 +156,17 @@ def _user_only_block(reasons: list[str]) -> str:
     return "\n".join(lines)
 
 
+def _build_block(t: Target, differ: list[str], pid: str) -> str:
+    """Another build of bawwab copied into an install dir (selfid.other_build): still an approval, in one line.
+    Its scan of bawwab's own source (always SUSPICIOUS) stays one command away."""
+    shown = ", ".join(differ[:3]) + (", …" if len(differ) > 3 else "")
+    n = len(differ)
+    return (f"⛔ bawwab: this installs a different build of Bawwab ({n} file{'s' if n != 1 else ''} differ: "
+            f"{sanitise(shown, 200)}), which replaces the hooks that protect you. Keep it only if you built it.\n"
+            f"To allow:  ! {cmd('approve')} {sanitise(pid)}   Its scan:  ! {cmd('scan')} "
+            f"{shlex.quote(sanitise(t.origin or t.path or '', 300))}")
+
+
 def _protected_block(inp: HookInput, reason: str, store: Store, bind: tuple | list = ()) -> tuple[str | None, str]:
     """(deny text or None when approved, key)."""
     key = protected_key(inp, reason, bind)
@@ -232,10 +244,13 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         blocks.append(_user_only_block(det.plain))
     level = load_config(Path(inp.cwd) if inp.cwd else None).level if results else DEFAULT_LEVEL
     warnings: list[str] = []
-    for _, r in results:
+    for t, r in results:
         keys.append(r.key)
+        build = other_build(t.origin or t.path) if t.kind == "local" and r.verdict == Verdict.SUSPICIOUS else None
         if store.is_rejected(r.key):
             blocks.append(f"⛔ bawwab: previously rejected — {_label(r)}\n{format_report(r)}")
+        elif build and not store.is_approved(r.key):  # self-protection: held at every level, in one line
+            blocks.append(_build_block(t, build, store.create_pending(r)))
         elif r.verdict != Verdict.CLEAN and not store.is_approved(r.key):
             if blocks_at(level, r.verdict):
                 blocks.append(format_report(r, store.create_pending(r)))
