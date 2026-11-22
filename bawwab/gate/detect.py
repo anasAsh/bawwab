@@ -3112,11 +3112,14 @@ _LITERAL_EXEC_OPT = re.compile(r"--pre(?:=|$)|-O|--open-files-in-pager|--config-
 
 
 def _literal_word(w: str, cwd: str) -> bool:
-    """A bare program name that resolves to a system program (or a search tool name that isn't bawwab and isn't
-    redefined in this call: rg is a shell function in Claude Code's shell)."""
+    """A bare program name that resolves to a program under a system dir. Not a user bin dir: a `grep` or `rg`
+    Claude wrote there (`eval "$1"`, no bawwab in it) would run the pattern. `rg` that resolves to nothing passes
+    by name (Claude Code's shell defines it as a function running its own ripgrep), unless this call redefines it."""
     if "/" in w or w != os.path.basename(w):
         return False
-    return _known_system(w, cwd, True) or _search_tool(w, cwd)
+    if _known_system(w, cwd, True):
+        return True
+    return w == "rg" and _resolve_word(w, cwd, True) is None and _search_tool(w, cwd)
 
 
 def _literal_search(cmd: str, cwd: str) -> list[tuple[int, int]] | None:

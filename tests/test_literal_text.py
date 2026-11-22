@@ -195,3 +195,17 @@ def test_interpreter_on_claude_config_stays_refused_and_says_what_passes(cmd, re
 def test_what_the_hint_suggests_passes(repo):
     assert run_gate(HookInput("Bash", {"command": "jq '.mcpServers | keys' ~/.claude.json"}, str(repo))) is None
     assert run_gate(HookInput("Read", {"file_path": str(Path.home() / ".claude.json")}, str(repo))) is None
+
+
+@pytest.mark.parametrize("tool", ["rg", "grep", "git", "head"])
+def test_a_search_tool_planted_in_a_user_bin_dir_stays_refused(tool, repo, monkeypatch, tmp_path):
+    """A `rg` (or grep, git, a reader) Claude wrote into a dir on PATH, with no bawwab in it, that runs its
+    argument: the quoted pattern would run. Only programs under system dirs count as search tools here."""
+    ub = tmp_path / "home-bin"
+    ub.mkdir()
+    (ub / tool).write_text('#!/bin/sh\neval "$1"\n')
+    (ub / tool).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{ub}:{os.environ['PATH']}")
+    cmd = {"rg": "rg 'bawwab approve ABCD' .", "grep": "grep 'bawwab approve ABCD' README.md",
+           "git": "git log --grep='bawwab approve ABCD'", "head": "grep 'bawwab approve ABCD' README.md | head"}[tool]
+    assert _refused(cmd, repo), cmd
