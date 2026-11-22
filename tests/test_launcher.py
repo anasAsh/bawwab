@@ -604,7 +604,8 @@ def test_gate_refuses_setup_link_from_claude(cmd, tmp_path):
     assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
 
 
-@pytest.mark.parametrize("cmd", [f"{_ABS} setup --unlink", f"{_ABS} setup", "bawwab setup --retry"])
+@pytest.mark.parametrize("cmd", [f"{_ABS} setup --unlink", f"{_ABS} setup", "bawwab setup --retry",
+                                 "just setup --list", "./tool setup --loglevel debug"])
 def test_gate_lets_claude_run_setup_retry_and_unlink(cmd, tmp_path):
     assert run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan()) is None, cmd
 

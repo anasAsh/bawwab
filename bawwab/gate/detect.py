@@ -1548,7 +1548,7 @@ def _allows_env(rest: list[str]) -> bool:
 
 def _links(rest: list[str]) -> bool:
     """`setup --link` (any abbreviation argparse accepts): makes messages print bare `bawwab`; the user's choice."""
-    return any(a.startswith("--l") for a in rest)
+    return any(a in ("--l", "--li", "--lin", "--link") for a in rest)
 
 
 def _lowers_level(rest: list[str]) -> bool:
