@@ -193,6 +193,24 @@
       ],
       "note": "Code in a third-party extension is a supply-chain component (LLM03, ASI04). Fetched code is evaluated at runtime and can change after review."
     },
+    "remote-code.download-exec": {
+      "owasp_llm": [
+        "LLM03"
+      ],
+      "owasp_agentic": [
+        "ASI04",
+        "ASI05"
+      ],
+      "atlas": [
+        "AML.T0010.001",
+        "AML.T0050"
+      ],
+      "cwe": [
+        "CWE-494",
+        "CWE-829"
+      ],
+      "note": "A dropper: code downloaded at runtime is executed, or written to disk and run, loaded or made executable, without an integrity check (CWE-494). Code in a third-party extension is a supply-chain component (LLM03, ASI04, AML.T0010.001); the downloaded code runs on the user's machine (ASI05, AML.T0050)."
+    },
     "obfuscation.eval-decoded": {
       "owasp_llm": [
         "LLM03"

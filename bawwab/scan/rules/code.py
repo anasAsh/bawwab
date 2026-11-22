@@ -17,7 +17,7 @@ from functools import lru_cache
 from posixpath import dirname, join, normpath
 
 from bawwab.scan.files import ExtraText, ScanFile
-from bawwab.scan.rules import bundle, envflow, parsing, proximity
+from bawwab.scan.rules import bundle, dropper, envflow, parsing, proximity
 from bawwab.types import Finding, Severity
 
 PY_EXT = (".py",)
@@ -35,8 +35,21 @@ def _base(rel: str) -> str:
     return rel.rsplit("/", 1)[-1]
 
 
+# Python package metadata (sdist PKG-INFO, wheel METADATA, everything in *.dist-info/ or *.egg-info/ that is not
+# itself code): prose and manifests that nothing executes. PKG-INFO quotes the README, so code patterns there are
+# words, not behaviour (requests' "honoring of `.netrc`" read as a credential read next to `requests.get`).
+PKG_METADATA_BASES = {"PKG-INFO", "METADATA"}
+_PKG_METADATA_DIR_RE = re.compile(r"(?:^|/)[^/]+\.(?:dist|egg)-info/")
+
+
+def _is_pkg_metadata(rel: str) -> bool:
+    if rel.endswith(PY_EXT + JS_EXT + TS_EXT + (".pyw", ".pth", ".sh")):
+        return False
+    return _base(rel) in PKG_METADATA_BASES or bool(_PKG_METADATA_DIR_RE.search(rel))
+
+
 def _is_doc(rel: str) -> bool:
-    return rel.endswith(DOC_EXT)
+    return rel.endswith(DOC_EXT) or _is_pkg_metadata(rel)
 
 
 # Data and tool-config files: not code, so code rules do not read them (R26a).
@@ -1649,7 +1662,20 @@ def _evals_file_content(f: ScanFile) -> bool:
 
 # ---------------------------------------------------------------- code rules
 
-STRONG_RULES = ("exfil.combo", "obfuscation.eval-decoded", "remote-code.eval-fetch")
+STRONG_RULES = ("exfil.combo", "obfuscation.eval-decoded", "remote-code.eval-fetch", "remote-code.download-exec")
+
+
+@lru_cache(maxsize=64)
+def _download_exec(rel: str, text: str) -> tuple[dropper.Hit, ...]:
+    """Fetched bytes executed, or written to disk and run / loaded / made executable (dropper.py)."""
+    if not rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        return ()
+    net = frozenset(p for _, _, p in _net_calls_pos(rel, text, _code_text(rel, text)) if p >= 0)
+    if not net:
+        return ()
+    al = _bindings(rel, text).al
+    got = dropper.find(rel, text, net, lambda c: _norm_callee(c, al), al)
+    return tuple(got or ())
 
 
 def _budget_findings(f: ScanFile) -> list[Finding]:
@@ -1727,7 +1753,14 @@ class CodeRules:
                 Finding(x.rule, Severity.LOW, x.source, x.evidence, file=x.file, line=x.line)
                 for x in found if x.rule != "exfil.combo"
             ]
-        out.extend(_floor(f, found, self._strong(f)))
+        strong = self._strong(f)
+        if exempt:
+            # Listed only, so one floor per behaviour: where eval-fetch already marks the line (eval of a fetch
+            # in one expression), the flow rule adds nothing.
+            ef = {x.line for x in found if x.rule == "remote-code.eval-fetch"}
+            found = [x for x in found if not (x.rule == "remote-code.download-exec" and x.line in ef)]
+            strong = [(r, ln) for r, ln in strong if not (r == "remote-code.download-exec" and ln in ef)]
+        out.extend(_floor(f, found, strong))
         out.extend(_budget_findings(f))  # never downgraded by the exemption: fail closed, whatever the file
         return out
 
@@ -1736,7 +1769,7 @@ class CodeRules:
         degraded calls are unresolved and capped, which the line-based fallback covers (fix round 2)."""
         if calls is None:
             return self._fallback(f)
-        found = self._ast(f, calls)
+        found = self._ast(f, calls) + self._dropper(f)
         if _over(calls):
             seen = {(x.rule, x.line) for x in found}
             found += [x for x in self._fallback(f) if (x.rule, x.line) not in seen]
@@ -1779,6 +1812,17 @@ class CodeRules:
                 out.append(_finding("remote-code.eval-fetch", Severity.HIGH, f, c.line))
             elif leaf in SHELL_FUNCS and CURL_RE.search(c.args) and RUN_RE.search(c.args):
                 out.append(_finding("remote-code.eval-fetch", Severity.HIGH, f, c.line))
+        return out
+
+    def _dropper(self, f: ScanFile) -> list[Finding]:
+        out, seen = [], set()
+        for h in _download_exec(f.rel, f.text):
+            if h.line in seen:
+                continue
+            seen.add(h.line)
+            sev = Severity.HIGH if h.verified else Severity.CRITICAL
+            note = "; what it fetched is checked against a digest or signature first" if h.verified else ""
+            out.append(_finding("remote-code.download-exec", sev, f, h.line, h.how + note))
         return out
 
     def _fallback(self, f: ScanFile) -> list[Finding]:
