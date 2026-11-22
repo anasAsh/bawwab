@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -19,12 +20,12 @@ from bawwab.clicmd import cmd
 from bawwab.config import DEFAULT_LEVEL, load_config
 from bawwab.config import blocks as blocks_at
 from bawwab.envkeys import entry_meta_key
-from bawwab.gate.detect import HookInput, Protected, Targets, detect_install, install_dir
+from bawwab.gate.detect import _APPROVAL, HookInput, Protected, Targets, detect_install, install_dir
 from bawwab.gate.pin import pin_changes, pins_needed
 from bawwab.gate.prefilter import prefilter
-from bawwab.report import format_report, sanitise
+from bawwab.report import FOR_CLAUDE, decision_lines, distinct_findings, sanitise, sanitise_lines, table, why_text
 from bawwab.scan import scan_target, synthetic_report
-from bawwab.selfid import is_self_path
+from bawwab.selfid import is_self_path, other_build
 from bawwab.store import Store, open_store
 from bawwab.types import ScanReport, Target, Verdict
 
@@ -136,14 +137,90 @@ def _materialize(t: Target, overlay: dict[str, str] | None) -> tuple[Target, Cal
             lambda: shutil.rmtree(tmp, ignore_errors=True))
 
 
-def _label(r: ScanReport) -> str:
-    t = r.target
-    return sanitise(f"{t.name or t.url or t.path or t.raw}@{r.resolved_version}", 200)
+def _item(t: Target, r: ScanReport, names: dict[Target, str]) -> str:
+    """How a block names what was scanned: the server's config name (`claude mcp add <name>`), a package with its
+    resolved version, a URL, or a local directory's own name (never the temp copy's path)."""
+    if t in names:
+        return sanitise(f"{names[t]} (MCP server)", 60)
+    if t.kind in ("npm", "pypi", "docker") and t.name:
+        return sanitise(f"{t.name}@{r.resolved_version}", 60)
+    if t.kind == "local":
+        path = os.path.normpath(t.origin or t.path or t.raw or ".")
+        mf = Path(t.path or path) / ".claude-plugin" / "plugin.json"
+        try:  # a plugin dir: the name its manifest gives (what /plugin lists), as untrusted text; a regular file only
+            if mf.is_file() and not mf.is_symlink() and mf.stat().st_size <= 65536:
+                with open(mf, encoding="utf-8", errors="replace") as f:
+                    manifest = json.loads(f.read(65536))
+                if isinstance(manifest, dict) and isinstance(manifest.get("name"), str) and manifest["name"].strip():
+                    return sanitise(f"{manifest['name']} (plugin)", 60)
+        except (OSError, ValueError, RecursionError):
+            pass
+        return sanitise(os.path.basename(path) or path, 60)
+    return sanitise(t.url or t.name or t.raw, 60)
 
 
-def _user_only_block(reasons: list[str]) -> str:
+def _item_rows(held: list[tuple[str, str, ScanReport]]) -> list[str]:
+    return table([(pid, name, r.verdict.value.upper(), why_text(r.findings))  # every rule title, not just one per line
+                  for pid, name, r in held])
+
+
+def _held_block(held: list[tuple[str, str, ScanReport]], level: str) -> str:
+    """One line per blocked item (id, name, verdict, top reason), then the commands once; the findings are behind
+    `bawwab explain <id>`. The verdict and, for MALICIOUS, the --force override stay in view."""
+    ids = " ".join(pid for pid, _, _ in held)
+    what = "this install" if len(held) == 1 else f"{len(held)} items in this call"
+    lines = [f"⛔ bawwab blocked {what} (security level {level}):", *_item_rows(held)]
+    lines += decision_lines([(pid, name, r.verdict == Verdict.MALICIOUS) for pid, name, r in held], f"explain {ids}")
+    lines.append(f"  {FOR_CLAUDE}")
+    return "\n".join(lines)
+
+
+def _warned_text(warned: list[tuple[str, str, ScanReport]], level: str) -> str:
+    """Below the level's threshold: one warning with real lines (each sanitised on its own), nothing blocked."""
+    ids = " ".join(pid for pid, _, _ in warned)
+    what = "this install is" if len(warned) == 1 else f"{len(warned)} items in this call are"
+    lines = [f"⚠ bawwab ({level} level, not blocked): {what} not clean", *_item_rows(warned),
+             f"  details:  ! {cmd(f'explain {ids}')}    to block such items:  ! {cmd('level high')}"]
+    return "\n".join(lines)
+
+
+def _bawwab_call(inp: HookInput) -> tuple[str, str] | None:
+    """(what it does, the command the user runs) for a call to one of bawwab's user-only subcommands, named from a
+    fixed vocabulary (no argument of the call is echoed except a level name), or None when it can't be read."""
+    import shlex
+
+    ti = inp.tool_input if isinstance(inp.tool_input, dict) else {}
+    try:
+        words = shlex.split(str(ti.get("command") or ""))
+    except ValueError:
+        return None
+    for i, w in enumerate(words):
+        if os.path.basename(w) != "bawwab":
+            continue
+        rest = [a for a in words[i + 1:] if not a.startswith("-")]
+        flags = [a for a in words[i + 1:] if a.startswith("-")]
+        sub = rest[0] if rest else ""
+        if sub == "level" and len(rest) > 1 and rest[1] in ("low", "medium"):
+            return "lowering the security level", f"level {rest[1]}"
+        if sub == "init" and any(f.startswith("--sk") for f in flags):
+            return "trusting everything installed without a scan", "init --skip"
+        if sub == "effects" and any(f.startswith("--re") for f in flags):
+            return "clearing a failed effect check", "effects --retry"
+        if sub in ("approve", "reject"):
+            return f"{'approving' if sub == 'approve' else 'rejecting'} what bawwab holds", ""
+        return None
+    return None
+
+
+def _user_only_block(reasons: list[str], inp: HookInput | None = None) -> str:
     shown = sanitise("; ".join(reasons), 400)
     writes = [r for r in reasons if r.startswith(("writes ", "in text written to a file"))]
+    about_call = all(_APPROVAL in r for r in reasons)
+    named = _bawwab_call(inp) if inp is not None and about_call and not writes else None
+    if named is not None:  # one plain refusal under its real name
+        what, args = named
+        line = f"⛔ bawwab: refused — {what} is the user's decision; Claude can't run it, by any name or path."
+        return line + (f"\nIf the user wants it, they run:  ! {cmd(args)}" if args else "")
     lines = [f"⛔ bawwab: refused — {shown}."]
     if writes:
         lines.append("This writes bawwab's user-only command into a file. Bawwab doesn't let Claude do that, and "
@@ -153,6 +230,17 @@ def _user_only_block(reasons: list[str]) -> str:
         lines.append("This would run bawwab's user-only command. Bawwab doesn't let Claude run that, and there is "
                      "nothing to approve: the user must run it themselves, in their own terminal, if they want it.")
     return "\n".join(lines)
+
+
+def _build_block(t: Target, differ: list[str], pid: str) -> str:
+    """Another build of bawwab copied into an install dir (selfid.other_build): still an approval, in one line.
+    Its scan of bawwab's own source (always SUSPICIOUS) stays one command away."""
+    shown = ", ".join(differ[:3]) + (", …" if len(differ) > 3 else "")
+    n = len(differ)
+    return (f"⛔ bawwab: this installs a different build of Bawwab ({n} file{'s' if n != 1 else ''} differ: "
+            f"{sanitise(shown, 200)}), which replaces the hooks that protect you. Keep it only if you built it.\n"
+            f"To allow:  ! {cmd('approve')} {sanitise(pid)}   Its scan:  ! {cmd('scan')} "
+            f"{shlex.quote(sanitise(t.origin or t.path or '', 300))}")
 
 
 def _protected_block(inp: HookInput, reason: str, store: Store, bind: tuple | list = ()) -> tuple[str | None, str]:
@@ -216,6 +304,10 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         protected = [approvable] if approvable else []
     else:
         protected = list(det.protected)
+    if det.plain and any(_APPROVAL in r for r in det.plain):
+        # the same bawwab call is refused plainly (R57: the user runs it): a pending approval for it as well would
+        # be an id that can't make the call pass. One refusal, no id.
+        protected = [p for p in protected if p != _APPROVAL]
     results = _scan_all(inp, det, scan, store, protected) if isinstance(det, Targets) else []
     blocks: list[str] = []
     keys: list[str] = []
@@ -229,27 +321,41 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
         if text:
             blocks.append(text)
     if det.plain:  # R57: a plain deny; no pending approval, and no `bawwab approve` to suggest
-        blocks.append(_user_only_block(det.plain))
-    level = load_config(Path(inp.cwd) if inp.cwd else None).level if results else DEFAULT_LEVEL
-    warnings: list[str] = []
-    for _, r in results:
+        blocks.append(_user_only_block(det.plain, inp))
+    cfg = load_config(Path(inp.cwd) if inp.cwd else None) if results else None
+    level = cfg.level if cfg else DEFAULT_LEVEL
+    names = det.names if isinstance(det, Targets) else {}
+    named = det.items if isinstance(det, Targets) else {}
+    held: list[tuple[str, str, ScanReport]] = []
+    warned: list[tuple[str, str, ScanReport]] = []
+    passed: list[tuple[Target, str, ScanReport]] = []
+    for t, r in results:
         keys.append(r.key)
+        name = _item(t, r, names)
+        build = other_build(t.origin or t.path) if t.kind == "local" and r.verdict == Verdict.SUSPICIOUS else None
+        # a non-clean verdict's approval is per item: each server name this install creates needs it, not just
+        # the code (two servers running the same code are two decisions); unnamed targets bind on first use
+        items = named.get(t) or None
+        approved = r.verdict != Verdict.CLEAN and (all(store.is_approved(r.key, (i,)) for i in items) if items
+                                                   else store.is_approved(r.key))
         if store.is_rejected(r.key):
-            blocks.append(f"⛔ bawwab: previously rejected — {_label(r)}\n{format_report(r)}")
-        elif r.verdict != Verdict.CLEAN and not store.is_approved(r.key):
-            if blocks_at(level, r.verdict):
-                blocks.append(format_report(r, store.create_pending(r)))
-            else:  # below this level's threshold: warn, don't block
-                warnings.append(f"⚠ bawwab ({level} level, not blocked): {_label(r)} is {r.verdict.value}\n"
-                                f"{format_report(r)}")
+            blocks.append(f"⛔ bawwab: previously rejected — {name}: {r.verdict.value.upper()} — "
+                          f"{why_text(distinct_findings(r.findings))}. The user rejected it; it stays blocked.")
+        elif build and not approved:  # self-protection: held at every level, in one line
+            blocks.append(_build_block(t, build, store.create_pending(r)))
+        elif r.verdict != Verdict.CLEAN and not approved:
+            # the id names it in the block and opens its full report (`bawwab explain <id>`)
+            pid = sanitise(store.create_pending(r, items=items))
+            (held if blocks_at(level, r.verdict) else warned).append((pid, name, r))
+        else:
+            passed.append((t, name, r))
+    if held:
+        blocks.append(_held_block(held, level))
+    warnings = [_warned_text(warned, level)] if warned else []
     if blocks:
         return decision("deny", "\n\n".join(blocks + warnings)), keys
-    if warnings:
-        text = "\n\n".join(warnings)
-        try:
-            store.add_warning(sanitise(text, 400))
-        except Exception:  # noqa: BLE001 - the warning below still reaches the user
-            pass
+    for _, _, r in warned:  # told here, at the call: the effect check's own warning for it would repeat it
+        _mark_told(store, r.key)
     # R2-I1: link only from a call that ends allowed (every protected reason approved, every target clean/approved)
     for reason, key in links:
         _link_entries(store, det.env_entries, reason, key)
@@ -278,13 +384,41 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
             note = "scanned clean" if not warnings else "not blocked at this level"
             out = decision("ask", sanitise(f"bawwab: {note}; pinned {pinned}", 500), updated)
             return (_with_warning(out, warnings) if warnings else out), keys
-    return (_with_warning(None, warnings) if warnings else None), keys
+    if warnings:
+        return _with_warning(None, warnings), keys
+    return _scanned_note(det, passed, cfg), keys
+
+
+def _scanned_note(det: Targets | Protected, passed: list[tuple[Target, str, ScanReport]], cfg) -> dict | None:
+    """After an install the gate scanned and let through: one line for the user (systemMessage only, nothing for
+    Claude), so a pass reads as "scanned", not as "never looked". Only installs: an edit of a skill's files (an
+    overlay) stays silent, and so does every call the gate doesn't scan. config.json "quiet": true hides it."""
+    if not passed or cfg is None or cfg.quiet or not isinstance(det, Targets):
+        return None
+    shown = [(name, r) for t, name, r in passed if t not in det.overlays]
+    if not shown:
+        return None
+    parts = [f"{name}: {'clean' if r.verdict == Verdict.CLEAN else 'approved earlier'}" for name, r in shown[:4]]
+    more = f"; and {len(shown) - 4} more" if len(shown) > 4 else ""
+    return {"systemMessage": sanitise(f"bawwab: scanned {'; '.join(parts)}{more}", 300),
+            "hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+TOLD_PREFIX = "told:gate:"  # meta: the gate warned about this report key at the call (effects._warn_only skips it)
+
+
+def _mark_told(store: Store, key: str) -> None:
+    try:
+        store.set_meta(TOLD_PREFIX + key, "1")
+    except Exception:  # noqa: BLE001 - at worst the effect check warns a second time
+        pass
 
 
 def _with_warning(out: dict | None, warnings: list[str]) -> dict:
     """A warning for the user (systemMessage) and for Claude (additionalContext), with no allow/deny of its own:
-    Claude Code's normal permission rules still decide the call."""
-    text = sanitise("\n\n".join(warnings), 4000)
+    Claude Code's normal permission rules still decide the call. It is said here once: not queued for the next
+    prompt as well."""
+    text = sanitise_lines("\n\n".join(warnings))[:4000]
     out = dict(out or {"hookSpecificOutput": {"hookEventName": "PreToolUse"}})
     out["systemMessage"] = text
     out["hookSpecificOutput"] = {**out["hookSpecificOutput"], "additionalContext": text}

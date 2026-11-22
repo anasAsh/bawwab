@@ -143,18 +143,50 @@ def _deny(reason: str) -> str:
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
-def _cli(args: str) -> str:
-    """The command line to show for `bawwab <args>`: the one helper, bawwab/clicmd.py (R54), loaded by path."""
+def _clicmd():
+    """bawwab/clicmd.py (R54), loaded by path."""
     import importlib.util
 
+    spec = importlib.util.spec_from_file_location("_bawwab_clicmd", os.path.join(PLUGIN_ROOT, "bawwab", "clicmd.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _cli(args: str) -> str:
+    """The command line to show for `bawwab <args>`: the one helper, bawwab/clicmd.py (R54)."""
     try:
-        spec = importlib.util.spec_from_file_location("_bawwab_clicmd", os.path.join(PLUGIN_ROOT, "bawwab",
-                                                                                     "clicmd.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.cmd(args)
+        return _clicmd().cmd(args)
     except Exception:  # noqa: BLE001
         return f"bawwab {args}"
+
+
+def _refresh_stable_launcher() -> None:
+    """In Claude Code's plugin cache, (re)write <data dir>/bin/bawwab, the stable launcher the printed commands
+    name, so it runs this version (clicmd.stable_text). Only in bawwab's own existing data dir (derived from this
+    tree's path, never from env), never through a symlink, only when its bytes differ. Never raises."""
+    try:
+        c = _clicmd()
+        d, launcher = _installed_data_dir(), os.path.realpath(os.path.join(PLUGIN_ROOT, "bin", "bawwab"))
+        if d is None or d != c.data_dir(PLUGIN_ROOT) or not os.path.isfile(launcher):
+            return
+        bindir = os.path.join(d, "bin")
+        if os.path.islink(bindir):
+            return
+        os.makedirs(bindir, mode=0o700, exist_ok=True)
+        path, text = os.path.join(bindir, "bawwab"), c.stable_text(launcher)
+        if os.path.islink(path) or not os.path.isdir(bindir) or os.path.islink(bindir):
+            return
+        if _read(path) == text and c.stable_ok(launcher):
+            return
+        tmp = f"{path}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o755)
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, path)
+    except Exception:  # noqa: BLE001 - the printed commands fall back to this version's own launcher
+        pass
 
 
 def _bawwab_cmd(sub: str) -> list[str]:
@@ -528,6 +560,7 @@ def bootstrap(foreground: bool = False) -> int:
             except OSError:
                 pass
         _write(os.path.join(d, BOOT_DONE), token)
+        _refresh_stable_launcher()
         rc = 0
         if foreground:
             _say(SETUP_OK)
@@ -541,6 +574,77 @@ def bootstrap(foreground: bool = False) -> int:
         except OSError:
             pass
     return rc if foreground else 0
+
+
+def link(unlink: bool = False) -> int:
+    """`bawwab setup --link` (the user's own command; the gate refuses it from Claude): write a 3-line shim named
+    `bawwab` into the first of ~/.local/bin, ~/bin on PATH, running the stable launcher (plugin cache) or this
+    tree's launcher, so Bawwab's messages can print bare `bawwab` while the shim verifies (clicmd.linked).
+    Never replaces a file it didn't write, and refuses when another `bawwab` comes first on PATH.
+    `--unlink` removes the shims it wrote."""
+    import shutil
+
+    c = _clicmd()
+    if unlink:
+        gone = []
+        for d in c.SHIM_DIRS:
+            p = os.path.join(os.path.expanduser(d), "bawwab")
+            if not os.path.islink(p) and c.is_shim(_read(p) or ""):
+                os.unlink(p)
+                gone.append(p)
+        _say(f"bawwab: removed {', '.join(gone)}; messages print the launcher's path again." if gone else
+             "bawwab: no `bawwab` shim written by `bawwab setup --link` was found; nothing removed.")
+        return 0
+    launcher = os.path.realpath(os.path.join(PLUGIN_ROOT, "bin", "bawwab"))
+    if not os.path.isfile(launcher):
+        _say("bawwab setup --link: this install has no launcher (bin/bawwab); nothing to link.", True)
+        return 1
+    _refresh_stable_launcher()
+    target = c.shim_target(launcher)
+    if target != launcher and not c.stable_ok(launcher):
+        _say("bawwab setup --link: the plugin's stable launcher isn't ready; start a Claude Code session (or run "
+             f"`{_cli('setup --retry')}`), then try again.", True)
+        return 1
+    dirs = c.shim_dirs()
+    if not dirs:
+        _say("bawwab setup --link: neither ~/.local/bin nor ~/bin is on your PATH, so a `bawwab` there would not "
+             "be found. Add one of them to PATH, then run this again.", True)
+        return 1
+    d = dirs[0]
+    entries = c._path_entries()
+    before = entries[:entries.index(d)]
+    if not all(os.path.isabs(e) for e in before):
+        _say(f"bawwab setup --link: your PATH has a relative entry before {d}; Bawwab only trusts a `bawwab` it "
+             "can locate the same way from any directory. Not linked.", True)
+        return 1
+    hits = [shutil.which("bawwab", path=e) for e in before]
+    other = next((h for h in hits if h and not c._own_bawwab(h, launcher)), None)
+    if other:
+        _say(f"bawwab setup --link: {other} comes before {d} on your PATH and would run instead. Remove it (or "
+             "reorder PATH), then run this again. Not linked.", True)
+        return 1
+    dest = os.path.join(d, "bawwab")
+    if os.path.lexists(dest) and (os.path.islink(dest) or not c.is_shim(_read(dest) or "")):
+        _say(f"bawwab setup --link: {dest} already exists and wasn't written by Bawwab; not replaced.", True)
+        return 1
+    try:
+        os.makedirs(d, mode=0o755, exist_ok=True)
+        tmp = f"{dest}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o755)
+        with os.fdopen(fd, "w") as f:
+            f.write(c.shim_text(target))
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, dest)
+    except OSError as e:
+        _say(f"bawwab setup --link: could not write {dest} ({e}).", True)
+        return 1
+    if c.linked(launcher):
+        _say(f"bawwab: wrote {dest} (runs {c.show_path(target)}). Bawwab's messages now print `bawwab …`, checked "
+             "each time: if that file changes or another `bawwab` comes first on PATH, they go back to the full "
+             "path. Undo: `bawwab setup --unlink`.")
+    else:
+        _say(f"bawwab: wrote {dest}, but it doesn't verify on this PATH, so messages keep printing the full path.")
+    return 0
 
 
 def _setup_failed() -> bool:
@@ -614,6 +718,30 @@ def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> st
     return None
 
 
+def _test_home() -> str | None:
+    """BAWWAB_HOME lies inside a repo the user allowed for tests (`bawwab allow-env`, bawwab/allowenv.py): the
+    hooks never enforce from such a home, so a Claude Code started with it (by a script, a test) gets read-only
+    tools only. Cheap: nothing is read unless BAWWAB_HOME is set."""
+    if not os.environ.get("BAWWAB_HOME"):
+        return None
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location("_bawwab_allowenv", os.path.join(PLUGIN_ROOT, "bawwab",
+                                                                                       "allowenv.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.test_home()
+    except Exception:  # noqa: BLE001 - can't tell: as before allow-env (the gate refused setting it)
+        return None
+
+
+def _test_home_text(repo: str) -> str:
+    return (f"bawwab: this Claude Code runs with BAWWAB_HOME inside {repo}, which `allow-env` allows only for "
+            "tests, so Bawwab won't check tool calls from it; only read-only tools run. Start Claude Code without "
+            "BAWWAB_HOME.")
+
+
 def gate() -> int:
     raw = sys.stdin.read()
     try:
@@ -623,6 +751,11 @@ def gate() -> int:
     if not isinstance(data, dict):
         return 0
     _note_session(data)
+    th = _test_home()
+    if th is not None:
+        if data.get("tool_name") not in READ_ONLY_TOOLS:
+            print(_deny(_test_home_text(th)))
+        return 0
     try:
         install_like = prefilter(data)
     except Exception:  # noqa: BLE001 - can't tell (e.g. NUL in a path): treat as install-like, fail closed
@@ -663,6 +796,10 @@ def post() -> int:
     if not isinstance(data, dict) or not _post_tool(data.get("tool_name")):
         return 0
     _note_session(data)
+    th = _test_home()
+    if th is not None:
+        print(json.dumps({"decision": "block", "reason": _test_home_text(th)}))
+        return 0
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0
@@ -720,6 +857,8 @@ def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
         elif told:
             print(_context_json(event, told))
         return 0
+    if sub == "inventory":
+        _refresh_stable_launcher()  # a new session: the stable launcher runs the version Claude Code loaded
     extra = _take_boot_context() if sub == "notify" else None
     out = None
     if run:
@@ -733,10 +872,15 @@ def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
             out = None
     if extra:
         try:
-            prev = json.loads(out).get("hookSpecificOutput", {}).get("additionalContext") if out else None
+            got = json.loads(out) if out else {}
+            prev = got.get("hookSpecificOutput", {}).get("additionalContext")
+            user = got.get("systemMessage")  # queued warnings, for the user only: kept as they are
         except (ValueError, AttributeError):
-            prev = None
-        out = _context_json(event, extra + (f"\n\n{prev}" if isinstance(prev, str) and prev else ""))
+            prev, user = None, None
+        merged = json.loads(_context_json(event, extra + (f"\n\n{prev}" if isinstance(prev, str) and prev else "")))
+        if isinstance(user, str) and user:
+            merged["systemMessage"] = user
+        out = json.dumps(merged)
     if out:
         print(out)
     return 0
@@ -752,8 +896,12 @@ def main(argv: list[str]) -> int:
         print(_venv_dir())
         return 0
     if argv[1:2] == ["setup"]:
+        if argv[2:] in (["--link"], ["--unlink"]):
+            return link(unlink=argv[2] == "--unlink")
         if argv[2:] not in ([], ["--retry"]):
-            _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)", True)
+            _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)\n"
+                 "       bawwab setup --link     (put a `bawwab` command in ~/.local/bin or ~/bin; user only)\n"
+                 "       bawwab setup --unlink   (remove it)", True)
             return 2
         return bootstrap(foreground=True)
     if argv[1:2] == ["gate"]:

@@ -901,9 +901,9 @@ def reject_disabled(item: dict, plan: dict, cwd: Path) -> tuple[bool, str]:
         return False, msg
     how = plan.get("how")
     if how == "json":
-        return True, f"removed: it was already out of {plan['file']} (the entry is kept in bawwab's state)"
+        return True, f"removed from {plan['file']} (it was switched off while on hold; bawwab keeps a copy of the entry)"
     if how == "hook":
-        return True, f"removed: the hook was already out of {plan['file']}"
+        return True, f"removed from {plan['file']} (it was switched off while on hold)"
     if how == "move":
         dst = Path(plan["to"])
         if not dst.exists() and not dst.is_symlink():

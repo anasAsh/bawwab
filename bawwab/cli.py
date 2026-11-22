@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -31,8 +32,8 @@ def _build() -> argparse.ArgumentParser:
     a.add_argument("--force", action="store_true", help="override a malicious verdict")
     r = sub.add_parser("reject", help="reject a pending install")
     r.add_argument("id", nargs="+", help="one or more ids")
-    e = sub.add_parser("explain", help="explain a finding")
-    e.add_argument("id")
+    e = sub.add_parser("explain", help="explain a finding, or show the full report of a blocked or held item")
+    e.add_argument("id", nargs="+", help="finding ids (Fxxxxxx), or approval/quarantine ids from a block")
     d = sub.add_parser("diff", help="show what changed since the trusted snapshot")
     d.add_argument("name", help="trust name (e.g. npm:pkg) or a target spec")
     sub.add_parser("gate", help="PreToolUse hook: read hook JSON on stdin, print a decision (always exits 0)")
@@ -52,6 +53,8 @@ def _build() -> argparse.ArgumentParser:
     sub.add_parser("post", help="PostToolUse hook: run the effect check, block when something was quarantined")
     fx = sub.add_parser("effects", help="check Claude's config for unscanned changes and list the quarantine")
     fx.add_argument("--cwd", help="project directory (default: the current directory)")
+    fx.add_argument("-v", "--verbose", action="store_true",
+                    help="also list bawwab's own plugin (accepted as the running code, not scanned)")
     fx.add_argument("--retry", action="store_true",
                     help="after a failed check or lost state: repair, rebuild by scanning, clear the error (user)")
     w = sub.add_parser("watch", help="watch every coding agent's config: scan new or changed MCP servers, skills and "
@@ -70,10 +73,19 @@ def _build() -> argparse.ArgumentParser:
     wg.add_argument("--uninstall", action="store_true", help="stop and remove the user service")
     w.add_argument("--unit-dir", help=argparse.SUPPRESS)  # tests: write the unit here, never start it
     sub.add_parser("status", help="what is quarantined or on hold, across every agent, and the watcher's state")
+    ae = sub.add_parser("allow-env", help="let commands in a repo set BAWWAB_HOME to a dir inside it, for tests "
+                                         "(user only; never a nested claude)")
+    ae.add_argument("repo", nargs="?", help="the repo dir (default: list the allowed ones)")
+    ae.add_argument("--remove", action="store_true", help="take the repo off the list")
+    ae.add_argument("--list", action="store_true", help="list the allowed repos")
     sb = sub.add_parser("sandbox", help="deep mode: build the Docker sandbox image, or check that it can run")
     sb.add_argument("action", choices=("build", "check"))
     st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
-    st.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
+    sg = st.add_mutually_exclusive_group()
+    sg.add_argument("--retry", action="store_true", help="retry a failed or stuck setup (the default)")
+    sg.add_argument("--link", action="store_true",
+                    help="put a `bawwab` command in ~/.local/bin or ~/bin, so messages print `bawwab …` (user only)")
+    sg.add_argument("--unlink", action="store_true", help="remove the command --link wrote")
     return p
 
 
@@ -195,11 +207,21 @@ def _decide(args) -> int:
         if not ok:
             failed += 1
             print(f"error: {sanitise(qid, 8)}: {sanitise(msg, 300)}")
-        elif verb == "rejected and removed":
-            print(f"{verb}: {what} — {sanitise(msg, 300)}")
+        elif verb == "rejected and removed":  # msg says what was removed, and from where
+            print(f"rejected {what}: {sanitise(msg, 300)}")
+        elif verb == "approved" and q is not None and _switched_back_on(store, q):
+            print(f"{verb} {what}: switched back on")
         else:
             print(f"{verb} {what}")
     return 1 if failed else 0
+
+
+def _switched_back_on(store, q: dict) -> bool:
+    """Every item of q's id that bawwab had switched off is on again (approve restored it)."""
+    ids = {q["id"]}
+    rows = [x for x in store.quarantine_rows("approved") if x["id"] in ids or x["qrow"] == q["qrow"]]
+    off = [x for x in rows if x.get("disabled")]
+    return bool(off) and all(x.get("dstate") == "restored" for x in off)
 
 
 def _gate() -> int:
@@ -288,12 +310,15 @@ def _inventory(args) -> int:
             return 0
         inv.spawn_background(cwd)
         warnings = store.take_warnings()
-        parts = [ctx] if ctx else []
-        if warnings:
-            parts.append(inv.hook_output("SessionStart", warnings)["hookSpecificOutput"]["additionalContext"])
-        if parts:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
-                                                     "additionalContext": "\n\n".join(parts)}}))
+        from bawwab.effects import held_notice
+
+        notice = held_notice(store)  # the user hears of a hold from bawwab, not from Claude's first failed call
+        warnings = ([notice] if notice else []) + warnings
+        out = inv.hook_output("SessionStart", warnings) if warnings else {}
+        if ctx:
+            out["hookSpecificOutput"] = {"hookEventName": "SessionStart", "additionalContext": ctx}
+        if out:
+            print(json.dumps(out))
     except Exception:  # noqa: BLE001 - never break session start
         pass
     return 0
@@ -382,7 +407,7 @@ def _effects(args) -> int:
         effects.retry(cwd)
     else:
         effects.refresh(cwd, force=True)
-    own = effects.self_text()
+    own = effects.self_text() if args.verbose else ""  # bawwab's own plugin, accepted unscanned: on request
     if own:
         print(own)
     entries = effects.quarantined()
@@ -472,14 +497,41 @@ def _setup(args) -> int:
         print("bawwab setup: no bawwab plugin install found; nothing to set up (the CLI needs no setup)",
               file=sys.stderr)
         return 1
+    flag = "--link" if args.link else "--unlink" if args.unlink else "--retry"
     rc = 0
-    for root in roots:
+    for root in roots[:1] if flag != "--retry" else roots:  # one shim: the plugin this code runs from, or the first
         from bawwab.limits import child_argv
 
         # the setup runs `uv sync`: it must not inherit this process's scan memory limit
-        r = subprocess.run(child_argv([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", "--retry"]))
+        r = subprocess.run(child_argv([sys.executable, os.path.join(root, "hooks", "bawwab_hook.py"), "setup", flag]))
         rc = rc or r.returncode
     return rc
+
+
+def _allow_env(args) -> int:
+    from bawwab import allowenv
+    from bawwab.store import open_store
+
+    if args.list or not args.repo:
+        rs = allowenv.repos()
+        print("\n".join(f"bawwab: commands in {sanitise(r, 300)} may set BAWWAB_HOME inside it" for r in rs)
+              if rs else "bawwab: no repo may set BAWWAB_HOME (the gate refuses it everywhere)")
+        return 0
+    if args.remove:
+        ok = allowenv.remove(args.repo)
+        print(f"bawwab: {'removed' if ok else 'not on the list'}: {sanitise(os.path.realpath(args.repo), 300)}")
+        open_store().audit("allow-env.remove", repo=os.path.realpath(args.repo), ok=ok)
+        return 0 if ok else 1
+    try:
+        d = allowenv.add(args.repo)
+    except ValueError as e:
+        print(f"error: {sanitise(str(e), 300)}", file=sys.stderr)
+        return 1
+    open_store().audit("allow-env.add", repo=d)
+    print(f"bawwab: commands run in {sanitise(d, 300)} may now set BAWWAB_HOME to a dir inside it (a test home). "
+          "A command that also runs claude, or sets HOME or CLAUDE_CONFIG_DIR, is still refused, and Bawwab's "
+          f"hooks never run on such a home. Undo: `{cmd('allow-env --remove')} {shlex.quote(d)}`.")
+    return 0
 
 
 def _sandbox(args) -> int:
@@ -534,6 +586,8 @@ def main(argv: list[str] | None = None) -> int:
             return _status()
         if args.cmd == "sandbox":
             return _sandbox(args)
+        if args.cmd == "allow-env":
+            return _allow_env(args)
         from bawwab.store import open_store
 
         if args.cmd == "diff":
@@ -542,9 +596,12 @@ def main(argv: list[str] | None = None) -> int:
             for line in diff_since_trusted(_spec(args.name), open_store()).splitlines():
                 print(sanitise(line, 300))
             return 0
-        out = explain(args.id, open_store())
-        print(out)
-        return 1 if out.startswith("unknown finding id") else 0
+        store, rc = open_store(), 0
+        for n, i in enumerate(dict.fromkeys(args.id)):
+            out = explain(i, store)
+            print(("\n" if n else "") + out)
+            rc = 1 if out.startswith("unknown id") else rc
+        return rc
     except Exception as e:  # noqa: BLE001 - never show a traceback
         print(f"error: {sanitise(f'{type(e).__name__}: {e}', 300)}", file=sys.stderr)
         return 3

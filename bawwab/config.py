@@ -36,6 +36,9 @@ class Config:
     trusted: list[str] = field(default_factory=lambda: ["@modelcontextprotocol/*"])
     level: str = DEFAULT_LEVEL
     review_enabled: bool = True  # "review": {"enabled": bool}, spec §4a
+    # "quiet": true hides the one-line "bawwab: scanned <item>" status after an install passes. Only the global
+    # config sets it (a project can't hide bawwab's output); warnings and blocks are never hidden.
+    quiet: bool = False
 
 
 DEFAULT_CONFIG = Config()
@@ -87,6 +90,8 @@ def _apply(base: Config, d: dict) -> Config:
     rv = d.get("review") if isinstance(d.get("review"), dict) else {}
     if isinstance(rv.get("enabled"), bool):
         cfg.review_enabled = rv["enabled"]
+    if isinstance(d.get("quiet"), bool):
+        cfg.quiet = d["quiet"]
     return cfg
 
 
