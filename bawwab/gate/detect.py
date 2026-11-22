@@ -2466,6 +2466,9 @@ def _literal_output(words: list[str]) -> str:
     return text if decoded == text else decoded + "\n" + text
 
 
+_READ_HINT = " (to only read a file, use the Read tool or jq instead: they are not blocked)"
+
+
 def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, list[str], dict[int, int]]) -> None:
     """One structured pass over `cmd`, given its heredoc extraction under one reading of the regions."""
     acc.spend(len(cmd))
@@ -2590,8 +2593,9 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             parts = [" ".join(own), stdin_text, upstream, script_files]
             acc.spend(sum(map(len, parts)))
             text = "\n".join(parts)
-            if _sensitive_text(text, cwd):
-                acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
+            if _sensitive_text(text, cwd):  # can't prove a one-liner only reads: say what does pass (P4)
+                acc.protect(f"interpreter may write Claude/bawwab config: {exe}"
+                            + ("" if exe in _SHELLS else _READ_HINT))
             if exe in _SHELLS:
                 stdin_scan = "\n".join(body_of(t) for t in dict.fromkeys(seg.inputs)
                                        if (k := heredoc_index(t)) is None or k not in open_from)

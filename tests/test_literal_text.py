@@ -172,3 +172,26 @@ def test_a_worktree_reads_hooks_from_the_common_dir(tmp_path):
 def test_git_commit_dash_f_with_a_written_file_is_still_a_plain_deny(repo):
     d = _det("printf 'docs\\n\\n! bawwab approve <id>\\n' > /tmp/msg.txt && git commit -F /tmp/msg.txt", repo)
     assert d is not None and d.plain
+
+
+# ------------------------------------------------------------------ interpreter reads: still refused, with a hint
+
+
+@pytest.mark.parametrize("cmd", [
+    "python3 -c \"import json,os; print(list(json.load(open(os.path.expanduser('~/.claude.json')))['mcpServers']))\"",
+    "python3 -c \"import os; print(os.listdir(os.path.expanduser('~/.claude/skills')))\"",
+    # the same rule covers a write: Bawwab can't tell a one-liner that reads from one that writes
+    "python3 -c \"import json,os; p=os.path.expanduser('~/.claude.json'); open(p,'w').write('{}')\"",
+])
+def test_interpreter_on_claude_config_stays_refused_and_says_what_passes(cmd, repo):
+    d = _det(cmd, repo)
+    assert d is not None and "interpreter may write Claude/bawwab config: python3" in d.reason
+    assert "use the Read tool or jq instead" in d.reason
+    out = run_gate(HookInput("Bash", {"command": cmd}, str(repo)))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "Read tool or jq" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_what_the_hint_suggests_passes(repo):
+    assert run_gate(HookInput("Bash", {"command": "jq '.mcpServers | keys' ~/.claude.json"}, str(repo))) is None
+    assert run_gate(HookInput("Read", {"file_path": str(Path.home() / ".claude.json")}, str(repo))) is None
