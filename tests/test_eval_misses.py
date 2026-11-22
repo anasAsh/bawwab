@@ -136,11 +136,10 @@ def sandbox():
 NORMAL = {e["id"]: e for e in run_eval.load_yaml(ROOT / "eval" / "redteam" / "normal.yaml")["tasks"]}
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="open false positive: a commit-message heredoc that mentions `claude mcp add … server.py` is "
-                          "read as a command, so the gate scans the cwd as the server and denies the commit when the "
-                          "repo keeps a malware sample as a test fixture (Task 15 I4)")
 def test_commit_message_mentioning_install_is_silent(sandbox):
+    # Was an open false positive (Task 15 I4): the gate scans the cwd as the server, and the malware sample the
+    # repo keeps as a test fixture made it deny the commit. Since reachability (FP plan step 1) a fixture nothing
+    # runs or reads is listed, not counted.
     r = run_eval.run_normal(sandbox, NORMAL["git-commit-mentions-install-fixture"])
     assert r["notices"] == [], r["notices"]
 

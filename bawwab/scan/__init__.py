@@ -12,6 +12,7 @@ from bawwab.fetch import FetchError, FetchOpts, fetch_target, target_from_comman
 from bawwab.scan.files import ExtraText, ScanFile, load_files
 from bawwab.scan.identity import identity_checks
 from bawwab.scan.osv import known_malware
+from bawwab.scan.reach import classify, demote_unreachable
 from bawwab.scan.judge.backends import Backend, backend_for
 from bawwab.scan.judge.judge import judge
 from bawwab.scan.rules import run_static_rules
@@ -339,6 +340,11 @@ def _static_step(f: Fetched, fetch_opts: FetchOpts | None = None) -> tuple[list[
     if f.target.kind == "npm":  # R31: registry installs do not run `prepare`
         static = registry_install_adjust(files, static)
     findings += static
+    # FP plan step 1: a finding in a file that never runs and that the agent never reads is listed, not counted.
+    try:
+        findings = demote_unreachable(findings, classify(f.root, files))
+    except Exception:  # noqa: BLE001 - the classifier is best effort: on any error everything stays counted
+        pass
     return files, extra, findings
 
 
