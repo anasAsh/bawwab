@@ -365,8 +365,10 @@
    "verdict": "malicious"
   },
   "npm/dataflow-unified": {
-   "rules": [],
-   "verdict": "clean"
+   "rules": [
+    "remote-code.download-exec"
+   ],
+   "verdict": "malicious"
   },
   "npm/deno-r4-basic": {
    "rules": [
@@ -886,8 +888,10 @@
    "verdict": "suspicious"
   },
   "pypi/cryptowallet-safety": {
-   "rules": [],
-   "verdict": "clean"
+   "rules": [
+    "remote-code.download-exec"
+   ],
+   "verdict": "malicious"
   },
   "pypi/cryztalnitro": {
    "rules": [
@@ -900,11 +904,9 @@
   },
   "pypi/definitely-not-requests": {
    "rules": [
-    "credential-access",
-    "exfil.combo",
     "install-script"
    ],
-   "verdict": "malicious"
+   "verdict": "suspicious"
   },
   "pypi/dependency-confusion12": {
    "rules": [
@@ -1276,8 +1278,10 @@
    "verdict": "suspicious"
   },
   "pypi/solidity-build-guard": {
-   "rules": [],
-   "verdict": "clean"
+   "rules": [
+    "remote-code.download-exec"
+   ],
+   "verdict": "malicious"
   },
   "pypi/speech-dtw": {
    "rules": [

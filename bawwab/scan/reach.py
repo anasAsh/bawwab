@@ -46,6 +46,7 @@ __all__ = ["DEMOTABLE_RULES", "Reach", "classify", "demote_unreachable"]
 # never demoted either (fail closed).
 DEMOTABLE_RULES = frozenset({
     "credential-access", "exfil.combo", "exfil.host", "remote-code.pipe-shell", "remote-code.eval-fetch",
+    "remote-code.download-exec",
     "obfuscation.eval-decoded", "obfuscation.blob", "install-dir-access", "install.custom-index",
     "injection.override", "injection.covert-action", "injection.hidden-unicode", "injection.html-comment",
     "tool-shadowing", "files.truncated", "files.analysis-degraded",
@@ -143,9 +144,8 @@ def demote_unreachable(findings: Iterable[Finding], reach: Reach) -> list[Findin
 
     CRITICAL is never demoted. It is multi-signal behaviour (a credential read sent out in one function, eval of
     decoded or fetched code), which R27 already keeps whatever a file's path or context; reachability cannot rule
-    out a computed path that loads such a file; and the recall gate needs it: two DataDog samples
-    (pypi/gequests, pypi/definitely-not-requests) are MALICIOUS only through a CRITICAL in sdist metadata
-    (PKG-INFO), and dropping them a level is a recall regression the gate does not allow."""
+    out a computed path that loads such a file. (Package metadata such as PKG-INFO is prose, not code, and no
+    longer produces code findings at all: code._is_pkg_metadata.)"""
     out = []
     for x in findings:
         if (x.source == "static" and x.rule in DEMOTABLE_RULES and Severity.LOW < x.severity < Severity.CRITICAL
