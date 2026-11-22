@@ -513,7 +513,9 @@ the same rules to the most popular MCP servers, skills and plugins, with every f
   settings files of the user and of the project in view; another project's settings that enable it are left alone
   (every Claude Code tool call is blocked while it is held anyway).
 - The `SessionStart` inventory only warns. What it finds in things already installed arrives as a warning
-  with your next prompt; it doesn't block anything.
+  with your next prompt; it doesn't block anything. These warnings are shown to you only, never added to
+  Claude's context, so a conversation about something else isn't pulled off course; each is given once per item
+  (again only when its scan result changes).
 - Static rules can be dodged by determined obfuscation. That's why there's a Claude review, a "never below
   suspicious" floor for credential-plus-network code, and an effect check. Bawwab raises the bar a lot; it doesn't promise perfection.
 - Bawwab runs as the same OS user as Claude's tool shell, so it can't fully keep its approve command from

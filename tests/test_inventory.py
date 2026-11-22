@@ -97,6 +97,24 @@ def test_suspicious_gives_one_warning_and_unpinned(home):
     assert not (Path(os.environ["BAWWAB_HOME"]) / "warnings.flag").exists()
 
 
+def test_unpinned_item_is_told_once_not_every_session(home):
+    """An unpinned server is rescanned every session (no fingerprint); its warnings must not repeat each time.
+    The verdict line comes back when the scan result changes (a new version); the pin tip never repeats."""
+    h, proj = home
+    _w(h / ".claude.json", {"mcpServers": {"alpha": {"command": "npx", "args": ["-y", "@a/b"]}}})
+    ver = ["1.2.3"]
+
+    def scan(t, **kw):
+        return _report(t, Verdict.SUSPICIOUS, version=ver[0], findings=[Finding("r", Severity.HIGH, "static", "e")])
+
+    store = open_store()
+    assert len(inv.run_inventory(proj, scan=scan, store=store)) == 2
+    assert inv.run_inventory(proj, scan=scan, store=store) == []  # next session: nothing new to say
+    ver[0] = "1.3.0"
+    again = inv.run_inventory(proj, scan=scan, store=store)
+    assert again == [f"bawwab: alpha is SUSPICIOUS — run ! {B} scan @a/b"]  # new version, still suspicious
+
+
 def test_rerun_skips_local_and_pinned_but_not_remote(home):
     h, proj = home
     _layout(h, proj)
@@ -180,10 +198,10 @@ def test_notify_empty_and_full(home, capsys):
     assert capsys.readouterr().out == ""
     open_store().add_warning("bawwab: foo is SUSPICIOUS")
     assert main(["notify"]) == 0
-    out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
-    assert out["hookEventName"] == "UserPromptSubmit"
-    assert "bawwab: foo is SUSPICIOUS" in out["additionalContext"]
-    assert "verbatim" in out["additionalContext"]
+    out = json.loads(capsys.readouterr().out)
+    # for the user only: machine-wide warnings never enter Claude's context (an unrelated conversation acted on one)
+    assert "hookSpecificOutput" not in out
+    assert out["systemMessage"] == "bawwab: foo is SUSPICIOUS"
     assert main(["notify"]) == 0 and capsys.readouterr().out == ""
 
 
@@ -195,8 +213,9 @@ def test_inventory_cli_spawns_background_and_prints_stored(home, monkeypatch, ca
     monkeypatch.setattr(inv, "spawn_background", lambda cwd: spawned.append(cwd))
     monkeypatch.chdir(proj)
     assert main(["inventory", "--cwd", str(proj)]) == 0
-    out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
-    assert out["hookEventName"] == "SessionStart" and "old warning" in out["additionalContext"]
+    out = json.loads(capsys.readouterr().out)
+    assert "old warning" in out["systemMessage"]
+    assert "old warning" not in json.dumps(out.get("hookSpecificOutput", {}))
     assert spawned == [proj]
 
 
@@ -235,7 +254,8 @@ def test_hook_notify_with_flag(home):
     r = subprocess.run([sys.executable, str(HOOK), "notify"], input="{}", capture_output=True, text=True,
                        env=env, timeout=60)
     assert r.returncode == 0
-    assert "hook warning" in json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    out = json.loads(r.stdout)
+    assert "hook warning" in out["systemMessage"] and "hook warning" not in json.dumps(out.get("hookSpecificOutput", {}))
 
 
 def test_take_warnings_clears_stale_flag(home):

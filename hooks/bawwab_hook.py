@@ -733,10 +733,15 @@ def _passthrough(sub: str, timeout: int, run: bool = True) -> int:
             out = None
     if extra:
         try:
-            prev = json.loads(out).get("hookSpecificOutput", {}).get("additionalContext") if out else None
+            got = json.loads(out) if out else {}
+            prev = got.get("hookSpecificOutput", {}).get("additionalContext")
+            user = got.get("systemMessage")  # queued warnings, for the user only: kept as they are
         except (ValueError, AttributeError):
-            prev = None
-        out = _context_json(event, extra + (f"\n\n{prev}" if isinstance(prev, str) and prev else ""))
+            prev, user = None, None
+        merged = json.loads(_context_json(event, extra + (f"\n\n{prev}" if isinstance(prev, str) and prev else "")))
+        if isinstance(user, str) and user:
+            merged["systemMessage"] = user
+        out = json.dumps(merged)
     if out:
         print(out)
     return 0

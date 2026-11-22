@@ -288,12 +288,11 @@ def _inventory(args) -> int:
             return 0
         inv.spawn_background(cwd)
         warnings = store.take_warnings()
-        parts = [ctx] if ctx else []
-        if warnings:
-            parts.append(inv.hook_output("SessionStart", warnings)["hookSpecificOutput"]["additionalContext"])
-        if parts:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
-                                                     "additionalContext": "\n\n".join(parts)}}))
+        out = inv.hook_output("SessionStart", warnings) if warnings else {}
+        if ctx:
+            out["hookSpecificOutput"] = {"hookEventName": "SessionStart", "additionalContext": ctx}
+        if out:
+            print(json.dumps(out))
     except Exception:  # noqa: BLE001 - never break session start
         pass
     return 0
