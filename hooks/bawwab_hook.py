@@ -535,6 +535,12 @@ def bootstrap(foreground: bool = False) -> int:
             if foreground:
                 _say(f"bawwab setup failed: {why}. {_recovery()}", True)
             return 1 if foreground else 0
+        try:  # best effort: a scan downloads a missing grammar itself, but may be offline by then
+            subprocess.run(["uv", "run", "--project", PLUGIN_ROOT, "--frozen", "--quiet", "python", "-c",
+                            "from bawwab.scan.rules.parsing import prefetch; prefetch()"], env=_child_env(),
+                           stdin=subprocess.DEVNULL, capture_output=True, timeout=BOOT_INVENTORY_S)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
         pending = os.path.join(d, BOOT_PENDING)
         raw = _read(pending)
         if raw is not None:

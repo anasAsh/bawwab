@@ -113,6 +113,14 @@ def test_bootstrap_in_plugin_data_dir_never_in_root(fresh):
     assert not (ROOT / "venv").exists()
 
 
+def test_bootstrap_prefetches_the_js_grammars_in_its_own_venv(fresh):
+    # a scan that cannot download a grammar (offline, a proxy) fails the JS rules: SUSPICIOUS on every JS target
+    env, log = _fake_uv(fresh)
+    _hook("bootstrap", "", env)
+    assert (_bh() / "bootstrap-complete").exists()
+    assert any("prefetch()" in x and x.endswith(f"| {_bh() / 'venv'}") for x in log.read_text().splitlines())
+
+
 def test_failed_sync_is_not_complete(fresh):
     b = fresh / "fakebin"
     b.mkdir()
