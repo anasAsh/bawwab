@@ -82,9 +82,16 @@ def _scan_sync(spec: str, deep: bool) -> CallToolResult:
     from bawwab.store import open_store, report_to_dict
     from bawwab.types import Mode, Verdict
 
+    from bawwab.selfid import is_self_path
+
+    target = parse_target(_spec(spec))
+    if target.kind == "local" and is_self_path(target.path):  # R53: not an automatic scan of itself
+        return CallToolResult(content=[TextContent(text=_frame(
+            "This is bawwab's own installation: it does not scan itself here. To scan it on purpose, "
+            "the user runs `bawwab scan <path>` in a terminal."))])
     cfg = load_config(Path.cwd())
     store = open_store()
-    report = scan_target(parse_target(_spec(spec)), mode=Mode.DEEP if deep else cfg.mode, cfg=cfg, store=store)
+    report = scan_target(target, mode=Mode.DEEP if deep else cfg.mode, cfg=cfg, store=store)
     pid = store.create_pending(report) if report.verdict != Verdict.CLEAN else None
     d: dict[str, Any] = _clean_dict(report_to_dict(report))
     d["approval_id"] = pid

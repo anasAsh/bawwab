@@ -14,6 +14,13 @@ An installed plugin is "self" only when all of these hold:
 - its .claude-plugin/plugin.json names it "bawwab".
 The name alone is never enough: a plugin called bawwab with different code is scanned like any other.
 Any doubt: not self, so it is scanned (fail closed).
+
+is_self_path (R53) is the one check every automatic path uses (inventory, effect check, gate, MCP scan tools):
+bawwab never scans, warns about, holds or quarantines itself. It is is_self plus two identity-based cases, still
+never the name alone: a path inside the running plugin root (its MCP server, skills, commands), and another
+version of the same plugin in the same cache directory (<cache>/<marketplace>/<plugin>/<version>), which is what
+an upgrade leaves beside the running code until the next session. An explicit `bawwab scan <path>` is not an
+automatic path and still scans it.
 """
 from __future__ import annotations
 
@@ -50,7 +57,9 @@ def _code(root: str, strict: bool) -> dict[str, str] | None:
     tree, e.g. a dev checkout with tests/ and docs/): only the runtime files are read."""
     import hashlib
 
-    from bawwab.agents.claude_code_watch import is_in_use_marker
+    from bawwab.paths import _watch  # by path: importing bawwab.agents needs third-party deps (may be absent)
+
+    is_in_use_marker = _watch().is_in_use_marker
 
     out: dict[str, str] = {}
     total = 0
@@ -109,3 +118,52 @@ def is_self(install_path: object) -> bool:
     except (OSError, ValueError, RecursionError):
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "bawwab"
+
+
+def _inside(path: str, root: str) -> bool:
+    """path is root's own runtime tree (bawwab/, hooks/, skills/ ...), not any other file of a dev checkout
+    (tests/, fixtures, docs/ are only data there and are scanned like anything else)."""
+    try:
+        if os.path.commonpath([path, root]) != root:
+            return False
+    except ValueError:
+        return False
+    top = os.path.relpath(path, root).split(os.sep, 1)[0]
+    return top in RUNTIME_DIRS or top == ".claude-plugin"
+
+
+def _is_sibling_version(here: str, root: str) -> bool:
+    """here is another version dir of the plugin the running code belongs to: same parent as the running root,
+    which must itself be <cache>/<marketplace>/<plugin>/<version>. Needs the hook file and the bawwab name."""
+    parent = os.path.dirname(root)
+    if os.path.dirname(here) != parent or here == root:
+        return False
+    if os.path.basename(os.path.dirname(os.path.dirname(parent))) != "cache":
+        return False
+    if not os.path.isfile(os.path.join(here, "hooks", "bawwab_hook.py")):
+        return False
+    try:
+        with open(os.path.join(here, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, ValueError, RecursionError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("name") == "bawwab"
+
+
+def is_self_path(path: object) -> bool:
+    """True when path is bawwab's own running installation, or inside it, or a sibling version of it (see above).
+    Any doubt (relative path, symlinked install dir, unreadable): False, so it is scanned."""
+    if not isinstance(path, str) or not path or not os.path.isabs(path):
+        return False
+    try:
+        root = running_root()
+        if root is None:
+            return False
+        if is_self(path):
+            return True
+        if os.path.islink(path.rstrip(os.sep) or os.sep):
+            return False
+        here = os.path.realpath(path)
+        return _inside(here, root) or _is_sibling_version(here, root)
+    except (OSError, ValueError):
+        return False
