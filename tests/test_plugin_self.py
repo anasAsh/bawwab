@@ -64,9 +64,10 @@ def test_build_refuses_source_tree():
 # What Bawwab really does, and so must be reported: it reads Claude's config (~/.claude.json, ~/.claude/...)
 # and hooks every tool call. Exact counts per (rule, severity), LOW included: any change is a regression to look at.
 EXPECTED = {
-    ("credential-access", "high"): 12,     # .claude paths: paths.py, prefilter.py, detect.py + docstrings/comments;
+    ("credential-access", "high"): 10,     # .claude paths: paths.py, prefilter.py, detect.py + strings;
                                            # deep mode's decoys and offline npm config (bawwab/sandbox/)
-    ("credential-access", "low"): 2,       # catalog regexes in text.py (credential paths) and code.py (dotenv)
+    ("credential-access", "low"): 4,       # catalog regexes in text.py (credential paths) and code.py (dotenv);
+                                           # the module docstrings of _fingerprint.py and hooks/fingerprint.py
     ("install-dir-access", "low"): 12,     # + sandbox/observe.py's list of paths a target must not write,
                                            # scan/reach.py (a repo's .claude/ folder is model-facing)
     ("judge.truncated", "low"): 1,         # Bawwab's model-facing text is now over the judge's 60 KB window

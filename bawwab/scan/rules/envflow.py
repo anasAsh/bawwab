@@ -1297,6 +1297,12 @@ class _Js:
 
     # -------- sinks
 
+    def launch_barrier(self, call) -> bool:
+        """A real process launcher (resolved, in a file whose resolution is trusted) that is not itself a network
+        call: what it returns is a process, its exit status or its output, not the copy handed to it (FP round 2).
+        Without this, every later use of the child (`proc.stdin.write(...)`) made the copy a sink."""
+        return not self.untrusted() and self.launcher(call)
+
     def sink_call(self, call) -> bool:
         callee = self.callee(call)
         args = self.f(call, "arguments")
@@ -1314,6 +1320,8 @@ class _Js:
             if t in ("call_expression", "new_expression"):
                 if self.sink_call(p):
                     return True
+                if self.launch_barrier(p):
+                    return False
                 n = p
                 continue
             if t == "variable_declarator":
@@ -2008,6 +2016,10 @@ class _Py:
 
     # -------- sinks
 
+    def launch_barrier(self, call: ast.Call) -> bool:
+        """As _Js.launch_barrier: a resolved launcher's result is not made from the copy handed to it."""
+        return not self.untrusted() and self.launcher(call) is not None
+
     def sink_call(self, call: ast.Call) -> bool:
         callee = ast.unparse(call.func)
         parts = [ast.unparse(a) for a in call.args] + [f"{k.arg}={ast.unparse(k.value)}" if k.arg else f"**{ast.unparse(k.value)}"
@@ -2024,6 +2036,8 @@ class _Py:
             if isinstance(p, ast.Call):
                 if self.sink_call(p):
                     return True
+                if self.launch_barrier(p):
+                    return False
                 n = p
                 continue
             if isinstance(p, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
