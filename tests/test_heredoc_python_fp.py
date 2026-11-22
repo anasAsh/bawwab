@@ -120,7 +120,7 @@ def test_fp_as_refused(checkout: Path):
 def test_fp_reasons_today(checkout: Path, plain_dir: Path):
     """Pins the two causes as they fire today, so a fix shows up here (and in the xfails above)."""
     r1 = _det(HEREDOC.format(EDIT_SOURCE), plain_dir)
-    assert isinstance(r1, Protected) and r1.reason == "interpreter may write Claude/bawwab config: python3"
+    assert isinstance(r1, Protected) and r1.reason.startswith("interpreter may write Claude/bawwab config: python3")
     r2 = _det(HEREDOC.format(EDIT_PLAIN), checkout)
     assert isinstance(r2, Protected) and r2.reason == "bawwab approval via tool call"
     assert _det(HEREDOC.format(EDIT_PLAIN), plain_dir) is None  # no module at that path: nothing to resolve

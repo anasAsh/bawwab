@@ -167,3 +167,29 @@ def is_self_path(path: object) -> bool:
         return _inside(here, root) or _is_sibling_version(here, root)
     except (OSError, ValueError):
         return False
+
+
+def other_build(path: object) -> list[str] | None:
+    """path is another build of bawwab's plugin: a plain dir (not a symlink) whose plugin.json names bawwab, with
+    hooks/bawwab_hook.py, holding only runtime and inert files (strict _code), whose runtime files differ from the
+    running tree's. Returns those files (sorted), else None. The gate still asks for approval (the name proves
+    nothing, R52/R53): this only lets it say "a different build of Bawwab" instead of listing findings on
+    Bawwab's own source."""
+    if not isinstance(path, str) or not os.path.isabs(path):
+        return None
+    try:
+        root = running_root()
+        if root is None or os.path.islink(path.rstrip(os.sep) or os.sep) or not os.path.isdir(path):
+            return None
+        if not os.path.isfile(os.path.join(path, "hooks", "bawwab_hook.py")):
+            return None
+        with open(os.path.join(path, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        if not isinstance(manifest, dict) or manifest.get("name") != "bawwab":
+            return None
+        mine, theirs = _code(root, strict=False), _code(path, strict=True)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not mine or not theirs:
+        return None
+    return sorted(k for k in set(mine) | set(theirs) if mine.get(k) != theirs.get(k)) or None

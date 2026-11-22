@@ -22,9 +22,10 @@ from bawwab.report import FOR_CLAUDE, distinct_findings, explain, format_report,
 from bawwab.store import open_store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
 from test_effects import FakeScan, _w
+from conftest import clicmd_exe
 from test_gate import bash, decision, reason
 
-B = cmd("")
+B = clicmd_exe()
 CANARY = "BAWWAB-CANARY-evidence-line"
 
 

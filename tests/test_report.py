@@ -7,7 +7,7 @@ from bawwab.scan.rules.catalog import CATALOG
 from bawwab.store import Store
 from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
 
-from bawwab.clicmd import exe as _clicmd_exe
+from conftest import clicmd_exe as _clicmd_exe
 
 B = _clicmd_exe()  # how bawwab renders its own command (M15: never depends on PATH)
 

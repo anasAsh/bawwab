@@ -15,6 +15,7 @@ from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
 from bawwab.paths import bawwab_home
 from bawwab.selfid import is_self_path
+from bawwab.store import item_ids
 from bawwab.report import sanitise
 from bawwab.scan import TRANSIENT_RULES, needs_recheck, scan_target
 from bawwab.trust import cross_server_findings
@@ -124,7 +125,8 @@ def run_inventory(cwd: Path, scan=scan_target, store=None) -> list[str]:
         except Exception as e:  # noqa: BLE001 - one bad item must not stop the inventory
             _warn(store, f"bawwab: {_lbl(item.label)} could not be scanned ({type(e).__name__})", warnings)
             continue
-        approved = r.verdict != Verdict.CLEAN and store.is_approved(r.key)
+        approved = r.verdict != Verdict.CLEAN and store.is_approved(
+            r.key, item_ids(item.ident, item.label if item.kind == "mcp" else None))  # this item, not its code
         if r.verdict != Verdict.CLEAN and not approved and not store.is_rejected(r.key):
             # keyed: dropped untold if the user approves or rejects it (e.g. its quarantine) before the next prompt
             _warn_once(store, item.ident, "verdict", r.key, f"bawwab: {_lbl(item.label)} is {r.verdict.value.upper()} — run ! {cli_cmd("scan")} {_scan_spec(t)}", warnings, key=r.key)

@@ -51,6 +51,9 @@ class Targets:
     env_entries: list[tuple[str, str]] = field(default_factory=list)
     # target -> the name the call gives it in Claude's config (`claude mcp add <name>`): display only
     names: dict[Target, str] = field(default_factory=dict)
+    # target -> the config items it is installed as (`mcp:<name>`): approving a non-clean verdict binds to them,
+    # not to the code alone (store.item_ids), so a second server running the same code gets its own decision
+    items: dict[Target, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -114,10 +117,7 @@ class _Acc:
         self.file_scanned: set[tuple[str, str]] = set()  # `scanned` of file analyses (their reasons are filtered)
         self.env_entries: list[tuple[str, str]] = []  # (protected reason, server entry hash) for server env loaders
         self.names: dict[Target, str] = {}  # display only: the config name a server is added under
-
-    def name(self, t: Target, name: str) -> None:
-        if name and name != "?":
-            self.names.setdefault(t, name)
+        self.items: dict[Target, list[str]] = {}  # target -> the MCP server names it is installed as
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -130,6 +130,14 @@ class _Acc:
                 raise _TooComplex  # no real command installs this many things; scanning them all would not end
             self.targets.append(t)
         self.pinnable = self.pinnable or pinnable
+
+    def name(self, t: Target, server: str) -> None:
+        """t is installed as the MCP server `server`: its display name (Targets.names, the first one) and an item
+        its approval binds to (Targets.items)."""
+        if server and server != "?":
+            self.names.setdefault(t, server)
+            if f"mcp:{server}" not in self.items.setdefault(t, []):
+                self.items[t].append(f"mcp:{server}")
 
     def protect(self, reason: str) -> None:
         if reason not in self.protected:
@@ -146,7 +154,8 @@ class _Acc:
     def result(self) -> Targets | Protected | None:
         if self.targets:
             return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain,
-                           self._entries(), {t: n for t, n in self.names.items() if t in self.targets})
+                           self._entries(), {t: n for t, n in self.names.items() if t in self.targets},
+                           {t: v for t, v in self.items.items() if t in self.targets})
         if self.protected or self.plain:
             return Protected("; ".join(self.protected + self.plain), list(self.plain),
                              "; ".join(self.protected) if self.plain else None, self._entries())
@@ -280,7 +289,7 @@ def _state_targets() -> list[str]:
     """bawwab's own state: its home and key files, and the install markers (paths a glob must not reach)."""
     home = os.path.normpath(str(bawwab_home()))
     out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER),
-           _xdg_bawwab(), os.path.join(_xdg_bawwab(), _MARKER)]
+           _xdg_bawwab(), os.path.join(_xdg_bawwab(), _MARKER), _allow_list()]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd:
         out.append(os.path.join(os.path.normpath(pd), _MARKER))
@@ -371,8 +380,15 @@ def _data_dirs(plugin_data: str | None, venv: str | None, chome: str) -> tuple[s
     return tuple(out)
 
 
+def _allow_list() -> str:
+    """bawwab/allowenv.py's list (~/.bawwab/allow-env.json, by HOME even when BAWWAB_HOME points elsewhere)."""
+    return os.path.join(str(Path.home()), ".bawwab", "allow-env.json")
+
+
 def _bawwab_path1(p: str) -> bool:
     if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER or _under(p, _xdg_bawwab()):
+        return True
+    if p == _allow_list() or (os.path.basename(p) == "allow-env.json" and os.path.realpath(p) == _allow_list()):
         return True
     if "/data/bawwab" in p and _PLUGIN_DATA_RE.search(p):  # <claude home>/plugins/data/bawwab*: data dir, venv
         return True
@@ -455,6 +471,7 @@ def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: 
         acc.protect(f"{r} ({name})")
     for e in extras:
         acc.add(e, pinnable=False)
+        acc.name(e, name)
 
 
 def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
@@ -1236,6 +1253,30 @@ def _check_dest(p: str, acc: _Acc) -> None:
         acc.protect(f"shell write to Claude config: {os.path.basename(p)}")
     if _bawwab_path(p):
         acc.protect("bawwab state change")
+    if _bawwab_on_path(p):
+        acc.protect(_ON_PATH)
+
+
+_ON_PATH = "puts a `bawwab` command on PATH"
+_USER_BIN = ("~/.local/bin", "~/bin")  # bawwab/clicmd.py SHIM_DIRS: where `bawwab setup --link` writes its shim
+
+
+def _bawwab_on_path(p: str) -> bool:
+    """The opt-in shim (`bawwab setup --link`): messages print bare `bawwab` while the first `bawwab` on PATH is
+    the shim bawwab wrote. A write, copy, move or link that creates or changes a file named `bawwab` in a PATH dir
+    (this process's PATH, or ~/.local/bin, ~/bin) could stand in for it, so it is protected."""
+    if os.path.basename(p) != "bawwab":
+        return False
+    d = os.path.normpath(os.path.dirname(p))
+    dirs = {os.path.normpath(e) for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e)}
+    dirs |= {os.path.normpath(os.path.expanduser(x)) for x in _USER_BIN}
+    if d in dirs:
+        return True
+    try:
+        real = os.path.realpath(d)
+        return any(real == os.path.realpath(x) for x in dirs)
+    except (OSError, ValueError):
+        return True
 
 
 def _copy(exe: str, args: list[str], cwd: str, acc: _Acc) -> None:
@@ -1338,7 +1379,7 @@ def _copies_bawwab(exe: str, src: str, dest: str, cwd: str) -> bool:
 _RUNS_BAWWAB = re.compile(
     r"(?:^|[\s;&|('\"`=])(?:[^\s;&|('\"`]*/)?bawwab(?:\.cli)?['\"]?(?=[\s;&|)'\",\]]|$)"
     r"|bawwab\.cli\b|(?:from|import)\s+bawwab\b|-m\s+bawwab\b|bawwab_hook", re.M)
-_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects|level)\b")
+_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects|level|allow-env)\b")
 
 
 _SHEBANG = re.compile(r"\s*#!")
@@ -1500,7 +1541,21 @@ def _protected_tail(args: list[str]) -> bool:
         return any(a.startswith("--re") for a in rest)
     if sub == "level":
         return _lowers_level(rest)
+    if sub == "setup":
+        return _links(rest)
+    if sub == "allow-env":
+        return _allows_env(rest)
     return False
+
+
+def _allows_env(rest: list[str]) -> bool:
+    """`allow-env <repo>` lets commands in a repo set BAWWAB_HOME: the user's choice. Only listing is Claude's."""
+    return any(a != "--list" for a in rest)
+
+
+def _links(rest: list[str]) -> bool:
+    """`setup --link` (any abbreviation argparse accepts): makes messages print bare `bawwab`; the user's choice."""
+    return any(a in ("--l", "--li", "--lin", "--link") for a in rest)
 
 
 def _lowers_level(rest: list[str]) -> bool:
@@ -1546,6 +1601,10 @@ def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd:
             return any(a.startswith("--re") for a in rest)
         if w == "level":
             return _lowers_level(rest)
+        if w == "setup":
+            return _links(rest)
+        if w == "allow-env":
+            return _allows_env(rest)
         return False
     if not tail:
         return False
@@ -1570,7 +1629,7 @@ def _search_tool(w: str, cwd: str) -> bool:
 
 
 _MAX_RESOLVE = 8  # words examined for a bawwab executable before the subcommand
-_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level"})
+_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level", "setup", "allow-env"})
 
 
 _INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")
@@ -1805,6 +1864,8 @@ def _raw_merge(src: _Acc, acc: _Acc, narrow: bool) -> None:
         acc.add(t, src.pinnable)
         if t in src.overlays:
             acc.overlays.setdefault(t, src.overlays[t])
+        for item in src.items.get(t, ()):
+            acc.name(t, item[len("mcp:"):])
     for reason in src.protected:
         if not narrow or reason.startswith(_RAW_NARROW):
             acc.protect(reason)
@@ -1923,6 +1984,9 @@ _PATH_TOKEN = re.compile(_CMD_START + r"([^\s;&|('\"`,\[\]{}$]*/[^\s;&|('\"`,\[\
 _ARG_TOKEN = re.compile(r"[;&|]+|[^\s'\",\[\](){};&|]+")
 _IMPORTS_BAWWAB = re.compile(r"(?:from|import)\s+bawwab\b")
 _QUOTED_SUB = re.compile(r"['\"](?:approve|reject)['\"]")
+# a shell alias or function named bawwab (an rc file): the user's `! bawwab …` would run it instead of the shim
+_BAWWAB_ALIAS = re.compile(r"(?:^|[\s;&|({])(?:alias\s+(?:-\S+\s+)*['\"]?bawwab['\"]?=|function\s+bawwab\b"
+                           r"|bawwab\s*\(\s*\))")
 _QUOTED_PAIRS = ((re.compile(r"['\"]init['\"]"), re.compile(r"['\"]--sk(?:ip)?['\"]")),
                  (re.compile(r"['\"]effects['\"]"), re.compile(r"['\"]--re(?:try)?['\"]")))
 
@@ -1956,10 +2020,11 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
         if imports and (_QUOTED_SUB.search(s) or any(f.search(s) for f in pairs)):
             out.add(s)
             continue
-        if "bawwab" in s and any(_protected_args(s[m.end():]) for m in _BW_WORD.finditer(s)):
+        if "bawwab" in s and (_BAWWAB_ALIAS.search(s) or any(_protected_args(s[m.end():])
+                                                            for m in _BW_WORD.finditer(s))):
             out.add(s)
             continue
-        if "/" in s and re.search(r"\b(?:approve|reject|init|effects)\b", s):
+        if "/" in s and re.search(r"\b(?:approve|reject|init|effects|setup|allow-env)\b", s):
             for m in _PATH_TOKEN.finditer(s):
                 paths += 1
                 if paths > 256:
@@ -1974,7 +2039,7 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
 
 def _new_protected(new: str, old: str, cwd: str) -> bool:
     """`new` holds a protected bawwab invocation that `old` didn't (an edit elsewhere in a doc passes)."""
-    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects)\b", new):
+    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects|setup|allow-env)\b", new):
         return False
     return bool(_protected_lines(new, cwd) - _protected_lines(old, cwd))
 
@@ -2441,6 +2506,9 @@ def _literal_output(words: list[str]) -> str:
     return text if decoded == text else decoded + "\n" + text
 
 
+_READ_HINT = " (to only read a file, use the Read tool or jq instead: they are not blocked)"
+
+
 def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, list[str], dict[int, int]]) -> None:
     """One structured pass over `cmd`, given its heredoc extraction under one reading of the regions."""
     acc.spend(len(cmd))
@@ -2565,8 +2633,9 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
             parts = [" ".join(own), stdin_text, upstream, script_files]
             acc.spend(sum(map(len, parts)))
             text = "\n".join(parts)
-            if _sensitive_text(text, cwd):
-                acc.protect(f"interpreter may write Claude/bawwab config: {exe}")
+            if _sensitive_text(text, cwd):  # can't prove a one-liner only reads: say what does pass (P4)
+                acc.protect(f"interpreter may write Claude/bawwab config: {exe}"
+                            + ("" if exe in _SHELLS else _READ_HINT))
             if exe in _SHELLS:
                 stdin_scan = "\n".join(body_of(t) for t in dict.fromkeys(seg.inputs)
                                        if (k := heredoc_index(t)) is None or k not in open_from)
@@ -2820,6 +2889,8 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
             new = _ipython_shell(src) if isinstance(src, str) else ""
     if "bawwab" in new and _execs_bawwab(new):  # R55: a script that runs bawwab under another name
         acc.user_only("writes a script that runs bawwab")
+    if any(_bawwab_on_path(c) for c in cands):
+        acc.protect(_ON_PATH)
     old = _read_text(p)
     if old is None:
         old = ""  # unreadable or too large: every protected line counts as new
@@ -2930,7 +3001,7 @@ def _writes_anything(segs: list[_Seg]) -> bool:
 _WHOLE_TOKENISE = 20_000  # bytes: above this, the whole-command claude check tokenises only relevant lines
 
 
-def _whole_command_checks(cmd: str, acc: _Acc) -> None:
+def _whole_command_checks(cmd: str, acc: _Acc, cwd: str = "") -> None:
     """Things no reading of the shell grammar may miss: a nested claude without bawwab's hooks, and
     overriding the variables that locate or switch off bawwab."""
     s = cmd.replace('"', "").replace("'", "").replace("\\", "")
@@ -2946,8 +3017,52 @@ def _whole_command_checks(cmd: str, acc: _Acc) -> None:
         segs = _segments(_tokens(text))
     if _NESTED_CLAUDE.search(s) or _nested_claude(segs) or ("disableAllHooks" in s and _writes_anything(segs)):
         acc.protect("nested claude without bawwab hooks")
-    if _BAWWAB_ENV.search(s):
+    if _BAWWAB_ENV.search(s) and not _allowed_test_home(cmd, cwd):
         acc.protect("bawwab environment override")
+
+
+_ENV_ASSIGN = re.compile(r"BAWWAB_HOME=([^$`*?\[\]{}~\\]+)")
+# a nested Claude Code (any word naming claude), another HOME or config dir, or a cd that changes what a relative
+# path means: no test home then
+_ENV_NEVER = re.compile(r"(?i:claude)|(?<![A-Za-z0-9_])HOME(?![A-Za-z0-9_])|(?<![\w-])(?:cd|pushd|popd)(?![\w-])")
+
+
+def _allowed_test_home(cmd: str, cwd: str) -> bool:
+    """`bawwab allow-env <repo>` (the user's): in that repo, a command may set BAWWAB_HOME to a dir inside it
+    (bawwab/allowenv.py). Every BAWWAB_ word of the command must be a plain `BAWWAB_HOME=<literal path>`
+    assignment (also after `export`/`env`) whose path, and the call's cwd, lie inside one allowed repo, symlinks
+    resolved; nothing else may set or read it into another variable; and the command must not name claude,
+    HOME, CLAUDE_CONFIG_DIR or cd (a nested Claude Code is never covered, and a relative path must mean one
+    thing). Bawwab's hooks also refuse to run on such a home (hooks/bawwab_hook.py)."""
+    if not cwd or "\n" in cmd or "<<" in cmd or "`" in cmd or "$(" in cmd:
+        return False
+    try:
+        from bawwab import allowenv
+    except ImportError:
+        return False
+    if not allowenv.repos():
+        return False
+    try:
+        words = _tokens(cmd)
+    except ValueError:
+        return False
+    if any(_ENV_NEVER.search(w) for w in words) or "BAWWAB_CHILD" in cmd:
+        return False
+    cwd = os.path.normpath(cwd)
+    repo = allowenv.repo_of(cwd)
+    if repo is None:
+        return False
+    hits = [w for w in words if "BAWWAB_" in w]
+    if not hits or cmd.count("BAWWAB_") != len(hits):
+        return False  # a mention inside one word more than once, or in text the tokens don't show
+    for w in hits:
+        m = _ENV_ASSIGN.fullmatch(w)
+        if not m or not m.group(1):
+            return False
+        p = os.path.normpath(os.path.join(cwd, m.group(1)))
+        if not allowenv.real_inside(p, repo) or p == repo:
+            return False
+    return True
 
 
 _APPROVAL = "bawwab approval via tool call"
@@ -2974,13 +3089,212 @@ def _write_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
     again = _Acc(4 * len(blanked) + 1_000_000)
     again.root = blanked
     try:
-        _whole_command_checks(blanked, again)
+        _whole_command_checks(blanked, again, cwd)
         _bash(blanked, cwd, again)
     except _TooComplex:
         return
     if _APPROVAL not in again.protected:
         acc.protected.remove(_APPROVAL)
         acc.user_only(f"in text written to a file: {_APPROVAL}")
+
+
+# ------------------------------------------------------------------ text that only reads as an approval (P4)
+#
+# The raw backstop reads quoted text as commands (R25), so a search for the words `bawwab approve`, or a commit
+# message that quotes the user's command, came back "bawwab approval via tool call". These two shapes drop that
+# one reason, and only when the command means the same under any reading: the command is analysed again with the
+# literal text blanked, and the reason must go away (so nothing outside the literal produced it). Every other
+# reason stays. Anything else (a pipe into a shell, $(…), backquotes, eval, xargs, -exec, a redirect, a prefix or
+# wrapper word, rg --pre, git -c / -O, an unquoted mention) keeps the block as before.
+
+# grep/rg (search tools) and `git log|grep`: the pattern is an argument the program reads, never runs
+_LITERAL_SEARCH = {"grep", "egrep", "fgrep", "rg", "ag", "ack", "ugrep"}
+_LITERAL_GIT = {"log", "grep"}
+# readers a search may be piped into (they run nothing either)
+_LITERAL_SINKS = {"head", "tail", "wc", "sort", "uniq", "cut", "cat", "less", "more", "tr"}
+# options that make the program run a command or write a file: rg --pre, git grep -O/--open-files-in-pager,
+# git --config-env, --exec-path, --ext-diff, --textconv, --output
+_LITERAL_EXEC_OPT = re.compile(r"--pre(?:=|$)|-O|--open-files-in-pager|--config-env|--exec-path|--ext-diff"
+                               r"|--textconv|--output")
+
+
+def _literal_word(w: str, cwd: str) -> bool:
+    """A bare program name that resolves to a program under a system dir. Not a user bin dir: a `grep` or `rg`
+    Claude wrote there (`eval "$1"`, no bawwab in it) would run the pattern. `rg` that resolves to nothing passes
+    by name (Claude Code's shell defines it as a function running its own ripgrep), unless this call redefines it."""
+    if "/" in w or w != os.path.basename(w):
+        return False
+    if _known_system(w, cwd, True):
+        return True
+    return w == "rg" and _resolve_word(w, cwd, True) is None and _search_tool(w, cwd)
+
+
+def _literal_search(cmd: str, cwd: str) -> list[tuple[int, int]] | None:
+    """The spans of the quoted literals naming bawwab in a read-only search (see above), or None when the command
+    isn't one. One line, no `$`, backquote or backslash anywhere (so double quotes are as literal as single
+    quotes), balanced quotes; one simple command (grep, rg, ..., `git log`, `git grep`) optionally piped into
+    readers; no redirect, heredoc, prefix word or exec-capable option; and every `bawwab` sits inside quotes."""
+    if "\n" in cmd or any(c in cmd for c in "$`\\") or not _balanced(cmd):
+        return None
+    try:
+        segs = _segments(_tokens(cmd))
+    except ValueError:
+        return None
+    if not segs or len(segs) > 4 or any(seg.redirs or seg.inputs for seg in segs):
+        return None
+    if any(seg.piped != (i > 0) for i, seg in enumerate(segs)):
+        return None  # `a; b`, `a && b`: only a single command, or a plain pipeline of readers
+    first = segs[0].words
+    if not first or _strip_prefix(first) != first or not _literal_word(first[0], cwd):
+        return None
+    if first[0] == "git":
+        if len(first) < 2 or first[1] not in _LITERAL_GIT:
+            return None  # no `git -c x=y log`, no other subcommand
+    elif first[0] not in _LITERAL_SEARCH:
+        return None
+    if any(_LITERAL_EXEC_OPT.match(a) for a in first[1:]):
+        return None
+    for seg in segs[1:]:
+        w = seg.words
+        if not w or w[0] not in _LITERAL_SINKS or not _literal_word(w[0], cwd) or _strip_prefix(w) != w:
+            return None
+    spans: list[tuple[int, int]] = []
+    q = None
+    start = 0
+    for i, c in enumerate(cmd):
+        if q is None and c in "'\"":
+            q, start = c, i
+        elif q is not None and c == q:
+            spans.append((start, i + 1))
+            q = None
+    outside = "".join(cmd[a:b] for a, b in zip([0] + [e for _, e in spans], [s for s, _ in spans] + [len(cmd)]))
+    hits = [(a, b) for a, b in spans if "bawwab" in cmd[a:b]]
+    if "bawwab" in outside or not hits:
+        return None
+    return hits
+
+
+# Claude Code's commit idiom: git commit|tag -m "$(cat <<'EOF'\n…\nEOF\n)", the delimiter quoted (no expansion);
+# `git` at a command start (no VAR=x, env or other prefix word before it)
+_LITERAL_MSG = re.compile(
+    r"(?:^|(?<=[;&|(\n]))[ \t]*git[ \t]+(?:commit|tag)\b[^\n;&|`$<>]*?[ \t](?:-m|--message)(?:[ \t]+|=)"
+    r"\"\$\(cat[ \t]+<<(-)?[ \t]*'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*\n(.*?)\n(?(1)\t*)\2\n\)\"", re.S)
+_GIT_HOOKS_READING_MSG = ("commit-msg", "prepare-commit-msg", "applypatch-msg")
+
+
+def _git_config_redirects_hooks(paths: list[Path]) -> bool:
+    """Any of these git config files sets core.hooksPath, includes another file, or can't be read."""
+    for p in paths:
+        try:
+            if not p.exists():
+                continue
+            text = p.read_text(errors="replace")
+        except OSError:
+            return True
+        if re.search(r"(?im)^\s*(?:hookspath\s*=|\[\s*include)", text):
+            return True
+    return False
+
+
+def _hooks_read_the_message(cwd: str) -> bool:
+    """The repo has a hook that gets the commit message (commit-msg, prepare-commit-msg, applypatch-msg), or a
+    git config file (repo, worktree, ~/.gitconfig, XDG, /etc) sets core.hooksPath or includes another file, or it
+    can't tell. A hook Claude wrote could run the message text."""
+    home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+    if _git_config_redirects_hooks([home / ".gitconfig", xdg / "git" / "config", Path("/etc/gitconfig")]):
+        return True
+    if any(k in ("GIT_DIR", "GIT_COMMON_DIR") or k.startswith("GIT_CONFIG") for k in os.environ):
+        return True  # another repo or config than the one read here
+    d = Path(cwd)
+    for cur in [d, *d.parents]:
+        dotgit = cur / ".git"
+        if dotgit.is_file():  # a worktree: hooks and config live in the common dir
+            try:
+                line = dotgit.read_text(errors="replace").strip()
+            except OSError:
+                return True
+            if not line.startswith("gitdir:"):
+                return True
+            gitdir = Path(line[len("gitdir:"):].strip())
+            gitdir = gitdir if gitdir.is_absolute() else cur / gitdir
+            try:
+                common = (gitdir / "commondir").read_text().strip() if (gitdir / "commondir").exists() else "."
+            except OSError:
+                return True
+            common_dir = Path(common) if os.path.isabs(common) else gitdir / common
+            configs, hooks = [common_dir / "config", gitdir / "config.worktree"], common_dir / "hooks"
+        elif dotgit.is_dir():
+            configs, hooks = [dotgit / "config", dotgit / "config.worktree"], dotgit / "hooks"
+        else:
+            continue
+        return _git_config_redirects_hooks(configs) or any(os.path.lexists(hooks / h)
+                                                            for h in _GIT_HOOKS_READING_MSG)
+    return False
+
+
+def _literal_message_bodies(cmd: str, cwd: str) -> list[tuple[int, int]] | None:
+    """The spans of the commit idiom's heredoc bodies (above) when each is only text: no backquote or `$(`,
+    balanced parentheses and even quote counts (so shells whose $(…) parsing differs, such as bash 3.2, read it
+    the same), no line equal to its delimiter before the end; git and cat are system programs and no hook reads
+    the message."""
+    spans = []
+    for m in _LITERAL_MSG.finditer(cmd):
+        strip, delim, body = m.group(1) == "-", m.group(2), m.group(3)
+        if any((ln.lstrip("\t") if strip else ln) == delim for ln in body.split("\n")):
+            return None
+        if "`" in body or "$(" in body or body.count("'") % 2 or body.count('"') % 2:
+            return None
+        depth = 0
+        for c in body:
+            depth += (c == "(") - (c == ")")
+            if depth < 0:
+                return None
+        if depth:
+            return None
+        spans.append(m.span(3))
+    if not spans or not _known_system("git", cwd, True) or not _known_system("cat", cwd, True):
+        return None
+    if _hooks_read_the_message(cwd):
+        return None
+    return spans
+
+
+def _again_without(cmd: str, cwd: str, spans: list[tuple[int, int]], blank) -> _Acc | None:
+    """The command analysed again with each span (exactly there, nowhere else) replaced by blank(text)."""
+    out, last = [], 0
+    for a, b in sorted(spans):
+        if a < last:
+            return None
+        out += [cmd[last:a], blank(cmd[a:b])]
+        last = b
+    blanked = "".join(out) + cmd[last:]
+    if blanked == cmd:
+        return None
+    again = _Acc(4 * len(blanked) + 1_000_000)
+    again.root = blanked
+    try:
+        _whole_command_checks(blanked, again, cwd)
+        _bash(blanked, cwd, again)
+    except _TooComplex:
+        return None
+    return again
+
+
+def _literal_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
+    """Drop the approval reason when it came only from a search pattern or a commit-message heredoc (above)."""
+    if _APPROVAL not in acc.protected:
+        return
+    spans = _literal_search(cmd, cwd)
+    if spans is not None:
+        again = _again_without(cmd, cwd, spans, lambda t: t[0] + "x" + t[-1])
+    else:
+        spans = _literal_message_bodies(cmd, cwd)
+        if spans is None:
+            return
+        again = _again_without(cmd, cwd, spans, lambda t: "x" + re.sub(r"[^\n]", "", t))
+    if again is not None and _APPROVAL not in again.protected and not again.plain:
+        acc.protected.remove(_APPROVAL)
 
 
 def detect_install(inp: HookInput) -> Targets | Protected | None:
@@ -2995,9 +3309,10 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
             acc.budget = 4 * len(cmd) + 1_000_000
             acc.root = cmd
             try:
-                _whole_command_checks(cmd, acc)
+                _whole_command_checks(cmd, acc, inp.cwd)
                 _bash(cmd, inp.cwd, acc)
                 _write_text_only(cmd, inp.cwd, acc)
+                _literal_text_only(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")
     elif inp.tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):

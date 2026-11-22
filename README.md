@@ -339,8 +339,20 @@ The plugin adds:
 - **The `bawwab` MCP server** (see [MCP tools](#mcp-tools)).
 - **The `bawwab` command** (`bin/bawwab`, a small launcher for the plugin's own copy, in the same virtualenv as
   the hooks). Claude Code puts it on the `PATH` of Claude's Bash tool, so you don't need the CLI install below.
-  Your `!` shell may not have it on its `PATH`; when it doesn't, Bawwab's messages print the launcher's full
-  path instead of `bawwab`, so you can copy the command as shown.
+  Your `!` shell may not have it on its `PATH`, so Bawwab's messages print a launcher path instead of `bawwab`
+  (as `~/…`), and you can copy the command as shown. With a plugin installed from a marketplace, that path is a
+  stable launcher in the plugin's data folder (`~/.claude/plugins/data/bawwab-<marketplace>/bin/bawwab`), which
+  Bawwab points at the installed version at every session start, so a command you copied earlier still works
+  after an upgrade.
+- **Optional, a short `bawwab` command:** run `! bawwab setup --link` yourself (with the launcher path the
+  messages show). It writes a 3-line `bawwab` script into `~/.local/bin` (or `~/bin`), whichever is on your
+  `PATH`, that runs the launcher. From then on, messages print `! bawwab approve <id>`, but only while the first
+  `bawwab` on `PATH` is exactly that script; if it changes, or another `bawwab` comes first, they go back to the
+  full path. Claude can't run `setup --link`, and the gate refuses, in the forms it recognises, Claude writing a
+  file called `bawwab` into a `PATH` dir or a `bawwab` alias or function into a file. Undo with
+  `! bawwab setup --unlink`. The trade-off: a full path can't be
+  shadowed; a bare name is checked when the message is printed, not when you type it, and Bawwab can't see your
+  shell's own aliases, functions or `PATH` order. See [the threat model](docs/threat-model.md) (5.7).
 
 If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
 once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
@@ -410,14 +422,24 @@ bawwab effects                 # what is on hold, with every finding and evidenc
 bawwab watch --install         # background watcher as a user service (systemd / launchd)
 bawwab watch --once            # one pass now, then print the status
 bawwab status                  # what is quarantined or on hold, across every agent
+
+# Working on Bawwab itself
+bawwab allow-env <repo-dir>    # commands run in that repo may set BAWWAB_HOME to a dir inside it (tests)
 ```
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
 
-In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. If `bawwab` isn't on your
-shell's `PATH` (plugin only), use the command exactly as Bawwab's message prints it, which names the plugin's
-launcher by its full path. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`, `level`
-and `level high`, but never `approve`, `reject`, `init --skip` or a lower level, by any name or path.
+In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. With the plugin only,
+use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`),
+or `bawwab` after `setup --link`. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`,
+`setup --unlink`, `allow-env --list`, `level` and `level high`, but never `approve`, `reject`, `init --skip`,
+`setup --link`, `allow-env` or a lower level, by any name or path.
+
+`allow-env` is for developing Bawwab: Bawwab refuses any command that sets `BAWWAB_HOME`, because a nested
+Claude Code pointed at a copied, edited store would skip your decisions. After `! bawwab allow-env <repo>`,
+a command run in that repo may set `BAWWAB_HOME` to a dir inside it (`BAWWAB_HOME=.tmp/bw uv run pytest`), as
+long as it doesn't run `claude` or change `HOME`. Bawwab's hooks never check calls from a Claude Code started
+with such a home: it gets read-only tools only.
 
 ### MCP tools
 

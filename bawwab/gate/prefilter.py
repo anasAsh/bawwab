@@ -32,7 +32,8 @@ _FIND_ACTS = re.compile(r"-delete|-exec|-ok|[|`]|\$\(|\bfor\b")
 # A user-only bawwab subcommand in the argv of any command, whatever the command word is called (R55): a renamed
 # or copied bawwab (ln -s <launcher> /tmp/bw; /tmp/bw approve AB12) has no "bawwab" in its command line.
 _PROTECTED_TAIL = re.compile(r"(?<![\w./-])(?:approve|reject)(?![\w./-])|(?<![\w./-])init\s[^;&|\n]*--sk"
-                             r"|(?<![\w./-])effects\s[^;&|\n]*--re")
+                             r"|(?<![\w./-])effects\s[^;&|\n]*--re|(?<![\w./-])setup\s[^;&|\n]*--l"
+                             r"|(?<![\w./-])allow-env(?![\w./-])")
 # Path-like words (a slash, not a URL): the pre-filter resolves these to spot a bawwab executable under any name.
 _PATH_WORD = re.compile(r"(?<![\w:/.~$-])(?:~|\.{1,2}|\$HOME|\$\{HOME\})?/[^\s;&|()<>`'\"]*|(?<![\w/])[\w.-]+/[^\s;&|()<>`'\"]*")
 _MAX_PATH_WORDS = 32
@@ -149,7 +150,7 @@ _SHELL_NAMES = {"sh", "bash", "dash", "zsh", "ksh"}
 _RUNNER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php")
 _MAKEFILES = ("GNUmakefile", "makefile", "Makefile")
 _MAKE_INCLUDE = re.compile(r"(?m)^\s*-?s?include\s")
-_SUBCMD_WORD = re.compile(r"\b(?:approve|reject|init|effects)\b")
+_SUBCMD_WORD = re.compile(r"\b(?:approve|reject|init|effects|setup|allow-env)\b")
 # a cheap test before splitting: a runner word, or a path command word at a segment start
 _MAY_RUN = re.compile(r"(?<![\w.-])(?:sh|bash|dash|zsh|ksh|make|gmake|source|\.|python[0-9.]*|node|nodejs|perl|ruby|bun"
                       r"|deno|php|MAKE\)|MAKE\})(?![\w.-])"

