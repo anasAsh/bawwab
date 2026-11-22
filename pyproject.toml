@@ -60,6 +60,7 @@ markers = [
     "real_osv: use the real OSV client (against a fake server) instead of the no-network stub",
     "timing: asserts an absolute time limit (run separately in CI, not blocking)",
     "real_docker: let the test reach the real Docker daemon (deep-mode sandbox)",
+    "recall: the malicious-set recall gate (bench/recall_gate.py); offline, runs in CI with -m \"not timing\"",
 ]
 
 [dependency-groups]

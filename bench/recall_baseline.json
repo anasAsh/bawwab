@@ -1,0 +1,1501 @@
+{
+ "about": "per-sample verdict and counted rules; see bench/recall_gate.py",
+ "bench": {
+  "malicious/adv-fake-json-verdict": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/adv-install-verified-claim": {
+   "rules": [
+    "install-script",
+    "install-script.remote",
+    "remote-code.pipe-shell"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/adv-quote-breakout": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "malicious/adv-reviewer-preapproved": {
+   "rules": [
+    "injection.covert-action",
+    "injection.override"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/adv-scanner-system-note": {
+   "rules": [
+    "injection.override"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/adv-test-fixture-claim": {
+   "rules": [
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/cred-js-env-dump": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/cred-js-ssh-https": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/cred-py-aws-post": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/cross-notes-steer-mailer": {
+   "rules": [
+    "cross-server.reference"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/cross-weather-steer-issues": {
+   "rules": [
+    "cross-server.reference"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/inject-html-comment": {
+   "rules": [
+    "injection.covert-action",
+    "injection.html-comment"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/inject-skill-ssh": {
+   "rules": [
+    "injection.covert-action",
+    "injection.override"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/inject-tool-poisoning": {
+   "rules": [
+    "credential-access"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/install-curl-pipe-sh": {
+   "rules": [
+    "install-script",
+    "install-script.remote",
+    "remote-code.pipe-shell"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/install-node-npmrc-steal": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/install-setup-py-system": {
+   "rules": [
+    "install-script",
+    "install-script.remote",
+    "remote-code.eval-fetch",
+    "remote-code.pipe-shell"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/obf-js-eval-hex": {
+   "rules": [
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/obf-js-function-atob": {
+   "rules": [
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/obf-py-exec-b64": {
+   "rules": [
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/plugin-hook-curl-env": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "plugin.hook-broad",
+    "plugin.hook-network"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/plugin-hook-nc-ssh": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "plugin.hook-network"
+   ],
+   "verdict": "malicious"
+  },
+  "malicious/remote-js-fetch-eval": {
+   "rules": [
+    "remote-code.eval-fetch"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/remote-py-exec-urlopen": {
+   "rules": [
+    "remote-code.eval-fetch"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/remote-skill-curl-bash": {
+   "rules": [
+    "remote-code.pipe-shell"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/shadow-bcc-email": {
+   "rules": [
+    "tool-shadowing"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/shadow-redirect-payments": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "malicious/typosquat-context7-mpc": {
+   "rules": [
+    "identity.typosquat"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/typosquat-server-filesytem": {
+   "rules": [
+    "identity.typosquat"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/unicode-tag-chars-tool": {
+   "rules": [
+    "injection.hidden-unicode"
+   ],
+   "verdict": "suspicious"
+  },
+  "malicious/unicode-zero-width-skill": {
+   "rules": [
+    "injection.hidden-unicode"
+   ],
+   "verdict": "suspicious"
+  }
+ },
+ "datadog": {
+  "npm/7715-permissions-shared": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/@3stripes@utils": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/@airtel-web@clickstream": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/@copilot-web-widgets@ai-writer": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/@google-pay-trust@start": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/@kui-react@checkbox": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/@nx-frontend@bonx-microfrontends": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/@sequoia-engineering@eureka-utilities": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/@swiggy-private@js-utils": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/@tw-utils@static": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/actions-project-version-check": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/adco-warp-sdk": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/aesthetic-crimson-bird": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/apache-httpclient2": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/assistant_mammal_z3n": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/atm-droid": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/baileys-ud": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/basic-with-react-hooks": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/bayu-bubursumsum91-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/bc-scroll-link": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/build-tracker-n5p1": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/commitlint-plugin-jira-type-rules": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/cosmos-hub-docs-site": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/createarrayfrommixed": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/cursor-always-local": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/dataflow-unified": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/deno-r4-basic": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/ecosystem_ui": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/eds-charts-react": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/eka-kupang72-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/elf-stats-midnight-rocket-499": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/elf-stats-mistletoe-cookie-256": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/elf-stats-snuggly-workshop-421": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/elf-stats-sparkly-sled-484": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/epic-config": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/equivalent_dove_z3n": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/example-infinite-scroll": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/flipper-plugins": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/gram-utilz": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/gunbazaar": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/hoodle-plugins-manager": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/http-helmet": {
+   "rules": [
+    "exfil.combo"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/import-remotes": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/interim_mammal_z3n": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/internallib_v52": {
+   "rules": [
+    "remote-code.eval-fetch",
+    "remote-code.pipe-shell"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/irma-tahutek2-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/jazz_token-authorizer": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/joko-kentang26-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/joko-rendang18-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/json-dec": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/kl-b2c-ui-kit": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/kresna-tempe89-sukiwir": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/kurniawan-sambel87-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/lana-docs-site": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/mad-2.4.1.2.2.8": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/mainz": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/maman-kue25-breki": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/mangeto": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/msal-node1": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/my-little-package-library": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/new-route-matrix": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/nf-graph-examples": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/nilepkg6": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/node-calculator-7bea": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/node-calculator-yqhi": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/node-winston-logger": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/npmkoopxxx": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/nurul-tek38-breki": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/percy-cake-docker": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/phantom-chartwinds": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/pobreiaia33": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/pocpoc2626": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/podium-pride": {
+   "rules": [
+    "install-script",
+    "install-script.remote",
+    "remote-code.eval-fetch"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/postcss-minify-selector-parser": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/puppeteerrequestinterceptor": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/putra-tapai67-remi": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/redux-saga-devtool": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/rita-remoteista": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/rt-footer": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/rtxbbtyols": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/seatalk-protocol": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/siren-lament": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/tes4343rt4t": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/testin-elengo": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/timeout-ts": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/tomi-lutis95-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/tuti-lapis14-sukiwir": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/twilio-voice-react-native-reference-server": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/typespec-validation": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/udin-ronde53-riris": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/umi-gado-gado15-sluey": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/united_wren_z3n": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/utomo-lapis78-sukiwir": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/uxline": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/vite-plugin-remove": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/wallet-connector-rce": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "npm/wati-dradag98-miaww": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "npm/web3tokn": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/wfui-dsm-react-ui": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "npm/xor4096": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/282828282828282828": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/EZBEAMER": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/accesspdp": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/adandv": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/artifact-lab-3-package-24ddbc49": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/atlasctf-21-prod-02": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/babetmf": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/blazeted": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/boogishell": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/bytesip": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/cloudfix": {
+   "rules": [
+    "obfuscation.blob",
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/colorinal": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/colorsapi": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/colourplus": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/cryptowallet-safety": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/cryztalnitro": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/definitely-not-requests": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/dependency-confusion12": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/diaossama-test1": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/dlocal-cli": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/dpy-bot": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/dtb-bytehouse": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/easyrequests": {
+   "rules": [
+    "obfuscation.blob",
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/esqcandyosintcandy": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqccpongcpu": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqcvinfogrand": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqgamemineping": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqhackedlgtbpip": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqinfostrosint": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqintstringcraft": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqmaskgrandcc": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqpullhackedstudy": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/esqvisaverload": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/evannlegoat": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/example-vizsla-tutorial": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/forgyp": {
+   "rules": [
+    "obfuscation.blob",
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/formatter-test-package": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/gasmanez": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/gequests": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host",
+    "identity.typosquat"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/hugebbc": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/infosys": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/j5gnpfweguiwerbngpiutbgn0iutb0pfwfef": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/libhackedloadtool": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/libpingreintel": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/lightsequ": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/matplotlibp": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/miantested": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/microsoft-helper": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/midi-melody-extraction": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/morecolor": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/myshellcode": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/myshellcode2": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/nuest": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/omgd": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/ploghandle": {
+   "rules": [
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/prolificdreamer": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/pthttp": {
+   "rules": [
+    "obfuscation.blob"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/pussysus": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/py-intverpyw": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/py-pipcandylgtb": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/py-pushpullsuper": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/py-studynvidiamc": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/pyfilget": {
+   "rules": [
+    "credential-access"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/pysisphus": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/pythonhttpx": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/readycharz": {
+   "rules": [
+    "obfuscation.blob",
+    "obfuscation.eval-decoded"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/reallydonothing": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/request-supporter": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/robloxapiaccess": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/saazsdz": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfgrandstrpyw": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfguiurlpush": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfhttpmcpush": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfinfopushpip": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfmaskgamepull": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfpingintelvm": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfsupergameencode": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/selfultraintelvisa": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/sklearns": {
+   "rules": [
+    "exfil.host",
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/solidity-build-guard": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/speech-dtw": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/stripe-client-py": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/tarseir": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/testinghelloma": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/thisismytest123": {
+   "rules": [
+    "exfil.host",
+    "install-script",
+    "install-script.remote",
+    "remote-code.eval-fetch"
+   ],
+   "verdict": "malicious"
+  },
+  "pypi/tpcandykillget": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tpccpinghacked": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tpcraftvisasuper": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tpintgamevirtual": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tplibhydrainfo": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tpmaskvisacontrol": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/tpsplitpushpush": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/useragentclient": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/usvr-agent": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/v2mlx-gml": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/woodwhalehack114": {
+   "rules": [
+    "install-script"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/xboxredeemer": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/xolomayflwnfmy": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "pypi/xolotabiamysla": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "exfil.host"
+   ],
+   "verdict": "suspicious"
+  },
+  "pypi/xsilyxd": {
+   "rules": [
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  }
+ },
+ "datadog_missing": [],
+ "replicas": {
+  "cross_server_check": {
+   "rules": [
+    "cross-server.reference"
+   ],
+   "verdict": "suspicious"
+  },
+  "cross_server_shadowing/update_v2": {
+   "rules": [
+    "rugpull.text-changed"
+   ],
+   "verdict": "suspicious"
+  },
+  "cross_server_shadowing/v1": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "cross_server_shadowing/v2": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "invariant_tool_poisoning/update_v2": {
+   "rules": [
+    "credential-access",
+    "rugpull.text-changed"
+   ],
+   "verdict": "suspicious"
+  },
+  "invariant_tool_poisoning/v1": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "invariant_tool_poisoning/v2": {
+   "rules": [
+    "credential-access"
+   ],
+   "verdict": "suspicious"
+  },
+  "mcp_typosquat/update_v2": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "mcp_typosquat/v1": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "mcp_typosquat/v2": {
+   "rules": [
+    "credential-access",
+    "exfil.combo"
+   ],
+   "verdict": "malicious"
+  },
+  "mcp_typosquat/v2_named": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "identity.typosquat"
+   ],
+   "verdict": "malicious"
+  },
+  "postmark_rugpull/update_v2": {
+   "rules": [
+    "rugpull.text-changed"
+   ],
+   "verdict": "suspicious"
+  },
+  "postmark_rugpull/v1": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "postmark_rugpull/v2": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "shai_hulud_postinstall/update_v2": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  },
+  "shai_hulud_postinstall/v1": {
+   "rules": [],
+   "verdict": "clean"
+  },
+  "shai_hulud_postinstall/v2": {
+   "rules": [
+    "credential-access",
+    "exfil.combo",
+    "install-script",
+    "install-script.remote"
+   ],
+   "verdict": "malicious"
+  }
+ }
+}
