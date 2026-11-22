@@ -122,7 +122,7 @@ def test_linked_entry_still_has_its_code_scanned(sandbox):
     g = sb.hook("gate", _bash(sb, cmd))
     assert g.decision() == "deny" and "MALICIOUS" not in g.reason()
     sb.apply([{"op": "approve", "id": _pending(g), "force": False}])
-    assert sb.hook("gate", _bash(sb, cmd)).decision() == "none"
+    assert sb.hook("gate", _bash(sb, cmd)).decision() in ("none", "status")  # passes: at most the user-only status line
     assert len(_links(sb)) == 1  # the allowed call linked the entry
     shutil.copy(sb.vendor / "mcp_typosquat-v2" / "index.js", srv / "index.js")  # code swapped before the install
     _set_server(sb, sb.proj, "fs", {"type": "stdio", "command": "node", "args": [f"{srv}/index.js"],
@@ -147,7 +147,7 @@ def test_approval_in_project_a_does_not_accept_project_b(sandbox):
     g = sb.hook("gate", _bash(sb, cmd))
     assert g.decision() == "deny" and "MALICIOUS" not in g.reason(), g.reason()
     sb.apply([{"op": "approve", "id": _pending(g), "force": False}])
-    assert sb.hook("gate", _bash(sb, cmd)).decision() == "none"
+    assert sb.hook("gate", _bash(sb, cmd)).decision() in ("none", "status")  # passes: at most the user-only status line
     spec = {"type": "stdio", "command": "node", "args": ["srv.js"], "env": {"NODE_PATH": "lib"}}
     _set_server(sb, a, "fs", spec)
     pa = sb.hook("post", sb.post_input(_bash(sb, "true")))

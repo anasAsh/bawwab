@@ -72,7 +72,7 @@ def test_env_loader_approval_in_a_does_not_carry_to_b(sandbox):
     assert ga.decision() == "deny" and "protected action" in ga.reason(), ga.reason()
     m = run_eval.PENDING_RE.search(ga.reason())
     sb.apply([{"op": "approve", "id": m.group(1), "force": False}])
-    assert _gate(sb, cmd, a).decision() == "none"
+    assert _gate(sb, cmd, a).decision() in ("none", "status")  # passes: at most the user-only status line
     hash_a = envkeys.server_entry_hash("node", ["srv.js"], {"NODE_PATH": "../pl"}, str(a))
     hash_b = envkeys.server_entry_hash("node", ["srv.js"], {"NODE_PATH": "../pl"}, str(b))
     assert _links(sb) == [envkeys.entry_meta_key(hash_a)]

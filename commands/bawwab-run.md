@@ -1,13 +1,15 @@
 ---
 description: Bawwab — show what is on hold, help you decide on each item, then offer a full scan
-allowed-tools: Bash(bawwab effects), Bash(bawwab init --scan), Bash(bawwab scan --all), AskUserQuestion
+allowed-tools: Bash(bawwab effects), Bash(bawwab init --scan), Bash(bawwab scan --all), Read, AskUserQuestion
 ---
 
 The user ran /bawwab-run to see what Bawwab (the security scanner for MCP servers, skills and plugins) is doing.
 
 1. Run `bawwab effects`.
-   - If the call is blocked with a "⛔ bawwab" message, things are on hold: follow that message's own
-     instructions (show it as is, ask about each item with AskUserQuestion, give the commands back). Stop there.
+   - If the call is blocked with a "⛔ bawwab" message, things are on hold and your Bash is paused. The user
+     already sees the block's table. Read the details file it names (the Read tool still works) and show what
+     is on hold from it, in a code block. Then ask about each item as below. Stop after that: the full scan
+     must wait until nothing is on hold.
    - If it prints items on hold, show its output in a code block and ask about each item with AskUserQuestion
      (at most 4 per call; options Keep, Remove, Not now). In each question, name the item and its verdict, and
      when the output has a "Claude's recommendation (advice, not a verdict)" line for it, include that

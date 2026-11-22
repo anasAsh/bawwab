@@ -48,8 +48,9 @@ def test_table_has_one_row_per_item_and_the_commands_once(held):
     assert any("plugin p1" in r and "suspicious" in r for r in rows)
     assert any("plugin p2" in r and "malicious" in r for r in rows)
     assert text.count(cmd("approve")) == 2  # one keep line, one --force line for the malicious item
-    assert f"! {cmd('approve')} {ids['plugin p1']}\n" in text
-    assert f"! {cmd('approve --force')} {ids['plugin p2']}\n" in text
+    assert f"! {cmd('approve')} {ids['plugin p1']}  # plugin p1\n" in text  # each command names its item
+    assert f"! {cmd('approve --force')} {ids['plugin p2']}  # plugin p2\n" in text
+    assert f"! {cmd('reject')} {ids['plugin p1']} {ids['plugin p2']}  # plugin p1, plugin p2\n" in text  # real ids
     assert f"! {cmd('effects')}" in text and "AskUserQuestion" in text
     assert "[med]" not in text and "[high]" not in text  # evidence lives in `bawwab effects`
 

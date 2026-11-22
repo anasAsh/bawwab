@@ -346,6 +346,8 @@ class HookResult:
         hso = d.get("hookSpecificOutput") or {}
         if hso.get("permissionDecision"):
             return hso["permissionDecision"]
+        if not hso.get("additionalContext") and str(d.get("systemMessage", "")).startswith("bawwab: scanned "):
+            return "status"  # the user-only "scanned <item>: clean" line after an install passed: no decision
         if hso.get("additionalContext") or d.get("systemMessage"):
             return "context"
         return "other"
@@ -558,8 +560,9 @@ def run_normal(sb: Sandbox, e: dict) -> dict:
     rec = run_entry(sb, {**e, "family": e.get("category", "normal")})
     notices = []
     for g in rec["gate"]:
-        if g["decision"] != "none":
+        if g["decision"] not in ("none", "status"):  # a status line is counted on its own, below
             notices.append(f"gate:{g['decision']}:{g['kind']}")
+    rec["statuses"] = sum(1 for g in rec["gate"] if g["decision"] == "status")
     if rec["post"]["decision"] != "none":
         notices.append(f"post:{rec['post']['decision']}:{rec['post']['kind']}")
     if rec["probe"]["decision"] != "none":
@@ -613,7 +616,7 @@ def run_latency(sb: Sandbox) -> dict:
     for i in range(LATENCY_N):
         d = sb.pre("Bash", command=f"claude mcp add calc{i} -- python3 {sb.vendor}/lat/clean{i}/server.py")
         r = sb.hook("gate", d)
-        assert r.decision() in ("none", "ask"), r.out[:400]
+        assert r.decision() in ("none", "status", "ask"), r.out[:400]
         full.append(r.ms)
         cached.append(sb.hook("gate", d).ms)
     out["full_gate_install_uncached_scan"] = _stats(full)

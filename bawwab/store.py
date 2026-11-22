@@ -383,23 +383,38 @@ class Store:
                 (_iso(_now()), event, json.dumps(fields, default=str)),
             )
 
-    def add_warning(self, text: str) -> None:
-        """Queue a warning for the user's next message (same text is not queued twice until taken)."""
+    def add_warning(self, text: str, key: str | None = None) -> None:
+        """Queue a warning for the user's next message (same text is not queued twice until taken). key: the report
+        key it is about; it is dropped, untold, when that key is approved or rejected before it is shown."""
         with self._tx():
             if self._conn.execute("SELECT 1 FROM warnings WHERE text=?", (text,)).fetchone() is None:
-                self._conn.execute("INSERT INTO warnings(text, ts) VALUES (?,?)", (text, _iso(_now())))
+                cur = self._conn.execute("INSERT INTO warnings(text, ts) VALUES (?,?)", (text, _iso(_now())))
+                if key:  # in meta, so the warnings table keeps its schema
+                    self._conn.execute("INSERT OR REPLACE INTO meta(k, v) VALUES (?,?)",
+                                       (f"warning-key:{cur.lastrowid}", key))
         _touch_flag()
 
     def take_warnings(self) -> list[str]:
+        """The queued warnings, once; a warning about an item decided since it was queued is dropped."""
         with self._tx():
             rows = self._conn.execute("SELECT id, text FROM warnings ORDER BY id").fetchall()
+            keys: dict[int, str] = {}
             if rows:
                 self._conn.execute("DELETE FROM warnings WHERE id<=?", (rows[-1]["id"],))
+                for m in self._conn.execute("SELECT k, v FROM meta WHERE k LIKE 'warning-key:%'").fetchall():
+                    try:
+                        wid = int(m["k"].split(":", 1)[1])
+                    except ValueError:
+                        continue
+                    if wid <= rows[-1]["id"]:
+                        keys[wid] = m["v"]
+                        self._conn.execute("DELETE FROM meta WHERE k=?", (m["k"],))
             try:  # inside the write lock (a concurrent add_warning touches the flag after commit); also clears stale flags
                 _flag_path().unlink()
             except OSError:
                 pass
-        return [r["text"] for r in rows]
+        return [r["text"] for r in rows
+                if not (r["id"] in keys and (self.is_approved(keys[r["id"]]) or self.is_rejected(keys[r["id"]])))]
 
     # --- inventory ---
     def get_inventory_seen(self, ident: str) -> tuple[str, str, str] | None:

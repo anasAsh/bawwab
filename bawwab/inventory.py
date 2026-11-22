@@ -238,4 +238,6 @@ def background(cwd: Path, full: bool = False) -> int:
 def hook_output(event: str, warnings: list[str]) -> dict:
     """Queued warnings go to the user only (systemMessage), never into Claude's context: they are about the
     machine, not the conversation the user happens to be in, and Claude turned them into unrelated work."""
-    return {"systemMessage": "\n".join(sanitise(w, 400) for w in warnings)}
+    from bawwab.report import sanitise_lines
+
+    return {"systemMessage": "\n".join(sanitise_lines(w, 400) for w in warnings)}

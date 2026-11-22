@@ -75,7 +75,8 @@ def test_gate_by_level(level, verdict, out):
         assert "permissionDecision" not in r["hookSpecificOutput"]  # no allow: normal permissions decide
         assert f"({level} level, not blocked)" in r["systemMessage"]
         assert r["hookSpecificOutput"]["additionalContext"] == r["systemMessage"]
-        assert store.take_warnings()  # Claude also hears it on the next prompt
+        assert store.take_warnings() == []  # said once, at the call: not again at the next prompt
+        assert verdict.value.upper() in r["systemMessage"].splitlines()[1]  # one line per item, real newlines
 
 
 def test_self_protection_blocks_at_low():
@@ -133,7 +134,7 @@ def test_effect_check_by_level(proj, level, verdict, held):
     assert bool(fx.quarantined(store)) is held
     if not held:
         warnings = store.take_warnings()
-        assert any(f"({level} level, not blocked): plugin p1 is {verdict.value}" in w for w in warnings)
+        assert any(f"({level} level, not blocked): plugin p1 is {verdict.value.upper()}" in w for w in warnings)
         assert fx.pre_tool_decision("Bash", proj) is None
         assert fx.refresh(proj, scan=FakeScan(verdict)) == [] and store.take_warnings() == []  # warned once
 

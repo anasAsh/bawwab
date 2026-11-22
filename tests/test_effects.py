@@ -113,7 +113,8 @@ def test_suspicious_server_quarantined_then_approved(env):
     deny = fx.pre_tool_decision("Bash", proj, scan=scan)
     reason = deny["hookSpecificOutput"]["permissionDecisionReason"]
     assert deny["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert f"! {B} approve {ids[0]}" in reason and f"! {B} reject <ID>" in reason
+    assert f"! {B} approve {ids[0]}  # MCP server evil" in reason and f"! {B} reject {ids[0]}  # MCP server evil" in reason
+    assert "<ID>" not in reason
     assert "MCP server evil" in reason and "x.rule" in reason
     assert fx.pre_tool_decision("Read", proj, scan=scan) is None
     assert fx.pre_tool_decision("Grep", proj, scan=scan) is None

@@ -133,9 +133,11 @@ def test_table_has_an_advice_column():
 def test_table_tells_claude_to_relay_the_advice_and_the_commands():
     text = fx.quarantine_text(_entries())
     instr = text.splitlines()[-1]
-    assert instr.startswith("For Claude:")
-    assert "AskUserQuestion" in instr and "recommendation" in instr and "advice, not a verdict" in instr
-    assert "exact command lines" in instr and "Never run approve or reject yourself" in instr
+    assert instr.startswith("  For Claude:") and len(instr) < 260  # one short line, kept inside the block
+    assert "AskUserQuestion" in instr and "ADVICE is advice, not a verdict" in instr
+    assert "Never run approve or reject yourself" in instr  # said even when the bawwab skill isn't loaded
+    assert f"Read {fx.details_path()}" in instr  # the details stay reachable while Bash is paused
+    assert "For Claude" not in "\n".join(text.splitlines()[:-1])  # the long paragraph is gone
 
 
 def test_table_never_prints_advice_text():

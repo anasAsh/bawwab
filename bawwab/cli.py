@@ -31,8 +31,8 @@ def _build() -> argparse.ArgumentParser:
     a.add_argument("--force", action="store_true", help="override a malicious verdict")
     r = sub.add_parser("reject", help="reject a pending install")
     r.add_argument("id", nargs="+", help="one or more ids")
-    e = sub.add_parser("explain", help="explain a finding")
-    e.add_argument("id")
+    e = sub.add_parser("explain", help="explain a finding, or show the full report of a blocked or held item")
+    e.add_argument("id", nargs="+", help="finding ids (Fxxxxxx), or approval/quarantine ids from a block")
     d = sub.add_parser("diff", help="show what changed since the trusted snapshot")
     d.add_argument("name", help="trust name (e.g. npm:pkg) or a target spec")
     sub.add_parser("gate", help="PreToolUse hook: read hook JSON on stdin, print a decision (always exits 0)")
@@ -541,9 +541,12 @@ def main(argv: list[str] | None = None) -> int:
             for line in diff_since_trusted(_spec(args.name), open_store()).splitlines():
                 print(sanitise(line, 300))
             return 0
-        out = explain(args.id, open_store())
-        print(out)
-        return 1 if out.startswith("unknown finding id") else 0
+        store, rc = open_store(), 0
+        for n, i in enumerate(dict.fromkeys(args.id)):
+            out = explain(i, store)
+            print(("\n" if n else "") + out)
+            rc = 1 if out.startswith("unknown id") else rc
+        return rc
     except Exception as e:  # noqa: BLE001 - never show a traceback
         print(f"error: {sanitise(f'{type(e).__name__}: {e}', 300)}", file=sys.stderr)
         return 3
