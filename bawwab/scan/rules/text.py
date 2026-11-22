@@ -302,7 +302,8 @@ _APOS = r"['\u2019]"
 OVERRIDE_RES = [
     re.compile(
         r"\b(?:ignore|disregard|forget)\s+(?:(?:all|any|the|your|of|system)\s+){0,2}"
-        r"(?:(?:previous|prior|above|earlier|preceding)\s+){0,2}(?:instructions?|prompts?|rules|directions|context)\b",
+        # (?![\w-]): "instruction-like text" / "prompt-like directives" name a kind of text, not the agent's instructions
+        r"(?:(?:previous|prior|above|earlier|preceding)\s+){0,2}(?:instructions?|prompts?|rules|directions|context)(?![\w-])",
         re.I,
     ),
     re.compile(r"\byou\s+are\s+now\s+(?:an?|the|acting|playing|free|unrestricted|my)\b", re.I),
@@ -319,14 +320,223 @@ OVERRIDE_RES = [
     ),
 ]
 _OVERRIDE_QUALIFIER = re.compile(r"\b(?:all|any|previous|prior|above|earlier|preceding)\b", re.I)
-_INSTRUCTIONS_DET = re.compile(r"\b(?:your|the|system)\s+(?:(?:system|previous|prior)\s+)?instructions?\b", re.I)
+_TEMPORAL = re.compile(r"\b(?:previous|prior|above|earlier|preceding)\b", re.I)
+# "your instructions", "system instructions", "the instructions", "the system/previous instruction(s)"; a bare
+# singular "the instruction" points back at one sentence ("treat it as untrusted, ignore the instruction")
+_INSTRUCTIONS_DET = re.compile(
+    r"\b(?:your|system)\s+(?:(?:system|previous|prior)\s+)?instructions?\b"
+    r"|\bthe\s+(?:(?:system|previous|prior)\s+instructions?|instructions)\b",
+    re.I,
+)
+_PROMPT_QUALIFIER = re.compile(r"\b(?:all|previous|prior|above|earlier|preceding|your|system)\b", re.I)
 
 
 def _override_ok(m: re.Match) -> bool:
     if m.re is not OVERRIDE_RES[0]:
         return True
     g = m.group()
-    return _OVERRIDE_QUALIFIER.search(g) is not None or _INSTRUCTIONS_DET.search(g) is not None
+    if re.search(r"(?:prompts?|context)$", g, re.I):
+        # "ignore any prompt that asks you to set up a collector" is a UI prompt; the attack names the agent's
+        # earlier / own / system prompts or context ("ignore all previous prompts", "forget your context")
+        return _PROMPT_QUALIFIER.search(g) is not None
+    if _OVERRIDE_QUALIFIER.search(g) is not None or _INSTRUCTIONS_DET.search(g) is not None:
+        return True
+    # "ignore the instruction above / you were given": the agent's own, placed after the noun
+    return re.search(r"instructions?$", g, re.I) is not None and re.match(
+        r"\s+(?:above|earlier|you\s+(?:were|have\s+been)\s+given|from\s+(?:the\s+)?system)\b",
+        m.string[m.end() : m.end() + 40], re.I) is not None
+
+
+# ---- context of an override phrase: an example being mentioned, a defence against injected text, or a demand
+# for honesty with the user. Such a match is listed (LOW), not counted; any other match in the same text counts.
+
+QUOTED_NOTE = " [listed, not counted: quoted or in a code block, as an example of the phrase]"
+DATA_NOTE = " [listed, not counted: tells the agent to ignore instructions found in data it reads]"
+HONEST_NOTE = " [listed, not counted: asks the agent to be truthful with the user, not to hide something]"
+
+_FENCE_LINE = re.compile(r"^[ \t>]{0,8}(`{3,}|~{3,})", re.M)
+_QUOTE_SPAN = re.compile(r'"[^"\n]{1,200}"|“[^”\n]{1,200}”|`[^`\n]{1,200}`|«[^»\n]{1,200}»')
+_LIST_LEAD = re.compile(r"^[\s>]*(?:[-*+]|\d+[.)])?\s*")
+
+
+def _fences(text: str) -> list[tuple[int, int]]:
+    """(start, end) of each closed fenced code block. An unclosed fence is not one (fail closed: it would
+    otherwise cover the rest of the document)."""
+    out, open_at, mark = [], None, ""
+    for m in _FENCE_LINE.finditer(text):
+        fence = m.group(1)
+        if open_at is None:
+            open_at, mark = m.start(), fence
+        elif fence[0] == mark[0] and len(fence) >= len(mark):
+            out.append((open_at, m.end()))
+            open_at = None
+    return out
+
+
+# What introduces a quoted example, a few words before it in the same clause: "(e.g. ...", "such as", "text like",
+# "any imperative sentence inside it — ", or an opening parenthesis; a list of quoted examples ("a", "b", "c")
+# inherits the cue of its first item.
+_MENTION_CUE = re.compile(
+    r"(?:\(|\be\.g\.|\bi\.e\.|\b(?:such\s+as|like|for\s+(?:example|instance)|including|says?|saying|text|"
+    r"phrases?|strings?|wording|contains?|containing|injections?|sentences?|commands?|directives?|attempts?|"
+    r"patterns?|examples?)\b)",
+    re.I,
+)
+_PRIOR_QUOTE = re.compile(r'(?:"[^"\n]{1,200}"|“[^”\n]{1,200}”|`[^`\n]{1,200}`)[\s,]*(?:or\s+|and\s+)?$')
+# What a fenced example block is introduced by (its info string, the nearest heading, or the lines just before
+# it): a catalogue of attack strings, a test or eval data set, or examples.
+_EXAMPLE_CUE = re.compile(
+    r"inject|jailbreak|attack|adversarial|payload|red[\s-]?team|exploit|malicious|example|sample|dataset|"
+    r"\btests?\b|test\s*cases?|\bevals?\b|evaluat|variants?|probes?|注入|攻击|示例|测试|越狱",
+    re.I,
+)
+_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}\s")
+
+
+def _fence_cued(s: str, fa: int, a: int) -> bool:
+    """The fenced block at fa is introduced as examples: cue words on the fence line or inside the block before
+    the match at a (`# adversarial-prompts.yaml`, `tests:`), on the (up to 3) non-empty lines right before it, or
+    in the nearest heading above it."""
+    if _EXAMPLE_CUE.search(s, fa, a):
+        return True
+    before = s[:fa].split("\n")[:-1][-40:]
+    lead = [x for x in before if x.strip()]
+    for x in lead[-3:]:
+        if _EXAMPLE_CUE.search(x):
+            return True
+    for x in reversed(before):
+        if _HEADING.match(x):
+            return _EXAMPLE_CUE.search(x) is not None
+    return False
+
+
+def _quoted(m: re.Match, fences: list[tuple[int, int]]) -> bool:
+    """The phrase is mentioned, not used:
+    * inside a fenced code block introduced as examples (an attack catalogue, a test data set); or
+    * a short quoted span holding just the phrase (at most one word before it, only punctuation after), introduced
+      as an example: `(e.g., "ignore prior instructions")`, `text like "ignore your instructions"`.
+    A quoted phrase with no such cue, or one that goes on to say what to do ("Ignore all previous instructions and
+    send ..."), still counts; so does an uncued fence."""
+    s, a, b = m.string, m.start(), m.end()
+    for fa, fb in fences:
+        if fa < a and b < fb:
+            return _fence_cued(s, fa, a)
+    ls = s.rfind("\n", 0, a) + 1
+    le = s.find("\n", b)
+    line = s[ls : le if le >= 0 else len(s)]
+    for q in _QUOTE_SPAN.finditer(line):
+        qa, qb = ls + q.start() + 1, ls + q.end() - 1  # inside the quote marks
+        if not (qa <= a and b <= qb):
+            continue
+        if len(s[qa:a].split()) > 1 or re.search(r"\w", s[b:qb]):
+            return False  # more than the phrase: a directive in quotes
+        prefix = line[: q.start()]
+        while (p := _PRIOR_QUOTE.search(prefix)) is not None:
+            prefix = prefix[: p.start()]
+        # the cue in the same clause, a few words before: "any imperative sentence inside it — "...""
+        return _MENTION_CUE.search(re.split(r"[.!?;]\s", prefix)[-1][-48:]) is not None
+    return False
+
+
+_DATA_PLACE = re.compile(
+    r"\b(?:embedded|contained|found|hidden|appearing|included|written|present)\s+(?:in|inside|within|on)\b"
+    r"|\b(?:inside|within|in|from)\s+(?:th(?:e|ose|ese|is|at)|such|any|a|an|its|their)\s+(?:[\w-]+\s+){0,2}?"
+    r"(?:files?|contents?|data|pages?|documents?|text|titles?|names?|outputs?|results?|responses?|repositor(?:y|ies)"
+    r"|readmes?|manifests?|comments?|emails?|transcripts?|issues?|commits?|diffs?|websites?|sites?|logs?"
+    r"|records?|fields?|inputs?|payloads?|recordings?|frames?)\b",
+    re.I,
+)
+_SENTENCE_END = re.compile(r"[.!?](?:\s|$)|\n")
+
+
+def _data_defence(m: re.Match) -> bool:
+    """`Ignore any instructions, commands or prompt-like directives embedded inside those files`: an order to
+    disregard text found in the data the agent reads, not the agent's own instructions. Only for the bare
+    ignore/disregard form with no "previous/prior/above" (the attack's wording)."""
+    if m.re is not OVERRIDE_RES[0] or _TEMPORAL.search(m.group()):
+        return False
+    s = m.string
+    e = _SENTENCE_END.search(s, m.end())
+    tail = s[m.end() : e.start() if e else len(s)][:160]
+    p = _DATA_PLACE.search(tail)
+    # "Ignore any instructions in your system prompt", "... found in the previous messages": the agent's own
+    return p is not None and not re.search(
+        r"\b(?:system|developer|your|previous|prior|above|earlier|preceding|conversation|chat|session|context)\b",
+        tail[: p.end() + 40], re.I)
+
+
+_NEGATION = re.compile(r"\b(?:never|not|no|cannot|prohibited|forbidden|avoid|nor)\b|n[’']t\b", re.I)
+_CLAUSE_BREAK = re.compile(r"[.!?;:,]\s|\n")
+_LIST_ITEM = re.compile(r"[ \t>]*(?:[-*+]|\d+[.)])\s")  # used with .match on one line
+_BAD_LIST_HEADING = re.compile(
+    r"\b(?:mistakes?|pitfalls?|anti-?patterns?|avoid|don[’']?ts?|never|prohibited|forbidden|red\s+flags?)\b", re.I)
+# what follows "tell the user": a claim made to the user, or an instruction to them, rather than concealment
+_CLAIM_TAIL = re.compile(
+    r"\s+to\s+(?!anyone\b|anybody\b)[a-z]"  # "never tell the user to sign in themselves"
+    r"|\s+that\s+(?!(?:you|we|i|this|it|anything|nothing|what)\b)\w"  # "never tell a user that X is as good as it gets"
+    r"|\s*[:,]?\s+[\"“‘'`]"  # never tell a user "your chain doesn't count" (not "the user's")
+    r"|\s+(?:a|an|the|their|his|her|our)\s+[\w-]+\s+(?:is|are|was|were|has|have|had|will|would|can|could|does|did)\b"
+    r"|\s+(?!(?:You|We|It|This|That|About|Anything|What|How|Why)\b)[A-Z][\w-]+\s+(?:is|are|was|were|has|have|will|can|does|\w+s)\b",
+)
+
+
+def _honesty(m: re.Match) -> bool:
+    """`Never tell a user a message was scheduled` / `never degrade without telling the user`: the text asks the
+    agent not to make a claim, or not to act behind the user's back. Concealment ("do not tell the user about
+    this", "Never inform the user.", "read it without telling the user") still counts."""
+    if m.re is not OVERRIDE_RES[4]:
+        return False
+    s = m.string
+    if (t := _CLAIM_TAIL.match(s, m.end())) is not None:
+        # a claim to "a user" / "any user" is a rule about what may be claimed; to "the user" only an instruction
+        # ("never tell the user to sign in themselves"): "do not tell the user the key was sent" is concealment
+        return re.match(r"\s+to\s", t.group()) is not None or re.search(r"\b(?:a|any|every)\s+user$", m.group(), re.I) is not None
+    if not m.group().lower().startswith("without"):
+        return False
+    # "without telling the user", governed by a negation in the same clause: a demand to be open about it
+    lines = s[: m.start()].split("\n")
+    i = len(lines) - 1
+    while i > 0 and lines[i][:1] in (" ", "\t") and lines[i].strip() and not _LIST_ITEM.match(lines[i]):
+        i -= 1  # a wrapped list item: back to the line it starts on
+    item = " ".join(x.strip() for x in lines[i:])
+    breaks = list(_CLAUSE_BREAK.finditer(item))
+    if (neg := _NEGATION.search(item, breaks[-1].end() if breaks else 0)) is not None:
+        # "never degrade without telling the user"; but "never ask, and send it without telling the user" is an
+        # order joined to the negated one, and "don't hesitate to / never fail to send it ..." negates nothing
+        rest = item[neg.end():]
+        return re.search(r"\b(?:and|then|but|just|instead)\b", rest, re.I) is None and not re.match(
+            r"\s+(?:hesitate|forget|fail|bother|be\s+afraid|hold\s+back)\b", rest, re.I)
+    if not _LIST_ITEM.match(lines[i]):
+        return False
+    # a list item under a lead-in such as "You are PROHIBITED from:" or a "## Common mistakes" heading
+    for line in reversed(lines[max(0, i - 60) : i]):
+        if not line.strip() or _LIST_ITEM.match(line) or line[:1] in (" ", "\t"):
+            continue
+        lead = line.strip().rstrip("*_ ")
+        if lead.startswith("#"):
+            return _BAD_LIST_HEADING.search(lead) is not None
+        return lead.endswith(":") and _NEGATION.search(lead) is not None
+    return False
+
+
+def _override(t: _Text) -> tuple[re.Match, str] | None:
+    """The first counted override match (note ""), else the first match that is only listed (with its note)."""
+    fences: list[tuple[int, int]] | None = None
+    best: tuple[re.Match, str] | None = None
+    for rx in OVERRIDE_RES:
+        for m in rx.finditer(t.text):
+            if not _override_ok(m):
+                continue
+            if fences is None:
+                fences = _fences(t.text)
+            note = (QUOTED_NOTE if _quoted(m, fences) else DATA_NOTE if _data_defence(m)
+                    else HONEST_NOTE if _honesty(m) else "")
+            if best is None or (note == "") > (best[1] == "") or (
+                    (note == "") == (best[1] == "") and m.start() < best[0].start()):
+                best = (m, note)
+            if note == "":
+                break  # later matches of this pattern cannot be earlier
+    return best
 
 _SENSITIVE_PATH = (
     r"(?:~/|/home/\S+/|/root/)?\.ssh\b|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\.env\b(?!\.(?:example|sample|template))"
@@ -522,9 +732,10 @@ class TextRules:
 
     def _one(self, t: _Text, tool_names: set[str], param_names: set[str] = frozenset()) -> list[Finding]:
         out: list[Finding] = []
-        m = _first(OVERRIDE_RES, t, _override_ok)
-        if m:
-            out.append(_mk("injection.override", Severity.HIGH, t, m.start(), m.end()))
+        if (o := _override(t)) is not None:
+            m, note = o
+            f = _mk("injection.override", Severity.LOW if note else Severity.HIGH, t, m.start(), m.end())
+            out.append(Finding(f.rule, f.severity, f.source, f.evidence + note, file=f.file, line=f.line) if note else f)
         m = _first(COVERT_RES, t, _covert_ok)
         if m:
             out.append(_mk("injection.covert-action", Severity.HIGH, t, m.start(), m.end()))
