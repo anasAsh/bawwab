@@ -33,11 +33,10 @@ def test_non_install_fast_and_silent():
     assert statistics.median(times) < 0.100, times
 
 
-def test_child_env_short_circuits():
-    from bawwab.paths import child_token
-
-    r = run(INSTALL, "gate", env={"BAWWAB_CHILD": child_token()})  # bawwab's own child (per-install token)
-    assert r.returncode == 0 and r.stdout == ""
+def test_no_child_env_short_circuit():
+    """BAWWAB_CHILD no longer switches the hook off (0.1.4): the install is still gated."""
+    r = run(INSTALL, "gate", env={"BAWWAB_CHILD": "1"})
+    assert r.returncode == 0 and r.stdout != ""
 
 
 def test_unknown_subcommand_silent():

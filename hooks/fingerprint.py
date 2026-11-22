@@ -550,21 +550,6 @@ def initialised(home: str, bawwab_home: str) -> bool:
         or plugin_lost(home) is not None
 
 
-def is_child(bawwab_home: str) -> bool:
-    """BAWWAB_CHILD counts only when it equals the per-install token bawwab sets on its own children."""
-    import hmac
-
-    v = os.environ.get("BAWWAB_CHILD", "")
-    if not v or v == "0":
-        return False
-    try:
-        with open(os.path.join(bawwab_home, "child.token")) as f:
-            tok = f.read().strip()
-    except OSError:
-        return False
-    return bool(tok) and hmac.compare_digest(v, tok)
-
-
 # ------------------------------------------------------------------ stored state
 
 def state_path(bawwab_home: str) -> str:

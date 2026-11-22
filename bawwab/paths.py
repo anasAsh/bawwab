@@ -58,50 +58,11 @@ def claude_config_dir_label(d: Path) -> str:
     return "" if os.path.normpath(str(d)) == os.path.normpath(str(claude_home())) else f"[{d}]"
 
 
-# BAWWAB_CHILD short-circuits every hook, so a bare value (e.g. from settings `env`) must not count: only
-# the per-install random token, stored 0600 in bawwab home and set by bawwab on the children it spawns.
-# hooks/fingerprint.py reads the same file (stdlib, no bawwab import).
-def _child_token_path() -> Path:
-    return bawwab_home() / "child.token"
-
-
-def child_token() -> str:
-    """The per-install token (created on first use)."""
-    import secrets
-
-    p = _child_token_path()
-    try:
-        tok = p.read_text().strip()
-        if tok:
-            return tok
-    except OSError:
-        pass
-    p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tok = secrets.token_hex(16)
-    try:
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(tok)
-    except FileExistsError:
-        return p.read_text().strip()
-    return tok
-
-
-def child_env(env: dict | None = None) -> dict:
-    """A copy of env (default os.environ) marked as a bawwab child."""
+# There is no "bawwab child" switch in the environment (removed in 0.1.4): an env value that turns the hooks off
+# can be set by anything that writes settings `env`. Bawwab's own `claude -p` children (judge, reviewer) load no
+# settings, plugins or hooks of their own (bawwab/scan/judge/backends.py), so they never need one.
+def judge_env(env: dict | None = None) -> dict:
+    """A copy of env (default os.environ) for bawwab's own `claude -p` children."""
     out = dict(os.environ if env is None else env)
-    out["BAWWAB_CHILD"] = child_token()
+    out.pop("BAWWAB_CHILD", None)  # a leftover from <= 0.1.3; it means nothing now
     return out
-
-
-def is_bawwab_child() -> bool:
-    import hmac
-
-    v = os.environ.get("BAWWAB_CHILD", "")
-    if not v or v == "0":
-        return False
-    try:
-        tok = _child_token_path().read_text().strip()
-    except OSError:
-        return False
-    return bool(tok) and hmac.compare_digest(v, tok)

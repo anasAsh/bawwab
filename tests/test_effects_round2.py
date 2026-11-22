@@ -17,7 +17,7 @@ from bawwab import inventory as inv
 from bawwab.agents.claude_code import _tree_hash
 from bawwab.cli import main
 from bawwab.gate.detect import HookInput, Protected, detect_install
-from bawwab.paths import bawwab_home, child_env, child_token
+from bawwab.paths import bawwab_home, judge_env
 from bawwab.store import open_store
 from bawwab.types import Verdict
 from test_effects import FakeScan, _w
@@ -191,17 +191,20 @@ def _fake_bawwab(tmp_path: Path) -> tuple[dict, Path]:
     return env, log
 
 
-def test_bare_bawwab_child_does_not_disable_the_hook(tmp_path):
+def test_no_bawwab_child_value_disables_the_hook(tmp_path):
+    """0.1.4: no BAWWAB_CHILD value switches the hook off, not even the old per-install token (settings `env`
+    could carry it: the token file was readable by the same user)."""
     env, log = _fake_bawwab(tmp_path)
     install = json.dumps({"tool_name": "Bash", "tool_input": {"command": "claude mcp add x -- npx -y x"},
                           "cwd": str(tmp_path)})
-    subprocess.run(["python3", str(HOOK), "gate"], input=install, capture_output=True, text=True,
-                   env={**env, "BAWWAB_CHILD": "1"})
-    assert log.exists()  # still dispatched to the gate
-    log.unlink()
-    subprocess.run(["python3", str(HOOK), "gate"], input=install, capture_output=True, text=True,
-                   env={**env, "BAWWAB_CHILD": child_token()})
-    assert not log.exists()  # bawwab's own child: short-circuited
+    tok = bawwab_home() / "child.token"
+    tok.parent.mkdir(parents=True, exist_ok=True)
+    tok.write_text("0123456789abcdef0123456789abcdef")  # a leftover token from <= 0.1.3
+    for v in ("1", tok.read_text()):
+        subprocess.run(["python3", str(HOOK), "gate"], input=install, capture_output=True, text=True,
+                       env={**env, "BAWWAB_CHILD": v})
+        assert log.exists()  # still dispatched to the gate
+        log.unlink()
 
 
 def test_cli_gate_ignores_bare_bawwab_child(tmp_path, monkeypatch, capsys):
@@ -212,8 +215,8 @@ def test_cli_gate_ignores_bare_bawwab_child(tmp_path, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_child_token_is_private_and_used_for_children():
-    tok = child_token()
-    p = bawwab_home() / "child.token"
-    assert p.read_text() == tok and oct(p.stat().st_mode & 0o777) == "0o600"
-    assert child_env({})["BAWWAB_CHILD"] == tok and tok != "1"
+def test_judge_env_carries_no_child_switch(monkeypatch):
+    monkeypatch.setenv("BAWWAB_CHILD", "leftover")
+    assert "BAWWAB_CHILD" not in judge_env() and "BAWWAB_CHILD" not in judge_env({"BAWWAB_CHILD": "x"})
+    assert not (bawwab_home() / "child.token").exists()  # nothing creates the token any more
+

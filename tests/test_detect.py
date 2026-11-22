@@ -488,6 +488,19 @@ def test_settings_exec_keys_protected(home, key, value):
     assert isinstance(r, Protected) and f"settings key executes code: {key}" in r.reason
 
 
+def test_settings_env_names_its_keys_and_bawwab_keys_are_plain_deny(home):
+    s = home / ".claude" / "settings.json"
+    s.write_text(json.dumps({"env": {"KEEP": "1", "GONE": "x"}}))
+    new = {"env": {"KEEP": "1", "NODE_OPTIONS": "--require /x.js"}}
+    r = detect_install(HookInput("Write", {"file_path": str(s), "content": json.dumps(new)}, "/tmp"))
+    assert isinstance(r, Protected) and not r.plain
+    assert "settings key executes code: env (adds/changes NODE_OPTIONS; removes GONE)" in r.reason
+    for key in ("BAWWAB_CHILD", "BAWWAB_HOME", "BAWWAB_FAKE_JUDGE", "bawwab_venv"):
+        new = {"env": {"KEEP": "1", "GONE": "x", key: "v"}}
+        r = detect_install(HookInput("Write", {"file_path": str(s), "content": json.dumps(new)}, "/tmp"))
+        assert isinstance(r, Protected) and any(key in p for p in r.plain), key  # no approval id to reuse
+
+
 def test_enabled_mcpjson_servers(home):
     proj = home.parent / "proj"
     (proj / ".mcp.json").write_text(json.dumps({"mcpServers": {"good": {"command": "uvx", "args": ["mcp-good"]}}}))

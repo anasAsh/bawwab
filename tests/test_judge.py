@@ -171,6 +171,16 @@ def test_fake_backend_env(tmp_path, monkeypatch):
     assert backend_for(Config()).complete("s", "u", {}, 1) == '{"findings":[]}'
 
 
+def test_fake_judge_only_in_a_source_checkout(tmp_path, monkeypatch):
+    """Outside bawwab's own checkout (the plugin tree, a wheel install) BAWWAB_FAKE_JUDGE is ignored: an env
+    value from settings `env` can't replace the judge or the reviewer."""
+    p = tmp_path / "f.json"
+    p.write_text('{"findings":[]}')
+    monkeypatch.setenv("BAWWAB_FAKE_JUDGE", str(p))
+    monkeypatch.setattr(backends, "_SOURCE_ROOT", tmp_path / "plugin")
+    assert not isinstance(backend_for(Config()), backends._FakeBackend)
+
+
 def test_cli_backend_invocation(monkeypatch):
     seen = {}
 
@@ -189,9 +199,8 @@ def test_cli_backend_invocation(monkeypatch):
         assert a[a.index(flag) + 1] == val
     assert "--strict-mcp-config" in a and "--no-session-persistence" in a
     assert seen["input"] == "PROMPT" and seen["timeout"] == 7 and not seen.get("shell")
-    from bawwab.paths import child_token
-
-    assert seen["env"]["BAWWAB_CHILD"] == child_token()
+    assert "BAWWAB_CHILD" not in seen["env"]
+    assert json.loads(a[a.index("--settings") + 1]) == {"disableAllHooks": True}  # no hook of any source runs
     assert seen["cwd"] != "." and not __import__("os").path.exists(seen["cwd"])  # removed afterwards
 
 
