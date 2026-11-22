@@ -33,7 +33,7 @@ from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
 from bawwab.report import advice_short, format_advice, sanitise
 from bawwab.scan import TRANSIENT_RULES, scan_target, synthetic_report
-from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self
+from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self_path
 from bawwab.store import Store, open_store, report_from_dict, report_to_dict
 from bawwab.types import Advice, ScanReport, Target, Verdict
 
@@ -388,7 +388,7 @@ def _permissions(store: Store, it: EffectItem) -> tuple[bool, ScanReport]:
 def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) -> tuple[bool, ScanReport]:
     """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean, or bawwab's own
     installed plugin recognised by its running code (R52: accepted, not scanned; `bawwab effects` lists it)."""
-    if it.category == "plugins" and it.target is not None and is_self(it.target.path):
+    if it.target is not None and is_self_path(it.target.path):
         store.audit("effects.self", ident=it.ident, hash=it.hash)
         return True, synthetic_report(f"{it.label}: {SELF_LABEL}", f"{SELF_KEY_PREFIX}{it.hash}",
                                       Target("local", it.ident, name=it.label), rule="effects.self")
@@ -545,7 +545,7 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
     for it in _toggles_last(items):
         row = accepted.get(it.ident)
         held = active.get((it.ident, it.hash))
-        if held is not None and it.category == "plugins" and it.target is not None and is_self(it.target.path):
+        if held is not None and it.target is not None and is_self_path(it.target.path):
             store.set_quarantine(held["qrow"], status="resolved")  # bawwab never holds itself (e.g. a dev run did)
             store.audit("effects.self_released", id=held["id"], ident=it.ident)
             del active[(it.ident, it.hash)]

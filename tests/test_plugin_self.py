@@ -364,15 +364,14 @@ def test_effect_check_scans_self_symlinked_install(plugins, tmp_path):
     assert str(link) in {t.raw for t in scan.calls}
 
 
-def test_inventory_lists_self_once_and_scans_lookalike(plugins):
+def test_inventory_skips_self_silently_and_scans_lookalike(plugins):
     running, lookalike, proj = plugins
-    scan = FakeScan()
+    scan = FakeScan(Verdict.SUSPICIOUS)
     w = inv.run_inventory(proj, scan=scan, store=open_store())
     assert {t.raw for t in scan.calls} == {str(lookalike)}
-    assert any("bawwab@bawwab is bawwab (running code, not scanned)" in x for x in w)
-    assert not any("evil-mkt" in x and "running code" in x for x in w)
-    w2 = inv.run_inventory(proj, scan=FakeScan(), store=open_store())
-    assert not any("running code" in x for x in w2)  # once per version
+    assert not any("bawwab@bawwab" in x for x in w)  # R53: never reported, not even as "not scanned"
+    assert not any("running code" in x for x in w)
+    assert any("evil-mkt" in x for x in w)  # a plugin named bawwab elsewhere is flagged like any other
 
 
 # ------------------------------------------------------------------ never quarantines itself (2026-11-20)
@@ -422,3 +421,49 @@ def test_quarantined_self_is_released(plugins):
     fx.refresh(proj, scan=FakeScan(Verdict.SUSPICIOUS), force=True)
     held = {q["ident"] for q in store.active_quarantine()}
     assert "claude-code:plugin:bawwab@bawwab" not in held and "claude-code:plugin:bawwab@evil-mkt" in held
+
+
+# ------------------------------------------------------------------ never reports itself (R53)
+
+def test_self_path_covers_root_inside_and_sibling_version(plugins, tmp_path):
+    running, lookalike, _ = plugins
+    assert selfid.is_self_path(str(running))
+    assert selfid.is_self_path(str(running / "skills"))  # its skills and MCP server live inside the root
+    sibling = _builder().build(Path.home() / ".claude/plugins/cache/bawwab/bawwab/0.1.1")
+    with open(sibling / "bawwab/cli.py", "a") as f:  # an upgrade next to the running version
+        f.write("\n# newer\n")
+    assert selfid.is_self_path(str(sibling))
+    assert not selfid.is_self_path(str(lookalike))  # named bawwab, other marketplace: scanned
+    elsewhere = _builder().build(tmp_path / "x/bawwab/0.1.1")
+    with open(elsewhere / "bawwab/cli.py", "a") as f:
+        f.write("\n# lookalike\n")
+    assert not selfid.is_self_path(str(elsewhere))  # same name and manifest, not beside the running code
+
+
+def test_effect_check_never_warns_about_a_sibling_version(plugins):
+    running, lookalike, proj = plugins
+    sibling = _builder().build(Path.home() / ".claude/plugins/cache/bawwab/bawwab/0.1.1")
+    with open(sibling / "bawwab/cli.py", "a") as f:
+        f.write("\n# newer\n")
+    now = datetime.now(UTC).isoformat()
+    _w(Path.home() / ".claude/plugins/installed_plugins.json", {"version": 2, "plugins": {
+        "bawwab@bawwab": [{"scope": "user", "installPath": str(sibling), "version": "0.1.1", "installedAt": now}],
+        "bawwab@evil-mkt": [{"scope": "user", "installPath": str(lookalike), "version": "0.1.0", "installedAt": now}]}})
+    fx.session_start(proj)
+    scan = FakeScan(Verdict.SUSPICIOUS)
+    fx.full_scan(proj, scan=scan)
+    assert {t.raw for t in scan.calls} == {str(lookalike)}
+    assert not any("bawwab@bawwab" in w for w in open_store().take_warnings())
+
+
+def test_mcp_scan_tool_skips_self_but_scans_lookalike(plugins, monkeypatch):
+    pytest.importorskip("mcp")
+    from bawwab import mcp_server
+
+    running, lookalike, _ = plugins
+    scan = FakeScan()
+    monkeypatch.setattr("bawwab.scan.scan_target", scan)
+    out = mcp_server._scan_sync(str(running), False)
+    assert scan.calls == [] and "does not scan itself" in out.content[0].text
+    mcp_server._scan_sync(str(lookalike), False)
+    assert [t.path for t in scan.calls] == [str(lookalike)]

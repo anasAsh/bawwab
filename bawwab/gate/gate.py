@@ -24,6 +24,7 @@ from bawwab.gate.pin import pin_changes, pins_needed
 from bawwab.gate.prefilter import prefilter
 from bawwab.report import format_report, sanitise
 from bawwab.scan import scan_target, synthetic_report
+from bawwab.selfid import is_self_path
 from bawwab.store import Store, open_store
 from bawwab.types import ScanReport, Target, Verdict
 
@@ -193,6 +194,8 @@ def _scan_all(inp: HookInput, det: Targets, scan: Callable[..., ScanReport], sto
     cfg = load_config(Path(inp.cwd) if inp.cwd else None)
     results: list[tuple[Target, ScanReport]] = []
     for t in det.targets:
+        if t.kind == "local" and is_self_path(t.origin or t.path):
+            continue  # R53: bawwab never scans itself on its own hooks (`bawwab scan <path>` still does)
         try:
             st, cleanup = _materialize(t, det.overlays.get(t))
         except SymlinkInPath:
