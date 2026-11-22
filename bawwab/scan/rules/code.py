@@ -17,7 +17,7 @@ from functools import lru_cache
 from posixpath import dirname, join, normpath
 
 from bawwab.scan.files import ExtraText, ScanFile
-from bawwab.scan.rules import envflow, parsing
+from bawwab.scan.rules import bundle, envflow, parsing, proximity
 from bawwab.types import Finding, Severity
 
 PY_EXT = (".py",)
@@ -205,6 +205,7 @@ class Call:
     first: str = ""  # the first argument only (the evaluated code for eval/exec/vm.*), resolved the same way
     first_raw: str = ""  # the first argument's source text, unresolved
     args_raw: str = ""  # all arguments' source text, unresolved
+    pos: int = -1  # UTF-8 byte offset of the call in the file (proximity in bundles); -1 unknown
 
 
 _IDENT_RE = re.compile(r"[A-Za-z_$][\w$]*")
@@ -324,6 +325,8 @@ def clear_caches() -> None:
     for v in list(globals().values()):
         if callable(getattr(v, "cache_clear", None)) and getattr(v, "__module__", None) == __name__:
             v.cache_clear()
+    bundle.is_bundle.cache_clear()
+    proximity._index.cache_clear()
     parsing.clear()
 
 
@@ -394,19 +397,19 @@ class _Resolver:
         return " ".join([args, *[self.get(w) for w in keys]])
 
 
-def _build_calls(raw: list[tuple[int, str, str, str, str, bool, bool]], resolve: _Resolver) -> _Calls:
+def _build_calls(raw: list[tuple[int, str, str, str, str, bool, bool, int]], resolve: _Resolver) -> _Calls:
     """Sinks first: their resolution comes from the full budget and then the reserve, before padding calls
     can spend the full budget (R1-C1). The output keeps the extraction order."""
     built: list[Call | None] = [None] * len(raw)
     for pass_sinks in (True, False):
-        for i, (line, callee, args, first, args_raw, full, sink) in enumerate(raw):
+        for i, (line, callee, args, first, args_raw, full, sink, pos) in enumerate(raw):
             if sink != pass_sinks:
                 continue
             if full:
                 built[i] = Call(line, callee, resolve(args, sink), resolve(resolve(first, sink), sink) if first else "",
-                                first, args_raw)
+                                first, args_raw, pos)
             else:
-                built[i] = Call(line, callee, args, first, first, args_raw)
+                built[i] = Call(line, callee, args, first, first, args_raw, pos)
     out = _Calls(built)
     out.over = resolve.budget.over
     out.sink_incomplete = resolve.budget.sink_incomplete
@@ -486,14 +489,14 @@ def _py_calls(text: str, budget: _FileBudget) -> _Calls | None:
                 [f"{k.arg}={unparse(k.value, size_of(k.value))}" for k in n.keywords]
             first = unparse(n.args[0], size_of(n.args[0])) if n.args else ""
             joined = ", ".join(parts)
-            raw.append((n.lineno, unparse(n.func, size_of(n.func)), joined, first, joined, True, sink))
+            raw.append((n.lineno, unparse(n.func, size_of(n.func)), joined, first, joined, True, sink, span(n)[0]))
             continue
         cap = budget.cap  # degraded: capped source text, unresolved
         callee = seg(*span(n.func), cap)
         joined = seg(span(argn[0])[0], max(span(a)[1] for a in argn), cap) if argn else ""
         first = seg(*span(n.args[0]), cap) if n.args else ""
         budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(joined) + len(first))
-        raw.append((n.lineno, callee, joined, first, joined, False, sink))
+        raw.append((n.lineno, callee, joined, first, joined, False, sink, span(n)[0]))
     resolve = _Resolver(names.__getitem__, lambda w: len(names[w]) if w in names else None, budget, bool(names))
     return _build_calls(raw, resolve)
 
@@ -538,10 +541,10 @@ def _js_calls(text: str, lang: str, budget: _FileBudget) -> _Calls:
                 first = (named.start_byte, named.end_byte) if named is not None else (0, 0)
                 is_fn = named is not None and named.type in _JS_FUNCTION_NODES
                 found.append((n.start_point[0] + 1, (fn.start_byte, fn.end_byte), (args.start_byte, args.end_byte), first,
-                              is_fn))
+                              is_fn, n.start_byte))
     del stack
     raw = []
-    for line, fn, args, first, is_fn in sorted(found):
+    for line, fn, args, first, is_fn, pos in sorted(found):
         cost = CALL_OVERHEAD + fn[1] - fn[0] + 2 * (args[1] - args[0]) + first[1] - first[0]
         head = capped(fn, 256) if fn[1] - fn[0] > 256 else txt(*fn)
         sink = _is_sink(head, capped(first, 512), is_fn)
@@ -553,7 +556,7 @@ def _js_calls(text: str, lang: str, budget: _FileBudget) -> _Calls:
             a, full = capped(args, cap), False
             callee, first_s = capped(fn, cap), capped(first, cap)
             budget.take_degraded(CALL_OVERHEAD + len(callee) + 2 * len(a) + len(first_s))
-        raw.append((line, callee, a, first_s, a[1:-1] if a.startswith("(") and a.endswith(")") else a, full, sink))
+        raw.append((line, callee, a, first_s, a[1:-1] if a.startswith("(") and a.endswith(")") else a, full, sink, pos))
     del found
     resolve = _Resolver(lambda w: txt(*names[w]), lambda w: names[w][1] - names[w][0] if w in names else None, budget,
                         bool(names))
@@ -1697,6 +1700,8 @@ class CodeRules:
                 out.extend(self._file(f, install, refs, exec_data))
             except MemoryError:
                 failed.append(f.rel)
+            finally:
+                proximity._index.cache_clear()  # a bundle's tree is held only while its own file is analysed
         out.extend(Finding("rules.error", Severity.MED, "gate", f"rule code failed on {rel}: MemoryError", file=rel)
                    for rel in failed)
         return out
@@ -1752,9 +1757,9 @@ class CodeRules:
         hits = [p for p, kind in _cred_hits(f, t, regexes) if kind != "regex"]
         if hits:
             cred_lines = [_line_of(t, p) for p in hits]
-            if _same_scope(f, cred_lines, _net_lines(f, t)):
+            if _combo_near(f, t, hits, cred_lines, _net_lines(f, t)):
                 out.append(("exfil.combo", cred_lines[0]))
-            elif _network_capable(f, t):
+            elif _netcap_near(f, t, hits):
                 # Backstop (round 3): a credential hit in a file that can reach the network, even
                 # when the call itself is hidden behind a wrapper or computed name.
                 out.append(("exfil.combo", cred_lines[0]))
@@ -1836,7 +1841,7 @@ class CodeRules:
             out.append(_finding("exfil.host", Severity.HIGH, f, _line_of(t, host.start())))
         if comboable:  # a deny-listed path read and sent is still exfiltration (R29)
             cred_lines = [_line_of(t, p) for p in comboable]
-            if _same_scope(f, cred_lines, net_lines):
+            if _combo_near(f, t, comboable, cred_lines, net_lines):
                 out.append(_finding("exfil.combo", Severity.CRITICAL, f, cred_lines[0]))
         return out
 
@@ -2082,6 +2087,11 @@ def _host_in(args: str) -> bool:
 
 @lru_cache(maxsize=8)  # holds the texts: keep it small
 def _net_calls_cached(rel: str, text: str, t: str) -> tuple[tuple[int, str], ...]:
+    return tuple((ln, args) for ln, args, _ in _net_calls_pos(rel, text, t))
+
+
+@lru_cache(maxsize=8)
+def _net_calls_pos(rel: str, text: str, t: str) -> tuple[tuple[int, str, int], ...]:
     """(line, argument text) of outbound network calls.
 
     Parsed files: real call nodes to a network global, or to a network module bound in the
@@ -2106,7 +2116,7 @@ def _net_calls_cached(rel: str, text: str, t: str) -> tuple[tuple[int, str], ...
                 or (leaf in SHELL_FUNCS and CURL_RE.search(c.args))
             )
             if (is_net and not _loopback_only(c.first_raw)) or _host_in(c.args):
-                out.append((c.line, c.args))
+                out.append((c.line, c.args, c.pos))
         return tuple(out)
     out = []
     for rx in (NET_RE, EXFIL_HOST_RE):
@@ -2114,7 +2124,7 @@ def _net_calls_cached(rel: str, text: str, t: str) -> tuple[tuple[int, str], ...
             ln = _line_of(t, m.start())
             line = _line_text(t, ln)
             if not _IMPORT_LINE_RE.search(line):
-                out.append((ln, line))
+                out.append((ln, line, -1))
     return tuple(out)
 
 
@@ -2526,7 +2536,7 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
                     continue  # in a real launcher's env slot (R41, R45 3)
                 if net_lines is None:
                     net_lines = _net_lines(f, t)
-                if c.sink or (net_lines and _same_scope(f, [c.line], net_lines)):
+                if c.sink or (net_lines and _combo_near(f, t, [c.pos], [c.line], net_lines)):
                     kind = "real"  # reaches a network call or a write; or R27: same function as one
                 elif c.family == "spread" and not c.untrusted and not (netcap := _network_capable(f, t) if netcap is None else netcap):
                     continue  # R26: a spread no network can reach stays silent (test_env_spread_not_dotenv)
@@ -2611,6 +2621,97 @@ def _same_scope(f: ScanFile, cred_lines: list[int], net_lines: list[int]) -> boo
         return -1
 
     return bool({scope(c) for c in cred_lines} & {scope(n) for n in net_lines})
+
+
+# ---------------------------------------------------------------- proximity in bundles (false-positive plan step 2)
+# A bundle (bundle.py) holds hundreds of unrelated libraries in one file, often on one line or inside one
+# outermost function, so "same function" there means "same file". In a bundle the credential and the network
+# call (or, for the backstop, a network reference) must be close (proximity.py). Anything that cannot be
+# analysed (no parsed calls, a degraded call budget, a refused parse) keeps the same-function rule.
+
+
+def _bundle_near(f: ScanFile, t: str, cred_pos: list[int], extra: list[int] | None = None) -> bool | None:
+    if not bundle.is_bundle(f.rel, f.text):
+        return None
+    calls = _calls(f.rel, f.text)
+    if calls is None or _over(calls) or getattr(calls, "sink_incomplete", False):
+        return None
+    net = [p for _, _, p in _net_calls_pos(f.rel, f.text, t)]
+    if any(p < 0 for p in net):
+        return None
+    return proximity.near(f.rel, f.text, proximity.char_to_byte(t, cred_pos), net + (extra or []))
+
+
+def _combo_near(f: ScanFile, t: str, cred_pos: list[int], cred_lines: list[int], net_lines: list[int]) -> bool:
+    """Credential access and an outbound call together: close together in a bundle, else the same function."""
+    if not cred_pos or not net_lines:
+        return _same_scope(f, cred_lines, net_lines)
+    got = _bundle_near(f, t, cred_pos)
+    return _same_scope(f, cred_lines, net_lines) if got is None else got
+
+
+def _netcap_near(f: ScanFile, t: str, cred_pos: list[int]) -> bool:
+    """The backstop: the file can reach the network; in a bundle, a network reference near the credential
+    (which also sees the module holders bundlers use: webpack's external table, esbuild's __toESM)."""
+    if bundle.is_bundle(f.rel, f.text):
+        got = _bundle_near(f, t, cred_pos, _netcap_positions(f, t))
+        if got is not None:
+            return got
+    return _network_capable(f, t)
+
+
+# Network references by position, for the backstop in a bundle (false-positive plan step 2): what
+# _network_capable looks for anywhere, as UTF-8 byte offsets, plus the module holders bundlers use, which
+# _bindings does not see: esbuild's `var import_https = __toESM(require("https"))` and webpack's external
+# module table (`65692:t=>{t.exports=require("https")}`, used as `n(65692)`).
+_WRAPPED_REQ_RE = re.compile(
+    r"""([\w$]+)\s*=\s*(?:[\w$.]+\(\s*)+(?:require|import)\(\s*['"](?:node:)?([\w@/.-]+)['"]\s*\)"""
+)
+_WEBPACK_EXTERNAL_RE = re.compile(
+    r"""(?<![\w$])(\d+|"[^"\n]{1,200}")\s*(?::\s*(?:\([\w$,\s]*\)|[\w$]+)\s*=>|\([\w$,\s]*\))\s*\{\s*(?:['"]use strict['"];?\s*)?"""
+    r"""[\w$]+\.exports\s*=\s*require\(\s*['"](?:node:)?([\w@/.-]+)['"]\s*\)"""
+)
+
+
+def _netcap_positions(f: ScanFile, t: str) -> list[int]:
+    """Byte offsets of network references in a JS/TS file (computed loads, network globals, network module
+    loads and the names holding them)."""
+    tb = _strings_blanked(f.rel, t)
+    in_t: list[int] = [m.start() for m in COMPUTED_LOAD_RE.finditer(t)]
+    in_t += [m.start() for m in _NET_GLOBAL_KEY_RE.finditer(t)]
+    in_tb: list[int] = [m.start() for m in _NET_GLOBAL_USE_RE.finditer(tb)]
+    holders: set[str] = set()
+    for m in _INLINE_REQ_RE.finditer(t):
+        if _net_mod(m.group(1)) and not _noncap_chain(m.group(2) or ""):
+            in_t.append(m.start())
+    for m in _WRAPPED_REQ_RE.finditer(t):
+        if _net_mod(m.group(2)):
+            holders.add(m.group(1))
+    ids = {m.group(1) for m in _WEBPACK_EXTERNAL_RE.finditer(t) if _net_mod(m.group(2))}
+    if ids:
+        id_re = re.compile(r"(?<![\w$.])[\w$]+\(\s*(?:" + "|".join(re.escape(i) for i in sorted(ids)) + r")\s*\)")
+        for m in id_re.finditer(t):
+            in_t.append(m.start())
+            pre = re.search(r"([\w$]+)\s*=\s*$", t[max(0, m.start() - 80):m.start()])
+            if pre:
+                holders.add(pre.group(1))
+    b = _bindings(f.rel, f.text)
+    for name, mod in b.modbind.items():
+        if _net_mod(mod):
+            holders.add(name)
+    for name, target in b.al.items():
+        mod, _, member = target.partition(".")
+        if member and _net_mod(mod) and member not in NONCAP_MEMBERS and _net_mod(target):
+            holders.add(name)
+    holders = {h for h in holders if re.fullmatch(r"[\w$]+", h)}
+    if holders:
+        rx = re.compile(r"(?<![\w$.])(?:" + "|".join(re.escape(h) for h in sorted(holders)) + r")(?![\w$])")
+        for m in rx.finditer(tb):
+            chain = _CHAIN_RE.match(tb, m.end())
+            if chain and _noncap_chain(chain.group(0)):
+                continue
+            in_tb.append(m.start())
+    return proximity.char_to_byte(t, in_t) + proximity.char_to_byte(tb, in_tb)
 
 
 CODE_RULES = [ManifestRules(), CodeRules()]
