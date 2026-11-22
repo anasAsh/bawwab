@@ -1036,10 +1036,9 @@
   },
   "pypi/gequests": {
    "rules": [
-    "credential-access",
-    "exfil.combo",
     "exfil.host",
-    "identity.typosquat"
+    "identity.typosquat",
+    "remote-code.download-exec"
    ],
    "verdict": "malicious"
   },

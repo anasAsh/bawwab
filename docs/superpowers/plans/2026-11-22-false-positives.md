@@ -41,3 +41,27 @@ must be defined by what runs or is read by the agent, never by file type or fold
    wording; descriptive "instead of <parameter>" text doesn't count.
 
 Expected combined effect: roughly 70-80% fewer false alarms, to be measured by step 0, never assumed.
+
+## Result (measured 2026-11-22)
+
+Steps 1-4 merged, then one offline rescan of the corpus (232 targets, `bench/fp_corpus.py rescan --jobs 1`;
+86 findings of bundled servers that need the network are not compared):
+
+| | Before | After |
+|---|---|---|
+| False alarms | 836 | 281 (−66%) |
+| Expected behaviour | 363 | 179 |
+| Confirmed harmful | 0 | 0 |
+| New, not yet reviewed | — | 29 (worst case all false: −63%) |
+| Targets flagged | 140 | 94 |
+
+Recall gate (benchmark, replicas, DataDog) unchanged. Largest remaining: credential-access 111,
+exfil.combo 56, injection.override 31 (untouched by these steps; the next target).
+
+**Step 5, download-and-execute.** The DataDog gate showed pypi/gequests was MALICIOUS only through a CRITICAL in
+its PKG-INFO, not its dropper. `remote-code.download-exec` (bawwab/scan/rules/dropper.py) follows fetched bytes
+to eval/exec or to a file that is then run or made executable; CRITICAL, HIGH when a digest or signature is
+checked first. Package metadata is now prose. DataDog: gequests is MALICIOUS through its dropper; three samples
+go clean → malicious (all real droppers); definitely-not-requests goes malicious → suspicious (no payload, only
+an install script). Zero counted corpus findings after two precision fixes. Residuals: shell droppers, archives
+extracted then run, flow across files.
