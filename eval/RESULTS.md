@@ -399,6 +399,42 @@ is not a reviewer answer, and the sandbox has no network. Under these rules the 
 model. The (b) and (c) rates for a real model need a run with a live backend, which this harness doesn't do yet.
 When those numbers exist, they go here with the commit and the backend that produced them.
 
+## 8. False-positive corpus and recall gate (baseline)
+
+A measuring stick for false-positive work: a rule change should lower the reviewed false positives on real packages
+and lose no detection on the malicious sets. Tools: `bench/fp_corpus.py` (corpus `bench/fp_corpus.json`) and
+`bench/recall_gate.py` (baseline `bench/recall_baseline.json`); method and matching rules are in their docstrings.
+Numbers below are from the rules at commit 2dd9c36, static only, offline (OSV stubbed to "no advisories").
+
+**FP corpus.** 232 targets: the 144 targets of the 302-target report scan that had counted findings (1,214 findings,
+all reviewed: 860 false-positive, 354 expected-behaviour, 0 confirmed) plus 88 clean targets whose pinned checkout
+is on disk. All 232 have a local copy on the maintainer's machine (`/var/tmp/bawwab-report-500/work`), so the rescan
+is a local tool, not a CI test. `uv run python bench/fp_corpus.py rescan --jobs 1`:
+
+| | counted findings |
+|---|---|
+| compared (before) | 1,140 |
+| present now | 1,137: 807 reviewed false-positive, 329 expected-behaviour, 0 confirmed, 1 unreviewed |
+| new | 1 (`files.truncated`, env-flow wall-clock budget, `sample-aws-pricing-calculator-mcp`) |
+| gone | 4, all expected-behaviour: 2 `tool-shadowing` (`ha-mcp-dev`), 2 `files.truncated` |
+| not compared | 36 findings of bundled servers that need the network (offline bucket); 38 on `claude-mem-plugin`, which the current scanner fails on (`OSError: File name too long` in `_child_target`) |
+
+Targets flagged before and now: 139 of the 231 rescanned; no verdict changed. 1,136 of the 1,137 matches were by
+finding key. The env-flow analysis has a 2 s wall-clock budget per file, so a parallel run (`--jobs 10`) added 7
+load-dependent `files.truncated` findings that a serial run doesn't show: use `--jobs 1` for numbers.
+
+**Recall gate** (`uv run python bench/recall_gate.py`; in CI as `tests/test_fp_corpus.py::test_recall_gate`). Today's
+verdicts, recorded per sample with their counted rules:
+
+| set | samples | malicious | suspicious | clean |
+|---|---|---|---|---|
+| bench/corpus/malicious | 31 | 14 | 15 | 2 (`adv-quote-breakout`, `shadow-redirect-payments`) |
+| incident replicas (v1, v2, update over trusted v1, typosquat by name, cross-server) | 17 | 5 | 5 | 7 (the five clean v1s, and postmark and cross-server-shadowing v2 fresh) |
+| DataDog real malware (pinned sample, local cache only) | 200 | 49 | 98 | 53 |
+
+A sample fails when its verdict drops a level or it loses its last counted finding. The DataDog set runs only where
+the encrypted zips are cached (`BAWWAB_DATADOG_CACHE=... pytest -k datadog`, or `--datadog`); nothing is downloaded.
+
 ## Files
 
 - `replicas/<incident>/{v1,v2}/`: the five incident replicas (inert, canary-only).
