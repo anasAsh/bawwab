@@ -436,6 +436,17 @@ The check watches what actually changed, not what the command looked like.
   approval id. The user runs `! bawwab approve <id>`, or
   `! bawwab reject <id>`, which removes the entry and moves a skill
   directory into `~/.bawwab/quarantine/`.
+- **A held item is switched off** (0.1.4, after external review): a server
+  entry or code-running setting leaves its file, a settings hook its event,
+  a skill/command/agent moves to `~/.bawwab/disabled/`, a plugin is set to
+  `false` in `enabledPlugins` where it was `true`. Approve restores exactly
+  that; reject removes what is left. Recorded before it is applied,
+  idempotent, crash-safe; never bawwab itself; install-time batches are
+  held but not switched off.
+- **Permissions** (0.1.4): `permissions` is held only when a change lets
+  more run without a prompt (unscoped Bash/Write allows, a shell or `sudo`
+  prefix, `defaultMode` `bypassPermissions`/`acceptEdits`, a removed
+  deny/ask rule); narrow allows and new deny/ask rules are silent.
 - **When it runs:** after every Bash/Write/Edit call (PostToolUse), and
   before every tool call (PreToolUse, all tools). The PreToolUse run also
   catches changes made outside Claude during the session.
@@ -514,7 +525,9 @@ by design, R56).
 
 ### 2. Fetch (download only)
 
-npm and PyPI via registry HTTP APIs + safe archive extraction; git via
+npm and PyPI via registry HTTP APIs + safe archive extraction (0.1.4: npm
+tarballs checked against `dist.integrity`; PyPI reads the wheel pip would
+install here, pure-Python first, the sdist only when no wheel fits); git via
 `--depth 1` clone with hooks and submodules disabled; local paths in place;
 remote MCP servers via `initialize` + list calls only; Docker images are
 metadata-only unless deep. Exact versions are resolved for the cache key.
