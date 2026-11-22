@@ -1807,7 +1807,7 @@ class CodeRules:
         out = [(x.rule, x.line or 1) for x in found if x.rule in STRONG_RULES]
         t, regexes = _code_info(f.rel, f.text)
         # Every credential hit except a regex literal counts, deny-listed or not (R29).
-        hits = [p for p, kind in _cred_hits(f, t, regexes) if kind not in ("regex", "prose")]
+        hits = [p for p, kind in _cred_hits(f, t, regexes) if kind not in ("regex", "prose") and not _write_dest(f, t, p)]
         if hits:
             cred_lines = [_line_of(t, p) for p in hits]
             if _combo_near(f, t, hits, cred_lines, _net_lines(f, t)):
@@ -1878,7 +1878,7 @@ class CodeRules:
         installs = [pos for pos, kind in _claude_refs(t, f) if kind == "install" and not _context(f, t, pos, regexes)]
         real = [p for p, k in hits if k == "real"]
         denied = [p for p, k in hits if k != "real"]
-        comboable = [p for p, k in hits if k not in ("regex", "prose")]
+        comboable = [p for p, k in hits if k not in ("regex", "prose") and not _write_dest(f, t, p)]
         net = _net_calls(f, t)
         net_lines = [ln for ln, _ in net]
         over = next((c for c in _env_copies(f, t) if c.budget), None)
@@ -2576,6 +2576,52 @@ def _precise_kind(f: ScanFile, t: str, m: re.Match, regexes) -> str | None:
             return kind
     a, b = lit or _word_at(t, max(0, pos - 300), min(len(t), end + 300), pos, end)
     return "deny" if _only_matched(t, a, b) else kind
+
+
+# ---------------------------------------------------------------- write destinations (FP round 2)
+# Exfiltration reads a secret and sends it. A credential path that is only the DESTINATION of a write, a mkdir or a
+# delete (a test fixture writing join(root, ".env"), `printf ... > "$HOME/x/.env"`) is no source for a combo or the
+# network backstop. It is still a credential-access finding (writing into ~/.ssh is its own attack).
+_DEST_LEAVES = {
+    "writeFile", "writeFileSync", "appendFile", "appendFileSync", "outputFile", "outputFileSync", "writeJson",
+    "writeJsonSync", "outputJson", "outputJsonSync", "mkdir", "mkdirSync", "mkdirp", "ensureDir", "ensureDirSync",
+    "rm", "rmSync", "unlink", "unlinkSync", "rmdir", "rmdirSync", "truncate", "truncateSync", "makedirs", "remove",
+}
+_JOIN_LEAVES = {"join", "resolve", "Path", "joinpath", "PurePath", "expanduser"}
+_DEST_TAIL_RE = re.compile(
+    r"""(?:\s*/\s*[frbu]?(['"])[^'"\n]{0,200}\1)*\s*\)*\s*\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir)\s*\("""
+)
+_SHELL_DEST_RE = re.compile(r"""(?:^|[^>&0-9<])>>?\s*['"]?[^\s'"<>|;&]*$|\b(?:mkdir|rm|touch)\s+(?:-\w+\s+)*['"]?[^\s'"<>|;&]*$""")
+
+
+def _write_dest(f: ScanFile, t: str, pos: int) -> bool:
+    """The credential path at pos is only where something is written, created or deleted (see above)."""
+    if f.rel.endswith((".sh", ".bash", ".zsh")):
+        ls = t.rfind("\n", 0, pos) + 1
+        return _SHELL_DEST_RE.search(t[ls:pos]) is not None
+    if not f.rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        return False
+    lit = re.match(r"""[^'"`\n]*['"`]""", t[pos : pos + 400])  # to the end of the string literal holding pos
+    end = pos + (lit.end() if lit else 0)
+    if f.rel.endswith(PY_EXT) and _DEST_TAIL_RE.match(t, end):
+        return True  # (root / ".env").write_text(...)
+    i = pos
+    for _ in range(4):  # out through path builders: writeFileSync(path.join(dir, ".env"), ...)
+        o = _open_bracket(t, i)
+        if o is None or t[o] != "(":
+            return False
+        args = _top_args(t, o)
+        m = re.search(r"([\w$.]+)\s*$", t[max(0, o - 120) : o])
+        leaf = (m.group(1) if m else "").rsplit(".", 1)[-1]
+        if leaf in _JOIN_LEAVES:
+            i = o  # any segment of a path being built
+            continue
+        if not args or pos > o + 1 + len(args[0]):
+            return False  # the destination is the first argument
+        if leaf in _DEST_LEAVES:
+            return True
+        return leaf == "open" and _WRITE_MODE_RE.search(",".join(args[1:])) is not None
+    return False
 
 
 # ---------------------------------------------------------------- docstrings no model reads (FP round 2)

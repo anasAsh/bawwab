@@ -633,7 +633,9 @@ class _Js:
         if fn is None:
             return False
         path = self.module_of(fn)
-        if path is None or not launcher_path(*path):
+        if path is None:
+            return self.runtime_launcher(fn)
+        if not launcher_path(*path):
             return False
         root = fn
         while root.type in ("member_expression", "subscript_expression"):
@@ -645,6 +647,19 @@ class _Js:
             if decl is None or self.binding_patched(decl):
                 return False
         return not self.module_patched(path[0])
+
+    def runtime_launcher(self, fn) -> bool:
+        """Bun.spawn / Bun.spawnSync: the Bun runtime's own launcher, a global no import names (FP round 2). Only
+        when `Bun` is the global: not declared, not written through globalThis / Object.assign / eval anywhere, and
+        `Bun` / `Bun.spawn` never assigned."""
+        if fn.type != "member_expression":
+            return False
+        obj, prop = self.f(fn, "object"), self.f(fn, "property")
+        if obj is None or prop is None or obj.type != "identifier" or self.t(obj) != "Bun":
+            return False
+        if self.t(prop) not in ("spawn", "spawnSync") or self.resolve(obj) is not None or "Bun" in self.global_names():
+            return False
+        return not re.search(rb"(?<![\w$.])Bun\s*(?:\.\s*spawn\w*|\[[^\]]*\])?\s*=(?![=>])", self.src)
 
     def launcher_text(self, callee: str) -> bool:
         """For a callee given as text: resolved at module level (the r2 unit test's interface)."""
