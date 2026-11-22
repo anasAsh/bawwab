@@ -67,7 +67,8 @@ EXPECTED = {
     ("credential-access", "high"): 12,     # .claude paths: paths.py, prefilter.py, detect.py + docstrings/comments;
                                            # deep mode's decoys and offline npm config (bawwab/sandbox/)
     ("credential-access", "low"): 2,       # catalog regexes in text.py (credential paths) and code.py (dotenv)
-    ("install-dir-access", "low"): 11,     # + sandbox/observe.py's list of paths a target must not write
+    ("install-dir-access", "low"): 12,     # + sandbox/observe.py's list of paths a target must not write,
+                                           # scan/reach.py (a repo's .claude/ folder is model-facing)
     ("judge.truncated", "low"): 1,         # Bawwab's model-facing text is now over the judge's 60 KB window
     ("plugin.bundled-mcp", "low"): 1,
     ("plugin.hook-broad", "med"): 2,       # gate and post: matcher "*"
