@@ -123,7 +123,7 @@ def test_content_hash_stable_and_changes(server):
     c.cleanup()
 
 
-def _pypi_setup(base, routes, sdist=True):
+def _pypi_setup(base, routes, sdist=True, with_wheel=True):
     sd = make_tgz({"setup.py": b"x=1", "pyproject.toml": b""}, top="mypkg-1.0")
     zbuf = io.BytesIO()
     with zipfile.ZipFile(zbuf, "w") as zf:
@@ -132,7 +132,8 @@ def _pypi_setup(base, routes, sdist=True):
     urls = []
     if sdist:
         urls.append({"packagetype": "sdist", "url": f"{base}/f/mypkg-1.0.tar.gz", "digests": {"sha256": hashlib.sha256(sd).hexdigest()}, "upload_time_iso_8601": "2021-05-06T07:08:09.000000Z"})
-    urls.append({"packagetype": "bdist_wheel", "url": f"{base}/f/mypkg-1.0-py3-none-any.whl", "digests": {"sha256": hashlib.sha256(wheel).hexdigest()}, "upload_time_iso_8601": "2021-05-06T07:08:09.000000Z"})
+    if with_wheel:
+        urls.append({"packagetype": "bdist_wheel", "url": f"{base}/f/mypkg-1.0-py3-none-any.whl", "digests": {"sha256": hashlib.sha256(wheel).hexdigest()}, "upload_time_iso_8601": "2021-05-06T07:08:09.000000Z"})
     doc = json.dumps({"info": {"name": "mypkg", "version": "1.0", "project_urls": {"Source": "https://github.com/a/mypkg"}}, "urls": urls}).encode()
     routes["/pypi/mypkg/json"] = doc
     routes["/pypi/mypkg/1.0/json"] = doc
@@ -142,7 +143,7 @@ def _pypi_setup(base, routes, sdist=True):
 
 def test_pypi_sdist(server):
     base, routes = server
-    _pypi_setup(base, routes)
+    _pypi_setup(base, routes, with_wheel=False)  # only an sdist: that is what installs
     for v in (None, "1.0"):
         f = fetch_target(Target("pypi", "pypi:mypkg", name="mypkg", version=v), FetchOpts(pypi_base=base))
         assert f.resolved_version == "1.0"
@@ -164,7 +165,7 @@ def test_pypi_wheel_fallback(server):
 
 def test_pypi_digest_mismatch(server):
     base, routes = server
-    _pypi_setup(base, routes)
+    _pypi_setup(base, routes, with_wheel=False)
     routes["/f/mypkg-1.0.tar.gz"] = make_tgz({"setup.py": b"evil"}, top="mypkg-1.0")
     with pytest.raises(FetchError):
         fetch_target(Target("pypi", "pypi:mypkg", name="mypkg"), FetchOpts(pypi_base=base))
@@ -319,4 +320,73 @@ def test_git_repo_config_not_honoured(tmp_path):
     url = f"file://{bare}"
     f = fetch_target(Target("git", url, url=url), FetchOpts(git_allow_file=True))
     assert len(f.resolved_version) == 40 and not marker.exists()
+    f.cleanup()
+
+
+
+def _npm_integrity(base, routes, integrity=None, shasum=None):
+    doc = json.loads(routes["/@a/b"])
+    dist = doc["versions"]["1.2.0"]["dist"]
+    dist.pop("integrity", None)
+    dist.pop("shasum", None)
+    if integrity is not None:
+        dist["integrity"] = integrity
+    if shasum is not None:
+        dist["shasum"] = shasum
+    routes["/@a/b"] = json.dumps(doc).encode()
+
+
+def _sri(data, alg="sha512"):
+    import base64
+
+    return f"{alg}-" + base64.b64encode(hashlib.new(alg, data).digest()).decode()
+
+
+def test_npm_integrity_checked(server):
+    base, routes = server
+    _npm_setup(base, routes)
+    good = routes["/t/b-1.2.0.tgz"]
+    t, o = Target("npm", "@a/b", name="@a/b"), FetchOpts(npm_registry=base)
+    _npm_integrity(base, routes, integrity=f"sha1-AAAA {_sri(good)}")
+    fetch_target(t, o).cleanup()  # the strongest algorithm given is the one checked
+    _npm_integrity(base, routes, integrity=_sri(b"other bytes"))
+    with pytest.raises(FetchError, match="integrity mismatch"):
+        fetch_target(t, o)
+    _npm_integrity(base, routes, shasum=hashlib.sha1(b"other").hexdigest())  # no integrity: shasum
+    with pytest.raises(FetchError, match="sha1 integrity mismatch"):
+        fetch_target(t, o)
+    _npm_integrity(base, routes, shasum=hashlib.sha1(good).hexdigest())
+    fetch_target(t, o).cleanup()
+
+
+def _wheel_url(name):
+    return {"packagetype": "bdist_wheel", "filename": name, "url": f"https://f.invalid/{name}"}
+
+
+def test_pypi_pick_is_what_pip_installs():
+    from bawwab.fetch.pypi import pick_file
+
+    sdist = {"packagetype": "sdist", "filename": "p-1.0.tar.gz", "url": "https://f.invalid/p-1.0.tar.gz"}
+    pure = _wheel_url("p-1.0-py3-none-any.whl")
+    old_py = _wheel_url("p-1.0-py2-none-any.whl")
+    other = _wheel_url("p-1.0-cp312-cp312-win_arm64.whl")
+    assert pick_file([sdist, pure]) is pure  # a pure wheel installs, not the sdist
+    assert pick_file([sdist, _wheel_url("p-1.0-py2.py3-none-any.whl")])["filename"].startswith("p-1.0-py2.py3")
+    assert pick_file([sdist, old_py]) is sdist  # pip would build the sdist here
+    assert pick_file([sdist, other]) is sdist
+    assert pick_file([other]) is other  # nothing else to read
+    from packaging.tags import sys_tags
+
+    here = next(iter(sys_tags()))
+    native = _wheel_url(f"p-1.0-{here.interpreter}-{here.abi}-{here.platform}.whl")
+    assert pick_file([sdist, other, native]) is native
+    assert pick_file([sdist, native, pure]) is pure
+    assert pick_file([{**pure, "yanked": True}, _wheel_url("p-1.0-py3-none-any.whl")]) is not pure
+
+
+def test_pypi_scans_the_wheel_when_there_is_one(server):
+    base, routes = server
+    _pypi_setup(base, routes)
+    f = fetch_target(Target("pypi", "pypi:mypkg", name="mypkg"), FetchOpts(pypi_base=base))
+    assert (f.root / "mypkg" / "__init__.py").exists() and not (f.root / "setup.py").exists()
     f.cleanup()

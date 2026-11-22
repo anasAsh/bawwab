@@ -23,11 +23,22 @@ _SAFE_WORD = re.compile(r"[A-Za-z0-9_@%+=:,./-]+")
 Change = tuple[str, str]  # (package name, pinned version)
 
 
+# An exact npm version (semver: 1.2.3, 1.2.3-rc.1+build). Anything else after "@" that the scan resolved is a
+# dist-tag (@next, @beta, @canary): it moves, so it is pinned to the version scanned, like an unversioned spec.
+_NPM_EXACT = re.compile(r"v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
+
+
+def _npm_tag(t: Target) -> bool:
+    return t.kind == "npm" and isinstance(t.version, str) and _VERSION.fullmatch(t.version) is not None \
+        and not _NPM_EXACT.fullmatch(t.version)
+
+
 def _pins(resolved: dict[Target, str]) -> list[tuple[Target, str]]:
     return [
         (t, v) for t, v in resolved.items()
-        if t.kind in ("npm", "pypi") and t.name and t.version in _UNPINNED
+        if t.kind in ("npm", "pypi") and t.name and (t.version in _UNPINNED or _npm_tag(t))
         and isinstance(v, str) and _VERSION.fullmatch(v) and v not in ("unknown", "local", "unversioned")
+        and v != t.version
     ]
 
 
@@ -36,7 +47,7 @@ def _pin_spec(spec: str, kind: str, pins: list[tuple[Target, str]]) -> tuple[str
     for t, v in pins:
         if t.kind != kind:
             continue
-        if kind == "npm" and spec in (t.name, f"{t.name}@latest"):
+        if kind == "npm" and spec in (t.name, f"{t.name}@latest", *([f"{t.name}@{t.version}"] if t.version else [])):
             return f"{t.name}@{v}", (t.name, v)
         if kind == "pypi":
             m = re.fullmatch(rf"({re.escape(t.name)})(\[[^\]]*\])?", spec)

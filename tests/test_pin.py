@@ -168,3 +168,16 @@ def test_fragment_args_with_bracket_inside_string():
         inp = HookInput("Edit", {"file_path": "/p/.mcp.json", "old_string": "a", "new_string": frag}, "/tmp")
         out = pin_input(inp, {t: "1.0.0"})
         assert out is not None and out["new_string"] == want, (frag, out)
+
+
+
+def test_dist_tags_pinned_to_the_scanned_version():
+    for tag in ("next", "beta", "canary", "rc"):
+        inp = HookInput("Bash", {"command": f"claude mcp add gh -- npx -y @a/b@{tag} --flag"}, "/tmp")
+        out = pin_input(inp, {npm("@a/b", tag): "2.1.0-beta.3"})
+        assert out["command"] == "claude mcp add gh -- npx -y @a/b@2.1.0-beta.3 --flag", tag
+
+
+def test_exact_prerelease_versions_are_not_tags():
+    inp = HookInput("Bash", {"command": "claude mcp add gh -- npx -y pkg@1.0.0-rc.1"}, "/tmp")
+    assert pin_input(inp, {npm("pkg", "1.0.0-rc.1"): "1.0.0-rc.1"}) is None

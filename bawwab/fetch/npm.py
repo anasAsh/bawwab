@@ -28,10 +28,15 @@ def fetch_npm(t: Target, opts: FetchOpts, tmp: Path) -> tuple[Path, str, Package
     if not version or version not in versions:
         raise FetchError(f"npm: version {version!r} of {t.name} not found")
     try:
-        tarball = versions[version]["dist"]["tarball"]
+        dist = versions[version]["dist"]
+        tarball = dist["tarball"]
     except (KeyError, TypeError) as e:
         raise FetchError(f"npm: no tarball for {t.name}@{version}") from e
-    arc = download(tarball, tmp / "download.tgz", opts.timeout_s)
+    integrity, shasum = dist.get("integrity"), dist.get("shasum")
+    # the bytes scanned are the bytes the registry vouches for (and npm checks the same integrity on install)
+    arc = download(tarball, tmp / "download.tgz", opts.timeout_s,
+                   integrity=integrity if isinstance(integrity, str) else None,
+                   sha1_hex=shasum if isinstance(shasum, str) else None)
     dest = tmp / "x"
     dest.mkdir()
     findings = extract_archive(arc, dest)
