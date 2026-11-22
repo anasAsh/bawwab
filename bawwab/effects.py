@@ -952,9 +952,8 @@ def quarantine_text(entries: list[dict]) -> str:
     n = len(rows)
     head = (f"⛔ bawwab: {n} change{'s' if n != 1 else ''} to Claude's setup {'are' if n != 1 else 'is'} on hold. "
             "Claude can only read and ask until you decide; held items are switched off (keep turns them back on).")
-    lines = [head, ""]
+    lines = [head]
     lines += table([("ID", "ITEM", "VERDICT", "ADVICE", "WHY")] + [(i, it, v.lower(), a, why) for i, it, v, a, why in rows])
-    lines.append("")
     lines += group_commands(entries)
     _write_details(entries)
     lines.append(f"  For Claude: ask about each item with AskUserQuestion (bawwab skill; ADVICE is advice, not a verdict); "
