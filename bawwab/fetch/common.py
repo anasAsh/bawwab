@@ -59,9 +59,41 @@ def http_get_json(url: str, timeout: float) -> dict:
     return data
 
 
-def download(url: str, dest: Path, timeout: float, sha256: str | None = None) -> Path:
-    """Stream url to dest, enforcing the size cap. Never interprets the content."""
+_SRI_ALGS = ("sha512", "sha384", "sha256", "sha1")  # strongest first (W3C Subresource Integrity)
+
+
+def _sri(integrity: str | None, sha1_hex: str | None) -> dict[str, set[bytes]]:
+    """Expected digests by algorithm from an npm `dist.integrity` SRI string ("sha512-<base64> ..."), only the
+    strongest algorithm given counts (as SRI); else from `dist.shasum` (sha1 hex). {} when neither is usable."""
+    import base64
+    import binascii
+
+    want: dict[str, set[bytes]] = {}
+    for tok in (integrity or "").split():
+        alg, _, b64 = tok.partition("-")
+        if alg in _SRI_ALGS and b64:
+            try:
+                want.setdefault(alg, set()).add(base64.b64decode(b64.split("?", 1)[0], validate=True))
+            except (binascii.Error, ValueError):
+                continue
+    if want:
+        best = next(a for a in _SRI_ALGS if a in want)
+        return {best: want[best]}
+    if sha1_hex:
+        try:
+            return {"sha1": {bytes.fromhex(sha1_hex.strip())}}
+        except ValueError:
+            return {}
+    return {}
+
+
+def download(url: str, dest: Path, timeout: float, sha256: str | None = None, integrity: str | None = None,
+             sha1_hex: str | None = None) -> Path:
+    """Stream url to dest, enforcing the size cap. Never interprets the content. sha256 (hex, PyPI), or an npm
+    SRI `integrity` string / sha1 `shasum`, is checked against the bytes received."""
     h = hashlib.sha256()
+    want = _sri(integrity, sha1_hex)
+    extra = {alg: hashlib.new(alg) for alg in want}
     total = 0
     try:
         with httpx.stream("GET", url, timeout=timeout, follow_redirects=True) as r:
@@ -76,6 +108,8 @@ def download(url: str, dest: Path, timeout: float, sha256: str | None = None) ->
                     if total > MAX_DOWNLOAD_BYTES:
                         raise FetchError(f"download exceeds {MAX_DOWNLOAD_BYTES} bytes")
                     h.update(chunk)
+                    for x in extra.values():
+                        x.update(chunk)
                     fh.write(chunk)
     except FetchError:
         raise
@@ -83,6 +117,9 @@ def download(url: str, dest: Path, timeout: float, sha256: str | None = None) ->
         raise FetchError(f"download of {url} failed: {type(e).__name__}: {e}") from e
     if sha256 and h.hexdigest() != sha256.lower():
         raise FetchError(f"sha256 mismatch for {url}")
+    for alg, x in extra.items():
+        if x.digest() not in want[alg]:
+            raise FetchError(f"{alg} integrity mismatch for {url}")
     return dest
 
 

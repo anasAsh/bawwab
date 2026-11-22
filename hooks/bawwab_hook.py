@@ -746,19 +746,8 @@ def _flag_present() -> bool:
     return os.path.exists(os.path.join(_bawwab_home(), "warnings.flag"))
 
 
-def _is_child() -> bool:
-    """BAWWAB_CHILD short-circuits only with bawwab's per-install token (a bare value from settings env
-    must not switch the hook off)."""
-    if os.environ.get("BAWWAB_CHILD", "") in ("", "0"):
-        return False
-    try:
-        return _load_fingerprint().is_child(_bawwab_home())
-    except Exception:  # noqa: BLE001 - can't verify: not a child
-        return False
-
-
 def main(argv: list[str]) -> int:
-    # user commands, run through bin/bawwab (R54): never hook work, so before the child short-circuit
+    # user commands, run through bin/bawwab (R54): never hook work
     if argv[1:2] == ["venv-dir"]:
         print(_venv_dir())
         return 0
@@ -767,8 +756,6 @@ def main(argv: list[str]) -> int:
             _say("usage: bawwab setup [--retry]   (sync bawwab's own dependencies now and show any error)", True)
             return 2
         return bootstrap(foreground=True)
-    if _is_child():
-        return 0
     if argv[1:2] == ["gate"]:
         try:
             return gate()

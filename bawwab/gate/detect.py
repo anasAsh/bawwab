@@ -2679,6 +2679,24 @@ def _mcpjson_enabled(d: dict, top_dir: str) -> dict[tuple[str, str], None]:
     return out
 
 
+def _settings_env(new: object, old: object, acc: _Acc) -> None:
+    """A settings `env` change: the block names the keys added or changed (and removed). A BAWWAB_* key is a
+    plain deny: bawwab's own variables (state dir, venv, test switches) are not Claude's to set."""
+    new_d = new if isinstance(new, dict) else {}
+    old_d = old if isinstance(old, dict) else {}
+    changed = sorted(str(k) for k in new_d if k not in old_d or new_d[k] != old_d[k])
+    removed = sorted(str(k) for k in old_d if k not in new_d)
+    ours = [k for k in changed + removed if k.upper().startswith("BAWWAB_")]
+    if ours:
+        acc.user_only(f"settings env sets bawwab's own variables: {', '.join(ours)[:200]}")
+    names = ", ".join(changed[:12]) + (f" (+{len(changed) - 12} more)" if len(changed) > 12 else "")
+    if not isinstance(new, (dict, type(None))):
+        names = "not an object"
+    detail = (f"adds/changes {names}" if names else "") + \
+        (("; " if names else "") + f"removes {', '.join(removed[:12])}" if removed else "")
+    acc.protect(f"settings key executes code: env ({detail[:300] or 'changed'})")
+
+
 def _config_change(inp: HookInput, path: str, kind: str, acc: _Acc) -> None:
     name = os.path.basename(path)
     try:
@@ -2706,7 +2724,10 @@ def _config_change(inp: HookInput, path: str, kind: str, acc: _Acc) -> None:
     if kind in ("settings", "claude_json"):
         for k in _EXEC_SETTINGS:
             if new.get(k) != old.get(k):
-                acc.protect(f"settings key executes code: {k}")
+                if k == "env":
+                    _settings_env(new.get(k), old.get(k), acc)
+                else:
+                    acc.protect(f"settings key executes code: {k}")
     old_servers = _servers(old)
     for key, spec in _servers(new).items():
         if spec == old_servers.get(key):

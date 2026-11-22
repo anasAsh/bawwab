@@ -96,8 +96,17 @@ Bawwab checks at two points:
 2. **After the command runs (the effect check).** No parser understands every bash trick, so Bawwab also watches
    what *actually changed* in Claude's config and install folders. Anything new or changed is scanned: clean items are
    accepted, and the rest are quarantined or warned about depending on your [security level](#security-levels). While
-   something is quarantined, every tool call except read-only ones is blocked until you approve or reject it.
-   Quarantine pauses Claude; it doesn't undo what already ran (an install script may have executed by then).
+   something is quarantined, every tool call except read-only ones is blocked until you approve or reject it, and
+   the held item is switched off so it doesn't start at the next launch either: a server entry or a code-running
+   setting is taken out of its file, a settings hook out of its event, a plugin is set to `false` in
+   `enabledPlugins`, a skill is moved aside. `approve` puts back exactly what was there; `reject` removes it.
+   Hooks and settings that were already there when Bawwab was installed (the first-run batch) are held but not
+   switched off. Quarantine pauses Claude and switches the item off; it doesn't undo what already ran (an install
+   script may have executed by then).
+   A change to `permissions` is held only when it lets more run without asking you (an unscoped `Bash`, `Bash(*)`
+   or shell/`sudo` prefix allow, an unscoped `Write`/`Edit` allow, `defaultMode` `bypassPermissions` or
+   `acceptEdits`, a deny or ask rule removed); narrow allows such as `Bash(npm test)` and new deny or ask rules pass
+   silently.
 
 ### Security levels
 
@@ -110,8 +119,9 @@ You choose how much Bawwab blocks. On first start it asks; until you choose, the
 | Unscanned change to Claude's config | warns | quarantines if malicious | quarantines if not clean |
 
 A warning goes to you and to Claude, and Claude Code's normal permission prompts still apply. Two things hold at
-every level: Bawwab's **self-protection** (the gate refuses Claude running `approve`/`reject`, editing Bawwab's state
-or removing its hooks), and **lowering the level is kept for you** (`! bawwab level medium` or `low`); Claude may
+every level: Bawwab's **self-protection** (the gate refuses Claude running `approve`/`reject`, editing Bawwab's state,
+removing its hooks or setting Bawwab's own `BAWWAB_*` variables in a settings `env`; no environment variable
+switches Bawwab's hooks off), and **lowering the level is kept for you** (`! bawwab level medium` or `low`); Claude may
 raise it to high. A project's `.claude/bawwab.json` can only raise it. Both hold against the tool calls the gate
 recognises, not against a program that runs as your user and edits Bawwab's files directly: Bawwab and Claude run
 as the same OS user (see [Honest limitations](#honest-limitations)).
@@ -122,7 +132,7 @@ as the same OS user (see [Honest limitations](#honest-limitations)).
 |---|---|
 | 🔍 **Static rules** | install scripts, `curl \| sh`, eval of decoded or fetched code, credential access (`~/.ssh`, `.env`, `~/.aws`), exfiltration hosts, obfuscation, hidden Unicode, prompt-injection phrasing, tool shadowing, risky plugin hooks, typosquats |
 | ☣️ **Known malware** | npm and PyPI packages listed as malicious (`MAL-*`) in [OSV](https://osv.dev), from the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed. A failed lookup is a note, not a block. |
-| 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
+| 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* It reads the model-facing text (tool, prompt and resource descriptions, `SKILL.md`, commands, agents) and the code around each static finding, up to 60 KB: not the whole package, so code with no static finding is left to the static rules. Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
 | 🧭 **Claude's recommendation** | on anything not clean: Claude reads the flagged code (and more of the package if it needs to), assesses each finding as false alarm, expected or real, and recommends *keep*, *keep with care*, *don't install* or *can't tell*. Every claim must quote a real line, which Bawwab checks; it can never recommend keeping something rated malicious, and it never changes the verdict or who approves. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
 | 🕸️ **Cross-server check** | server A's tool, prompt or resource descriptions steering server B's tools (skills, agents and READMEs that name tools on purpose are left to the injection rules) |
@@ -130,7 +140,11 @@ as the same OS user (see [Honest limitations](#honest-limitations)).
 
 ### Design rules
 
-- **Never executes what it scans** outside the sandbox. It downloads over registry APIs and extracts archives safely. No `npm install`, no imports. Only deep mode runs code, and only inside the Docker sandbox; no Docker means *suspicious*, never a pass.
+- **Never executes what it scans** outside the sandbox. It downloads over registry APIs and extracts archives safely. No `npm install`, no imports.
+  It scans what would install: for PyPI the wheel pip would pick here (pure-Python first, else the best match for
+  this interpreter and platform), the sdist only when no wheel fits; npm tarballs are checked against the
+  registry's `dist.integrity` and PyPI files against their sha256. An unpinned spec, `@latest` or another npm
+  dist-tag (`@next`, `@beta`) is pinned to the version scanned. Only deep mode runs code, and only inside the Docker sandbox; no Docker means *suspicious*, never a pass.
 - **Fails closed.** If a scan errors, times out, or Claude's review returns garbage, the result is *suspicious*, never *clean*.
 - **Can't be talked out of a finding.** A static red flag always reaches you, whatever the scanned text says to the reviewer.
 - **Never grants permission.** A clean scan doesn't approve the command. Claude Code's normal permission rules still apply.
@@ -451,7 +465,10 @@ Everything Bawwab scans is written by someone who may be attacking the agent tha
 - **No permission is granted.** Bawwab only ever denies. A clean scan leaves Claude Code's normal permission
   rules in charge, so a target that fools the scanner still gets the usual prompt.
 - **What actually changed is checked too.** Even if a command slips past the gate, the effect check sees the
-  new server, skill, plugin or hook in Claude's configuration and quarantines it until you decide.
+  new server, skill, plugin or hook in Claude's configuration, quarantines it and switches it off until you decide.
+- **No off switch in the environment.** Bawwab's own `claude -p` calls (the review and the recommendation) load
+  no settings, plugins or hooks, so its hooks have no "I'm Bawwab's child" variable to honour, and a settings `env`
+  can't turn them off; the test-only fake judge exists only in Bawwab's source checkout.
 
 ## Threat analysis methodology
 
@@ -488,6 +505,13 @@ the same rules to the most popular MCP servers, skills and plugins, with every f
   the effect check and the session-start inventory catch them after the fact.
 - Bash parsing is best-effort. The gate recognises the install commands and config edits it knows, and bash
   has endless ways to hide one. The effect check is the backstop, and it acts after the command has run.
+- PyPI: the wheel picked is the one that fits the Python Bawwab runs on. A server started with another
+  interpreter or on another platform may install a different wheel, or build the sdist (running its `setup.py`),
+  which was then not scanned.
+- A quarantined item stays switched off until you approve or reject it, even if you delete or edit its entry
+  yourself meanwhile (an edited entry is a new item and is checked on its own). A plugin is switched off in the
+  settings files of the user and of the project in view; another project's settings that enable it are left alone
+  (every Claude Code tool call is blocked while it is held anyway).
 - The `SessionStart` inventory only warns. What it finds in things already installed arrives as a warning
   with your next prompt; it doesn't block anything.
 - Static rules can be dodged by determined obfuscation. That's why there's a Claude review, a "never below

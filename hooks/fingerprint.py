@@ -346,7 +346,9 @@ def semantic_digest(cwd: str, home: str, agents=None) -> str:
             with open(p, "rb") as f:
                 data = _parse(t, f.read(), p)
             parsed[p] = data
-            part = [_pick(data, kp, cwd, home, tables) for kp in keypaths]
+            proj = getattr(t, "project_value", None)  # e.g. permissions: only what broadens counts
+            part = [proj(kp, v) if proj else v for kp, v in ((kp, _pick(data, kp, cwd, home, tables))
+                                                             for kp in keypaths)]
         except FileNotFoundError:
             part = "-"
         except (OSError, ValueError, RecursionError):
@@ -548,21 +550,6 @@ def initialised(home: str, bawwab_home: str) -> bool:
     installed plugin whose state was lost (fail closed). None of these = a fresh install (first-run prompt)."""
     return any(os.path.exists(p) for p in marker_paths(home)) or os.path.exists(state_path(bawwab_home)) \
         or plugin_lost(home) is not None
-
-
-def is_child(bawwab_home: str) -> bool:
-    """BAWWAB_CHILD counts only when it equals the per-install token bawwab sets on its own children."""
-    import hmac
-
-    v = os.environ.get("BAWWAB_CHILD", "")
-    if not v or v == "0":
-        return False
-    try:
-        with open(os.path.join(bawwab_home, "child.token")) as f:
-            tok = f.read().strip()
-    except OSError:
-        return False
-    return bool(tok) and hmac.compare_digest(v, tok)
 
 
 # ------------------------------------------------------------------ stored state

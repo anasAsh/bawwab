@@ -28,6 +28,7 @@ from bawwab.clicmd import cmd
 from bawwab.config import blocks
 from bawwab.envkeys import entry_meta_key
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
+from bawwab.agents import claude_code_watch as cc_watch
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
 from bawwab.report import advice_short, format_advice, sanitise
@@ -286,6 +287,8 @@ def take_install_baseline(store: Store, cwd: Path) -> int:
     items = _retry_unreadable(lambda: [it for a in ADAPTERS for it in a.install_items(Path(cwd))])
     for it in items:
         store.put_effect(it.ident, it.hash, it.scope, "provisional", only_new=True)
+        if it.category == "permissions":
+            _perm_keep(store, it.ident, it.value, only_new=True)
     return len(items)
 
 
@@ -296,7 +299,8 @@ def _synthetic_key(it: EffectItem) -> str:
 
 
 def _unscannable_report(it: EffectItem) -> ScanReport:
-    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting", "toggles": "effects.toggle"}.get(
+    rule = {"hooks": "effects.hook", "exec_settings": "effects.setting", "toggles": "effects.toggle",
+            "permissions": "effects.permissions"}.get(
         it.category, "effects.unscannable")
     what = json.dumps(it.value, sort_keys=True, default=str)
     reason = f"{it.label} was added or changed outside a scanned install: {what}"
@@ -340,6 +344,47 @@ def _accepted_now(store: Store, ident: str, current: dict[str, str]) -> bool:
     return row is not None and row["status"] in _ACCEPTED and current.get(ident) == row["hash"]
 
 
+# ------------------------------------------------------------------ permissions (only a broadening is held)
+
+def _perm_meta(ident: str) -> str:
+    return f"perm:{ident}"
+
+
+def _perm_old(store: Store, ident: str) -> dict | None:
+    try:
+        v = json.loads(store.get_meta(_perm_meta(ident)) or "null")
+    except ValueError:
+        return None
+    return v if isinstance(v, dict) else None
+
+
+def _perm_keep(store: Store, ident: str, value: object, only_new: bool = False) -> None:
+    """Record value as the accepted permissions projection of ident (the old side of the next comparison)."""
+    if not isinstance(value, dict) or (only_new and store.get_meta(_perm_meta(ident)) is not None):
+        return
+    text = json.dumps(value, sort_keys=True)
+    if store.get_meta(_perm_meta(ident)) != text:
+        store.set_meta(_perm_meta(ident), text)
+
+
+def _permissions(store: Store, it: EffectItem) -> tuple[bool, ScanReport]:
+    """A settings file's permissions changed. Accepted, and silent, unless the change lets more run without a
+    prompt (watch.permissions_broadened: a wildcard/unscoped Bash or Write allow, defaultMode bypassPermissions or
+    acceptEdits, a deny or ask rule removed). The first time a file's permissions are seen (an install from before
+    0.1.4), what is there is taken as accepted, like the install-time baseline."""
+    old = _perm_old(store, it.ident)
+    broad = [] if old is None else cc_watch.permissions_broadened(old, it.value)
+    key = _synthetic_key(it)
+    path = it.file or it.label
+    r = synthetic_report(sanitise(f"{path}: lets more run without a prompt: {'; '.join(broad)}", 600), key,
+                         Target("local", it.ident, name=it.label), rule="effects.permissions")
+    if not broad:
+        return True, r
+    if store.is_rejected(r.key):
+        return False, r
+    return store.is_approved(r.key), r
+
+
 def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) -> tuple[bool, ScanReport]:
     """(accepted, report). Accepted: approved (gate, quarantine or baseline) or scanned clean, or bawwab's own
     installed plugin recognised by its running code (R52: accepted, not scanned; `bawwab effects` lists it)."""
@@ -347,6 +392,11 @@ def _evaluate(it: EffectItem, scan, cfg, store: Store, current: dict[str, str]) 
         store.audit("effects.self", ident=it.ident, hash=it.hash)
         return True, synthetic_report(f"{it.label}: {SELF_LABEL}", f"{SELF_KEY_PREFIX}{it.hash}",
                                       Target("local", it.ident, name=it.label), rule="effects.self")
+    if it.category == "permissions":
+        ok, r = _permissions(store, it)
+        if ok:
+            _perm_keep(store, it.ident, it.value)
+        return ok, r
     if it.category == "toggles":
         r = _unscannable_report(it)
         if store.is_rejected(r.key):
@@ -381,11 +431,79 @@ def _is_quarantined(store: Store, it: EffectItem) -> bool:
     return any(q["ident"] == it.ident and q["hash"] == it.hash for q in store.active_quarantine())
 
 
-def _quarantine(store: Store, it: EffectItem, r: ScanReport) -> str:
+def _quarantine(store: Store, it: EffectItem, r: ScanReport, cwd: Path | None = None) -> str:
     qid = store.create_pending(r)
-    store.add_quarantine(qid, it.ident, it.hash, r.key, it.to_dict(), report_to_dict(r))
+    item = it.to_dict()
+    if it.category == "permissions":
+        item["value"] = it.value  # approving it makes this the accepted projection
+    qrow = store.add_quarantine(qid, it.ident, it.hash, r.key, item, report_to_dict(r))
     store.audit("effects.quarantine", id=qid, ident=it.ident, key=r.key, verdict=r.verdict.value)
+    if cwd is not None:
+        _disable(store, qrow, it, cwd)
     return qid
+
+
+# ------------------------------------------------------------------ quarantine switches the item off (0.1.4)
+# A held item is switched off as well as held (bawwab/agents/claude_code.py disable_plan), so a held server or
+# plugin doesn't start at the next launch. The plan is recorded first ("pending"), then applied ("done"): a crash
+# in between is finished by the next effect check. While the item stays off, its absence is not "gone" (the hold
+# stays); if it comes back unchanged it is switched off again. Approve switches it back on exactly (the restored
+# entry has the approved hash, so nothing is held again); reject removes what is left. Install-time batches
+# (hooks and settings other tools set up before bawwab) are held but not switched off: they ran before bawwab
+# came, and switching a user's whole existing setup off on `init --scan` would break it until they decide.
+
+
+def _disable(store: Store, qrow: int, it: EffectItem, cwd: Path) -> None:
+    adapter = adapter_for(it.ident)
+    planner = getattr(adapter, "disable_plan", None)
+    if planner is None:
+        return
+    try:
+        plan = planner(it.to_dict(), it.value)
+    except Exception as e:  # noqa: BLE001 - not switched off; the hold still blocks
+        store.audit("effects.disable_error", ident=it.ident, error=sanitise(f"{type(e).__name__}: {e}", 200))
+        return
+    if plan is None:
+        return
+    store.set_disabled(qrow, plan, "pending")
+    _apply_disable(store, {"qrow": qrow, "ident": it.ident, "disabled": json.dumps(plan)}, cwd)
+
+
+def _apply_disable(store: Store, q: dict, cwd: Path) -> bool:
+    adapter = adapter_for(q["ident"])
+    try:
+        plan = json.loads(q["disabled"])
+        ok, msg = adapter.apply_disable(plan, Path(cwd))
+    except Exception as e:  # noqa: BLE001 - stays "pending": tried again by the next check
+        store.audit("effects.disable_error", ident=q["ident"], error=sanitise(f"{type(e).__name__}: {e}", 200))
+        return False
+    store.audit("effects.disable", ident=q["ident"], ok=ok, result=sanitise(msg, 300))
+    store.set_disabled(q["qrow"], plan, "done" if ok else "pending")
+    return ok
+
+
+def _restore_approved(store: Store) -> list[str]:
+    """Switch every approved item bawwab had switched off back on (also finishes one a crash interrupted)."""
+    out: list[str] = []
+    for q in store.disabled_rows("approved"):
+        adapter = adapter_for(q["ident"])
+        try:
+            plan = json.loads(q["disabled"])
+            ok, msg = adapter.restore(plan)
+        except Exception as e:  # noqa: BLE001 - stays as it is: tried again on the next call
+            store.audit("effects.restore_error", ident=q["ident"], error=sanitise(f"{type(e).__name__}: {e}", 200))
+            continue
+        store.audit("effects.restore", ident=q["ident"], ok=ok, result=sanitise(msg, 300))
+        store.set_disabled(q["qrow"], plan, "restored" if ok else q["dstate"])
+        if ok:
+            out.append(msg)
+    return out
+
+
+def _keep_disabled(store: Store, q: dict) -> None:
+    """The hold ended without an approval (rejected, or the item was replaced): nothing is switched back on."""
+    if q.get("dstate") in ("pending", "done"):
+        store.set_disabled(q["qrow"], json.loads(q["disabled"]), "kept")
 
 
 def _quarantine_batch(store: Store, batch: list[tuple[EffectItem, ScanReport]]) -> str:
@@ -431,6 +549,10 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
             store.set_quarantine(held["qrow"], status="resolved")  # bawwab never holds itself (e.g. a dev run did)
             store.audit("effects.self_released", id=held["id"], ident=it.ident)
             del active[(it.ident, it.hash)]
+        if row and row["hash"] == it.hash and it.category == "permissions":
+            _perm_keep(store, it.ident, it.value)  # accepted as it is now (approved, or a row from before)
+        if held is not None and held.get("dstate") in ("pending", "done"):
+            _apply_disable(store, held, cwd)  # back unchanged (or a crash cut the switch-off short): off again
         if (row and row["hash"] == it.hash) or (it.ident, it.hash) in active:
             continue
         ok, r = _evaluate(it, scan, cfg, store, current)
@@ -443,12 +565,15 @@ def check_effects(cwd: Path, scan=None, store: Store | None = None) -> list[str]
             if not store.is_rejected(r.key) and not blocks(cfg.level, r.verdict):
                 _warn_only(store, it, r, cfg.level)
                 continue
-            new_ids.append(_quarantine(store, it, r))
+            new_ids.append(_quarantine(store, it, r, cwd))
     for ident in set(accepted) - set(current):
         store.drop_effect(ident)
     for (ident, h), q in active.items():
         if ident != ERROR_IDENT and q["item"] and _in_view(q, cwd) and current.get(ident) != h:
+            if ident not in current and q.get("dstate") in ("pending", "done"):
+                continue  # absent because bawwab switched it off: still held
             store.set_quarantine(q["qrow"], status="gone")
+            _keep_disabled(store, q)
     store.audit("effects.check", cwd=str(cwd), items=len(items), quarantined=len(new_ids))
     _sync_flag(store)
     return new_ids
@@ -542,7 +667,10 @@ def refresh(cwd: Path, scan=None, store: Store | None = None, force: bool = Fals
         return new + _fail_closed(store, sanitise(f"{type(e).__name__}: {e}", 200))
     try:
         with _lock():
-            new += check_effects(Path(cwd), scan, store)
+            created = check_effects(Path(cwd), scan, store)
+            new += created
+            if created:  # switching held items off wrote config: record the state after those writes
+                fp, digest = fpm.fingerprint(c, home, bawwab_home=bh), fpm.semantic_digest(c, home)
             fpm.save(bh, c, fp, digest)
     except Exception as e:  # noqa: BLE001 - fail closed
         return new + _fail_closed(store, sanitise(f"{type(e).__name__}: {e}", 200))
@@ -610,13 +738,17 @@ def quarantined(store: Store | None = None, status: str = "active") -> list[dict
         _take_error_marker(store, [])
     out: list[dict] = []
     reissued: dict[str, str] = {}  # a batch shares one id: re-issue it once
+    settled = False
     for q in store.quarantine_rows(status):
         if store.is_approved(q["key"]) and not store.is_rejected(q["key"]):
             store.set_quarantine(q["qrow"], status="approved")
             item = json.loads(q["item"]) if q["item"] else {}
             if q["ident"] != ERROR_IDENT and item.get("scope"):
                 store.put_effect(q["ident"], q["hash"], item["scope"], "approved", q["key"])
+                if item.get("category") == "permissions":
+                    _perm_keep(store, q["ident"], item.get("value"))
             store.audit("effects.approved", id=q["id"], ident=q["ident"], key=q["key"])
+            settled = True
             continue
         if q["id"] in reissued:
             store.set_quarantine(q["qrow"], qid=reissued[q["id"]])
@@ -636,6 +768,8 @@ def quarantined(store: Store | None = None, status: str = "active") -> list[dict
             q["id"] = new_id
         out.append(q)
     if status == "active":
+        if settled or store.disabled_rows("approved"):
+            _restore_approved(store)  # approved: switched back on (also after a crash cut it short)
         _sync_flag(store)
     return out
 
@@ -665,11 +799,17 @@ def reject_quarantined(qid: str, store: Store | None = None) -> tuple[bool, str]
         else:
             adapter = adapter_for(x["ident"])
             item = json.loads(x["item"]) if x["item"] else {}
-            ok, msg = adapter.remove(item) if adapter else (False, f"no adapter for {x['ident']}")
+            if adapter is None:
+                ok, msg = False, f"no adapter for {x['ident']}"
+            elif x.get("dstate") in ("pending", "done") and x.get("disabled"):
+                ok, msg = adapter.reject_disabled(item, json.loads(x["disabled"]), Path.cwd())
+            else:
+                ok, msg = adapter.remove(item)
         if not ok:
             failed.append(msg)
             continue
         store.set_quarantine(x["qrow"], status="rejected")
+        _keep_disabled(store, x)
         store.audit("effects.reject", id=x["id"], ident=x["ident"], result=msg)
         done.append(msg)
     if not done:
@@ -775,7 +915,8 @@ def quarantine_text(entries: list[dict]) -> str:
         (force if verdict == "MALICIOUS" else keep).append(qid)
     n = len(rows)
     head = (f"⛔ bawwab: {n} change{'s' if n != 1 else ''} to Claude's setup {'are' if n != 1 else 'is'} on hold. "
-            "Until the user decides, Claude can only read files and ask questions.")
+            "Until the user decides, Claude can only read files and ask questions, and held servers, plugins, "
+            "skills, hooks and settings are switched off (keep turns them back on).")
     w_id = max(len("ID"), *(len(r[0]) for r in rows))
     w_item = max(len("ITEM"), *(len(r[1]) for r in rows))
     w_v = max(len("VERDICT"), *(len(r[2]) for r in rows))
@@ -1046,7 +1187,7 @@ def full_scan(cwd: Path, scan=None, store: Store | None = None) -> list[str]:
         with _lock():  # an effect check may have quarantined it meanwhile
             if not _is_quarantined(store, it):
                 store.drop_effect(it.ident)
-                new_ids.append(_quarantine(store, it, r))
+                new_ids.append(_quarantine(store, it, r, cwd))
     if batch:
         with _lock():
             batch = [(it, r) for it, r in batch if not _is_quarantined(store, it)]

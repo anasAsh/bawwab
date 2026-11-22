@@ -23,6 +23,9 @@ class _FakeBackend:
         return Path(self.path).read_text()
 
 
+_NO_HOOKS = json.dumps({"disableAllHooks": True})
+
+
 class _CliBackend:
     def __init__(self, model: str) -> None:
         self.model = model
@@ -33,12 +36,14 @@ class _CliBackend:
             raise FileNotFoundError("claude CLI not found")
         argv = [
             exe, "-p", "--model", self.model, "--tools", "", "--strict-mcp-config",
-            "--setting-sources", "", "--no-session-persistence", "--output-format", "json",
+            # no user/project/local settings, so no enabledPlugins: no plugin (bawwab included) and no hook loads;
+            # disableAllHooks covers hooks from any source that still applies (managed settings)
+            "--setting-sources", "", "--settings", _NO_HOOKS, "--no-session-persistence", "--output-format", "json",
             "--json-schema", json.dumps(schema), "--system-prompt", system,
         ]
-        from bawwab.paths import child_env
+        from bawwab.paths import judge_env
 
-        env = child_env()
+        env = judge_env()
         with tempfile.TemporaryDirectory(prefix="bawwab-judge-") as cwd:
             try:
                 from bawwab.limits import child_argv
@@ -94,9 +99,19 @@ def api_backend(model: str) -> Backend:
     return _ApiBackend(model)
 
 
+_SOURCE_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _source_checkout() -> bool:
+    """This package runs from bawwab's own source checkout (its tests next to it). The installed plugin and a
+    wheel install ship no tests, so there the fake judge does not exist."""
+    return (_SOURCE_ROOT / "tests" / "conftest.py").is_file() and (_SOURCE_ROOT / "bench").is_dir() \
+        and (_SOURCE_ROOT / "bawwab" / "scan" / "judge" / "backends.py").is_file()
+
+
 def backend_for(cfg: Config) -> Backend:
     fake = os.environ.get("BAWWAB_FAKE_JUDGE")
-    if fake:  # test/e2e only
+    if fake and _source_checkout():  # test/e2e only: an env value (e.g. from settings `env`) can't fake the judge
         return _FakeBackend(fake)
     if cfg.llm_backend == "claude-cli" and (shutil.which("claude") or not os.environ.get("ANTHROPIC_API_KEY")):
         return cli_backend(cfg.llm_model)
