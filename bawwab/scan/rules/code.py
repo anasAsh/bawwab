@@ -10,6 +10,7 @@ import re
 import threading
 import tokenize
 import tomllib
+from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
@@ -701,7 +702,10 @@ DOTENV_RE = re.compile(
     r"|import\s+['\"]dotenv(?:/config)?['\"]|\bfrom\s+['\"]dotenv['\"]|^\s*(?:import|from)\s+dotenv\b",
     re.M,
 )
-CRED_RE = re.compile("|".join(CRED_RES), re.I)
+# A named entry (patterns.json "name") is a group, so its hits can be told apart (dotenv: FP plan step 3).
+CRED_RE = re.compile(
+    "|".join(f"(?P<{e['name']}>{e['re']})" if e.get("name") else e["re"] for e in _PATTERNS["credential_paths"]), re.I
+)
 # Copies of the whole environment (Task 10c B), as text: only for files that do not parse (R45 5).
 # Parsed files are read on the tree (envflow.py). Serialising the env (json.dumps, JSON.stringify,
 # str) stays a plain credential hit.
@@ -723,7 +727,12 @@ WRITE_RE = re.compile(
     r"|\bshutil\.(?:copy\w*|move)\b|\bopen\([^)\n]*['\"][wa]b?\+?['\"]"
 )
 # Names that mark a list/set/regex as a deny-list or matcher (R26c).
-DENY_WORD_RE = re.compile(r"deny|block|forbid|sensitive|protect|refus|exclu|ignor|reject|blacklist|disallow", re.I)
+# FP plan step 3: lists that redact, mask, skip, omit or scrub secrets keep them out too.
+DENY_WORD_RE = re.compile(
+    r"deny|block|forbid|sensitive|protect|refus|exclu|ignor|reject|blacklist|disallow|redact|mask|skip|omit|scrub"
+    r"|saniti|prune|exempt",
+    re.I,
+)
 REGEX_CALL_RE = re.compile(r"^(?:re\.(?:compile|search|match|fullmatch|findall|finditer|sub|split)|RegExp)$")
 CONTAINER_CALLEES = {"Set", "Array", "Array.of", "Map", "set", "frozenset", "list", "tuple"}
 PATH_CALLEES = {"path.join", "path.resolve", "path.posix.join", "os.path.join", "os.path.expanduser", "Path", "String", "str"}
@@ -2286,12 +2295,215 @@ def _launcher(f: ScanFile, callee: str) -> bool:
     return envflow.launcher_text(f.rel, _code_text(f.rel, f.text), callee)
 
 
+# ---------------------------------------------------------------- credential-path precision (FP plan step 3)
+# A credential pattern counts where code refers to a credential FILE, not where the token is part of a name,
+# a sentence or a list that keeps secrets out. Applied to a pattern hit that no deny-list / regex context
+# (_context) lowered already.
+# * The dotenv pattern (patterns.json "name": "dotenv") is the noisy one: a module (from .env import x), a
+#   method or property (.env("MCP_PROXY"), $.env.X, conn.env), help text ("create a .env file") and
+#   templates (.env.example, excluded in patterns.json) are no secret file: no hit at all. In code (and JSON)
+#   a .env counts only inside a string literal, as a path or as a shell argument (cat .env, curl -d @.env).
+# * The project's own .env (bare, ./, a relative path, or joined to cwd / __dirname / __file__ / a *root*,
+#   project or package dir) is "own": loading your own configuration is what every dotenv loader does
+#   (DOTENV_RE is LOW already), so it is LOW alone. Like a deny-list entry it still counts for the combo and
+#   the network backstop: a project .env read and sent out is theft all the same.
+# * A .env under the home directory, behind a glob, at an absolute path or joined to an unknown directory
+#   stays "real" (HIGH), as before.
+# * Any credential literal that is only compared or tested for membership (x === '.netrc',
+#   name in ('.npmrc', ...), [...].includes(base)), a Claude permission rule inside a deny list
+#   (Read(~/.ssh/**)), or a line of an ignore-style file (.mcpbignore, _.gitignore, .worktreeinclude) is
+#   "deny": LOW alone, still combo-eligible (R29).
+_LIT_PY_RE = re.compile(
+    r"[rRbBuUfF]{0,2}(?:'''(?:\\.|[^\\])*?'''" + r'|"""(?:\\.|[^\\])*?"""'
+    + r"""|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")"""
+)
+_LIT_JS_RE = re.compile(r"""'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`""")
+_PROJECT_ANCHOR_RE = re.compile(
+    r"__dirname|__file__|import\.meta|cwd|\bPWD\b|root|project|repo|\bpkg|package|\bapp_?dir|base_?dir"
+    r"|script_?dir|\bhere\b",
+    re.I,
+)
+_ROOT_HOME_RE = re.compile(r"(?:^|[\s'\"`=:(])/root(?:/|$)")
+_SHELL_READ_WORDS = frozenset({
+    "cat", "source", ".", "cp", "mv", "scp", "rsync", "tar", "zip", "base64", "curl", "wget", "xxd", "od", "head",
+    "tail", "less", "more", "grep", "awk", "sed", "strings", "gpg", "openssl", "nc", "type", "Get-Content", "gc", "<",
+})
+_ENV_FLAG_RE = re.compile(r"^-{1,2}(?:env-file|env_file|dotenv|env)$")
+_PERMISSION_RULE_RE = re.compile(
+    r"""[rRbBuUfF]{0,2}['"`]\s*(?:Read|Edit|Write|MultiEdit|Bash|Grep|Glob|LS|NotebookRead|NotebookEdit|WebFetch)\("""
+)
+IGNORE_LIST_RE = re.compile(r"^(?:[\w-]*\.)?[\w-]*ignore$|^\.?worktreeinclude$", re.I)
+_MATCH_HEAD_RE = re.compile(
+    r"(?:[!=]==?|\bnot\s+in|\bin)\s*$"
+    r"|\.\s*(?:startswith|endswith|startsWith|endsWith|includes|__contains__|equals|equalsIgnoreCase)\s*\(\s*$"
+    r"|\bfnmatch(?:case)?\s*\([^()\n]*,\s*$"
+)
+_MATCH_TAIL_RE = re.compile(r"\s*(?:[!=]==?(?!>)|(?:not\s+)?in\b(?!\s*\())")
+_FOR_IN_RE = re.compile(r"\bfor\b[^\n;:]*\bin\s*$")
+_BRACKET_TEST_RE = re.compile(r"\s*\.\s*(?:includes|indexOf|some|has|__contains__)\s*\(")
+_JOIN_CALL_TAIL_RE = re.compile(r"(?:\bjoin|\bresolve|\bjoinpath|\bjoinPath|\bPath|\bjoin_paths?)\s*$")
+_ASSIGN_SPLIT_RE = re.compile(r"(?<![=!<>])=(?![=>])|\breturn\b")
+
+
+def _literal_mode(rel: str) -> str | None:
+    if rel.endswith(PY_EXT):
+        return "py"
+    if rel.endswith(JS_EXT + TS_EXT + (".json", ".jsonc")):
+        return "js"
+    return None
+
+
+@lru_cache(maxsize=64)
+def _literal_spans(rel: str, t: str, regexes: tuple, aligned: bool) -> tuple[list[int], list[int]]:
+    """Sorted (starts, ends) of the string literals in comment-blanked code (lexical, so linear). `aligned`:
+    the regex-literal spans index `t` (no multi-byte comment was blanked), so a quote inside one is skipped."""
+    rx = _LIT_PY_RE if _literal_mode(rel) == "py" else _LIT_JS_RE
+    if regexes and aligned:
+        t = _blank(t, list(regexes))
+    starts, ends = [], []
+    for m in rx.finditer(t):
+        starts.append(m.start())
+        ends.append(m.end())
+    return starts, ends
+
+
+def _enclosing_literal(spans: tuple[list[int], list[int]], pos: int) -> tuple[int, int] | None:
+    starts, ends = spans
+    i = bisect_right(starts, pos) - 1
+    return (starts[i], ends[i]) if i >= 0 and pos < ends[i] else None
+
+
+def _word_at(t: str, lo: int, hi: int, pos: int, end: int) -> tuple[int, int]:
+    """The run of non-space, non-quote characters around [pos, end), within [lo, hi)."""
+    a, b = pos, end
+    while a > lo and not t[a - 1].isspace() and t[a - 1] not in "'\"`":
+        a -= 1
+    while b < hi and not t[b].isspace() and t[b] not in "'\"`":
+        b += 1
+    return a, b
+
+
+def _open_bracket(t: str, pos: int) -> int | None:
+    depth = 0
+    for i in range(pos - 1, max(-1, pos - 2000), -1):
+        ch = t[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if not depth:
+                return i
+            depth -= 1
+    return None
+
+
+def _only_matched(t: str, a: int, b: int) -> bool:
+    """The literal (or word) at [a, b) is only compared or tested for membership: a check, not a read."""
+    head = t[max(0, a - 120) : a]
+    if (_MATCH_HEAD_RE.search(head) and not _FOR_IN_RE.search(head)) or _MATCH_TAIL_RE.match(t, b):
+        return True
+    o = _open_bracket(t, a)
+    if o is None:
+        return False
+    head = t[max(0, o - 120) : o]
+    if re.search(r"\b(?:not\s+)?in\s*$", head) and not _FOR_IN_RE.search(head):
+        return True  # name in ('a', 'b')
+    return bool(_BRACKET_TEST_RE.match(t, _close_of(t, o)))  # ['a', 'b'].includes(name)
+
+
+def _join_anchor(t: str, lit_start: int) -> str:
+    """The directory expression a literal is joined to (path.join(X, lit), X / lit, X + lit), or ""."""
+    line_start = max(t.rfind("\n", 0, lit_start) + 1, lit_start - 300)
+    pre = t[line_start:lit_start]
+    m = re.search(r"[/+]\s*$", pre)
+    if m:
+        return _ASSIGN_SPLIT_RE.split(pre[: m.start()])[-1] or " "
+    pre = t[max(0, lit_start - 300) : lit_start]
+    if not re.search(r",\s*$", pre):
+        return ""
+    depth = 0
+    for i in range(len(pre) - 1, -1, -1):
+        ch = pre[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth:
+                depth -= 1
+                continue
+            return pre[i + 1 :] if ch == "(" and _JOIN_CALL_TAIL_RE.search(pre, 0, i) else ""
+    return ""
+
+
+def _dotenv_anchor_kind(prefix: str, anchor: str) -> str:
+    where = prefix + " " + anchor
+    if "*" in prefix or HOME_RE.search(where) or _ROOT_HOME_RE.search(where):
+        return "real"  # a glob harvests every one; under the home directory it is the user's, not the project's
+    if anchor.strip():
+        return "own" if _PROJECT_ANCHOR_RE.search(anchor) else "real"
+    if re.search(r"\$\{?\w", prefix) or re.match(r"(?:[A-Za-z]:)?[\\/]", prefix):
+        return "own" if _PROJECT_ANCHOR_RE.search(prefix) else "real"
+    return "own"  # bare, ./ or relative: inside the project
+
+
+def _dotenv_kind(t: str, pos: int, end: int, lit: tuple[int, int] | None, in_code: bool) -> str | None:
+    if t[pos - 1 : pos] in ("$", ")", "]"):
+        return None  # $.env.X, f().env, a[0].env: a property
+    if lit is None:
+        if in_code:
+            return None  # code outside a string literal: a module, method or property name
+        if re.match(r"\s*\(", t[end : end + 20]) or re.search(r"\bfrom\s+\.*$", t[max(0, pos - 40) : pos]):
+            return None
+        lo, hi = max(0, pos - 300), min(len(t), end + 300)
+    else:
+        lo, hi = lit
+    a, b = _word_at(t, lo, hi, pos, end)
+    word, head = t[a:b], t[a:pos]
+    if head.endswith("\\") or "|" in word or word.startswith("^") or re.search(r"\$(?:$|\))", word):
+        return "deny"  # a pattern string: a matcher, not a path
+    prefix = re.split(r"[=@,;]|:-", head)[-1]
+    bare = prefix in ("", "./", "/")
+    if lit is not None and bare and re.search(r"\s", t[lit[0] : lit[1]]):
+        words = t[lo:a].split()
+        prev = words[-1].strip("'\"`") if words else ""
+        if "@" in head or prev in _SHELL_READ_WORDS:
+            return "real"  # a shell command reading it: cat .env, curl -d @.env
+        if "=" in head or _ENV_FLAG_RE.match(prev):
+            return "own"  # node --env-file=.env
+        return None  # prose: "add the key to your .env file"
+    anchor = _join_anchor(t, lit[0]) if lit is not None and bare else ""
+    if prefix == "/" and not anchor:
+        return "real"  # an absolute path at the root
+    return _dotenv_anchor_kind(prefix, anchor)
+
+
+def _precise_kind(f: ScanFile, t: str, m: re.Match, regexes) -> str | None:
+    """"real", "own", "deny", or None (no credential file at all) for a credential-pattern hit."""
+    mode = _literal_mode(f.rel)
+    if mode is None and IGNORE_LIST_RE.match(_base(f.rel)):
+        return "deny"
+    pos, end = m.start(), m.end()
+    lit = None
+    if mode is not None:
+        lit = _enclosing_literal(_literal_spans(f.rel, t, tuple(regexes), len(t) == len(f.text)), pos)
+    if lit is not None and _PERMISSION_RULE_RE.match(t, lit[0]):
+        kind = _context(f, t, lit[0], regexes)  # Read(~/.ssh/**) inside a deny list
+        if kind:
+            return kind
+    kind = "real"
+    if m.group("dotenv") is not None:
+        kind = _dotenv_kind(t, pos, end, lit, mode is not None)
+        if kind in (None, "deny"):
+            return kind
+    a, b = lit or _word_at(t, max(0, pos - 300), min(len(t), end + 300), pos, end)
+    return "deny" if _only_matched(t, a, b) else kind
+
+
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     """Sorted (pos, kind) for credential paths and .claude credential references.
 
     kind is "real", "deny" (deny-list / matcher collection: LOW alone, still counts for
     combos, the floor and the backstop), "env" (a copy of the environment whose use is
-    unclear: LOW alone, backstop-eligible) or "regex" (a regex literal: the only
+    unclear: LOW alone, backstop-eligible), "own" (the project's own dotenv file: LOW alone,
+    combo- and backstop-eligible, FP plan step 3) or "regex" (a regex literal: the only
     combo-exempt context, R29). A copy of the environment handed to a child process is
     not a hit at all (Task 10c B/C); copies are found on the syntax tree (R45).
     """
@@ -2300,7 +2512,9 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     for m in CRED_RE.finditer(t):
         if not DOTENV_RE.search(_line_text(t, _line_of(t, m.start()))):
             seen.add(m.start())
-            hits.append((m.start(), _context(f, t, m.start(), regexes) or "real"))
+            kind = _context(f, t, m.start(), regexes) or _precise_kind(f, t, m, regexes)
+            if kind:  # None: the token names no credential file (FP plan step 3)
+                hits.append((m.start(), kind))
     copies = _env_copies(f, t)
     if copies:
         net_lines = None

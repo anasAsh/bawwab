@@ -19,8 +19,9 @@
    "note": "segment-joined key paths: path.join(home, '.ssh', 'id_x'), Path.home() / '.ssh' / 'id_x' (round 4, R30e)"
   },
   {
-   "re": "(?<![\\w.?])\\.env\\b",
-   "note": "`options?.env` is optional chaining, not a .env file (Task 10c)"
+   "name": "dotenv",
+   "re": "(?<![\\w.?])\\.env\\b(?![.-](?:example|sample|template|dist|defaults?)\\b)",
+   "note": "`options?.env` is optional chaining, not a .env file (Task 10c); templates are not secrets; only string paths count, see _precise_kind (FP plan step 3)"
   },
   {
    "re": "\\.claude\\.json"
@@ -35,11 +36,11 @@
    "re": "\\.pypirc\\b"
   },
   {
-   "re": "security\\s+find-generic-password"
+   "re": "security\\s+find-(?:generic|internet)-password"
   },
   {
-   "re": "(?<!mock-)\\bkeychain\\b",
-   "note": "\"--use-mock-keychain\" is a Chrome flag; dump-keychain / login.keychain-db still count (R42)"
+   "re": "(?<![\\w-])Library/Keychains\\b|(?-i:\\.keychain(?:-db)?)\\b|\\bkeychain-db\\b|\\b(?:dump|unlock|export|list|show|create|delete|default|login)-keychains?\\b",
+   "note": "the keychain file (lowercase: exports.Keychain is a class) or the security(1) verbs, not the word: a product name, a class (Keychain) or prose is no keychain access (FP plan step 3). --use-mock-keychain is a Chrome flag; dump-keychain / login.keychain-db still count (R42)"
   },
   {
    "re": "\\.config/(?:google-chrome|chromium|BraveSoftware)"
@@ -51,7 +52,19 @@
    "re": "\\.mozilla/firefox"
   },
   {
-   "re": "\\bLogin Data\\b"
+   "re": "(?<=[/\\\\'\"`])Login Data\\b",
+   "note": "the Chromium file as a path segment or string, not the phrase (FP plan step 3)"
+  },
+  {
+   "re": "\\.git-credentials\\b"
+  },
+  {
+   "re": "\\.aws['\"`]\\s*[,/+]\\s*[frbu]?['\"`]/?credentials\\b",
+   "note": "segment-joined: os.path.join(home, '.aws', 'credentials'), Path.home() / '.aws' / 'credentials' (FP plan step 3)"
+  },
+  {
+   "re": "\\bcookies\\.sqlite\\b|\\b(?:Default|Profile \\d+|Network)['\"`]?\\s*[/\\\\,+]\\s*[frbu]?['\"`]?Cookies\\b",
+   "note": "browser cookie databases: Firefox cookies.sqlite, Chromium <profile>/Cookies (FP plan step 3)"
   },
   {
    "re": "\\bjson\\.dumps\\(\\s*os\\.environ\\b",
