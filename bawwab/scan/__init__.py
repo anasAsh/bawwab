@@ -12,6 +12,7 @@ from bawwab.fetch import FetchError, FetchOpts, fetch_target, target_from_comman
 from bawwab.scan.files import ExtraText, ScanFile, load_files
 from bawwab.scan.identity import identity_checks
 from bawwab.scan.osv import known_malware
+from bawwab.scan.reach import classify, demote_unreachable
 from bawwab.scan.judge.backends import Backend, backend_for
 from bawwab.scan.judge.judge import judge
 from bawwab.scan.rules import run_static_rules
@@ -20,7 +21,7 @@ from bawwab.scan.rules.text import model_facing_text
 from bawwab.severity import compute_verdict
 from bawwab.store import Store, open_store, target_key
 from bawwab.trust import diff_snapshots, make_snapshot, merge_snapshots, trust_name
-from bawwab.types import Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
+from bawwab.types import Advice, Fetched, Finding, Mode, ScanReport, Severity, Target, ToolInfo, Verdict
 
 __all__ = ["SandboxRunner", "scan_target", "synthetic_report"]
 
@@ -99,7 +100,17 @@ def _bundled_servers(root: Path) -> dict[str, dict]:
 def _child_target(spec: dict, root: Path) -> Target | None:
     def sub(s: str) -> str:
         s = s.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
-        return str(root / s) if s.startswith(("./", "../")) else s
+        if s.startswith(("./", "../")):
+            return str(root / s)
+        # a bare relative script ("server.js", "dist/index.js") is relative to the plugin, never to the scanner's
+        # own working directory
+        if s and not s.startswith(("-", "/", "~", "$")) and "\n" not in s and len(s) < 4096:
+            try:
+                if (root / s).exists():
+                    return str(root / s)
+            except (OSError, ValueError):
+                pass
+        return s
 
     if isinstance(spec.get("url"), str) and spec["url"]:
         return target_from_url(spec["url"], spec.get("type"))
@@ -109,8 +120,13 @@ def _child_target(spec: dict, root: Path) -> Target | None:
     if _package_manager_run(cmd, args):
         return None  # R53: never resolved; see _package_manager_findings
     t = target_from_command(sub(cmd), [sub(a) for a in args])
-    if t is not None and t.kind == "local" and not (t.path and Path(t.path).is_dir()):
-        return None
+    if t is not None and t.kind == "local":
+        try:
+            inside = bool(t.path) and Path(t.path).is_dir() and Path(t.path).resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError):  # e.g. a path too long to stat: not a server dir
+            inside = False
+        if not inside:  # a local server outside the plugin (or the scanner's cwd) is not this plugin's code
+            return None
     return t
 
 
@@ -324,6 +340,11 @@ def _static_step(f: Fetched, fetch_opts: FetchOpts | None = None) -> tuple[list[
     if f.target.kind == "npm":  # R31: registry installs do not run `prepare`
         static = registry_install_adjust(files, static)
     findings += static
+    # FP plan step 1: a finding in a file that never runs and that the agent never reads is listed, not counted.
+    try:
+        findings = demote_unreachable(findings, classify(f.root, files))
+    except Exception:  # noqa: BLE001 - the classifier is best effort: on any error everything stays counted
+        pass
     return files, extra, findings
 
 
@@ -361,6 +382,19 @@ def _sandbox_step(f: Fetched, files: list[ScanFile], ctx: _Ctx, label: str = "")
         out += text_findings
         out += _judge_step([], sb_extra, text_findings, ctx)
     return out
+
+
+def _review_step(f: Fetched, ctx: _Ctx, report: ScanReport, counted: list[Finding]) -> Advice:
+    """Claude's recommendation (spec §4a), while f.root still exists. It never fails the scan and never
+    changes the verdict or findings: any error is cant-tell."""
+    try:
+        from bawwab.scan.review import review
+
+        files = ctx.parts[0][1] if ctx.parts else []
+        extra = [ExtraText(prefix + x.label, x.text) for prefix, _, xs, _ in ctx.parts for x in xs]
+        return review(f.root, report, files, ctx.backend, counted=counted, extra=extra)
+    except Exception as e:  # noqa: BLE001 - the reviewer is advice; the scan stands without it
+        return Advice.cant_tell(f"reviewer error: {type(e).__name__}")
 
 
 def _root_id(root: Path | None) -> str | None:
@@ -447,6 +481,27 @@ def _cacheable(r: ScanReport) -> bool:
 STATIC_KEY_SUFFIX = "~static"  # scans made without the judge (judge=False)
 
 
+def _under_current_policy(f: Fetched, cached: ScanReport, cfg: Config) -> ScanReport:
+    """A cache hit judged by today's settings: the cache holds what was found, never the decision.
+
+    The verdict is recomputed from the cached findings with the current trusted list and thresholds, exactly
+    as a fresh scan would (no rescan: the findings depend on the content, which the key pins). If that
+    changes the verdict, the cached recommendation was made for a different verdict (and a keep-with-care for
+    SUSPICIOUS must never ride along on a now-MALICIOUS result, spec §4a), so it is replaced: by nothing when
+    the result is now clean, else by cant-tell saying why. The reviewer is not re-run on a hit: it would
+    need the judge's per-part inputs that only a full scan builds, and an LLM call per cache hit; a
+    `--no-cache` scan gives a fresh recommendation. The stored report is left as it was.
+    """
+    verdict = compute_verdict(_apply_trust(f, cached.findings, cfg), cfg.malicious, cfg.suspicious)
+    if verdict == cached.verdict:
+        return cached
+    advice = None
+    if verdict != Verdict.CLEAN and cfg.review_enabled:
+        advice = Advice.cant_tell(f"verdict changed from {cached.verdict.value} to {verdict.value} under the "
+                                  f"current settings since the review; `bawwab scan --no-cache` gives a new one")
+    return dataclasses.replace(cached, verdict=verdict, advice=advice)
+
+
 def _fetch_key(t: Target) -> str:
     return f"{t.kind}:{t.name or t.url or t.path or t.raw}@unfetched"
 
@@ -486,7 +541,17 @@ def scan_target(
     ctx = None
     try:
         ctx = _Ctx(cfg, mode, backend, fetch_opts, sandbox, judge=judge)
-        child_material = _prefetch_children(f, ctx)
+        try:
+            child_material = _prefetch_children(f, ctx)
+        except Exception as e:  # noqa: BLE001 - a bundled server that can't be prepared fails closed, never crashes
+            from bawwab.report import sanitise
+
+            r = synthetic_report(sanitise(f"could not prepare the bundled servers: {type(e).__name__}: {e}", 200),
+                                 _fetch_key(t), t, "gate.error", mode)
+            r.resolved_version = f.resolved_version
+            store.put_report(r)
+            store.audit("scan", key=r.key, verdict=r.verdict.value, mode=mode.value)
+            return r
         chash = f.content_hash
         if child_material:
             chash = hashlib.sha256(f"{chash}\n{child_material}".encode()).hexdigest()
@@ -494,6 +559,7 @@ def scan_target(
         if not no_cache and not ctx.no_cache:
             cached = store.get_cached(key)
             if cached is not None and _cacheable(cached) and (cached.mode == mode or cached.mode == Mode.DEEP):
+                cached = _under_current_policy(f, cached, cfg)
                 if judge and cached.verdict == Verdict.CLEAN:  # an unjudged scan never baselines trust
                     _baseline_cached(f, t, key, store)
                 return cached
@@ -523,6 +589,8 @@ def scan_target(
         report = ScanReport(
             key, t, f.resolved_version, mode, verdict, findings, datetime.now(UTC), diff_summary=diff_summary or None
         )
+        if verdict != Verdict.CLEAN and judge and mode in (Mode.STANDARD, Mode.DEEP) and cfg.review_enabled:
+            report.advice = _review_step(f, ctx, report, [x for x in counted if x.severity >= cfg.suspicious])
         store.put_report(report, snapshot=snap)
         if judge and verdict == Verdict.CLEAN and not unread and (prev is None or prev[1] != snap):
             store.put_snapshot(tname, key, snap)

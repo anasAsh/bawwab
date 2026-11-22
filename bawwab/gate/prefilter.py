@@ -11,7 +11,8 @@ import stat
 
 _NEEDLES = ("claude", "bawwab", ".mcp.json", "BAWWAB_", "disableAllHooks")
 _FILE_NEEDLES = (".claude", "bawwab", ".mcp.json")  # ~/.claude.json, .claude/{settings*,bawwab.json,skills,...}
-_FILE_TOOLS = ("Write", "Edit", "MultiEdit")
+_FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+_PATH_KEY = {"NotebookEdit": "notebook_path"}  # NotebookEdit's input: notebook_path, new_source, cell_id, ...
 # A shell glob or brace may hide ".claude" from the substring check (cp x ~/.c*/skills/, rm -rf ~/.baw{a..z}ab).
 # claude reached through $(…), `…` or $VAR: detected by its subcommand.
 _CLAUDE_SUBCMD = re.compile(
@@ -109,7 +110,7 @@ def prefilter(data: dict) -> bool:
         s = _unquote(cmd)
         return bash_install_like(cmd, cwd, home, extra) or _path_words_bawwab(s, cwd) or _runs_file(s, cwd)
     if tool in _FILE_TOOLS:
-        fp = ti.get("file_path")
+        fp = ti.get(_PATH_KEY.get(tool, "file_path"))
         if not isinstance(fp, str) or not fp:
             return False
         p = os.path.normpath(os.path.join(cwd or "/", fp))
@@ -122,7 +123,7 @@ def _write_text(tool: str, ti: dict, p: str, cwd: str) -> bool:
     """R55/R56: the write's result may hold a bawwab call (a script that runs bawwab, or a protected bawwab
     invocation in any file): its new text, plus for an edit the file's current text, names bawwab, or has a
     protected subcommand next to a path that is a bawwab executable."""
-    parts = [ti.get("content"), ti.get("new_string")]
+    parts = [ti.get("content"), ti.get("new_string"), ti.get("new_source")]
     edits = ti.get("edits")
     if isinstance(edits, list):
         parts += [e.get("new_string") for e in edits if isinstance(e, dict)]
@@ -277,10 +278,34 @@ def _runs_file(s: str, cwd: str, depth: int = 0, seen: set[str] | None = None) -
     return False
 
 
+def redirected_config_dir() -> str | None:
+    """$CLAUDE_CONFIG_DIR, absolute and normalised: a copy of bawwab/agents/claude_code_watch.py's (this file
+    imports nothing; tests/test_claude_config_dir.py keeps the two in step)."""
+    v = os.environ.get("CLAUDE_CONFIG_DIR")
+    return os.path.normpath(os.path.abspath(os.path.expanduser(v))) if v else None
+
+
+def _config_needles() -> tuple[str, ...]:
+    """Words that name a redirected Claude config dir (absolute, its realpath, ~/ and $HOME/ forms, its name):
+    a write there is a write to Claude's config. () when CLAUDE_CONFIG_DIR is unset."""
+    d = redirected_config_dir()
+    if not d:
+        return ()
+    out = ["CLAUDE_CONFIG_DIR"]
+    user = os.path.normpath(os.path.expanduser("~"))
+    for p in (d, os.path.realpath(d)):
+        out += [p, os.path.basename(p) or p]
+        if _under(p, user) and p != user:
+            rel = os.path.relpath(p, user)
+            out += [f"~/{rel}", f"$HOME/{rel}"]
+    return tuple(dict.fromkeys(out))
+
+
 def context() -> tuple[str, tuple[str, ...]]:
     """(bawwab home, extra needles); computed once per call (detect's raw backstop reuses it per piece)."""
     home = _bawwab_home()
-    return home, ((home, os.path.basename(home) or home) if os.environ.get("BAWWAB_HOME") else ())
+    extra = (home, os.path.basename(home) or home) if os.environ.get("BAWWAB_HOME") else ()
+    return home, extra + _config_needles()
 
 
 def bash_install_like(cmd: str, cwd: str, home: str, extra: tuple[str, ...]) -> bool:
@@ -297,13 +322,17 @@ def bash_install_like(cmd: str, cwd: str, home: str, extra: tuple[str, ...]) -> 
         return True
     if _CLAUDE_SUBCMD.search(s) or (any(c in s for c in "*?[{") and _GLOB_COPY.search(s) and _GLOB_HIDDEN.search(s)):
         return True
-    return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home)
+    cfg = redirected_config_dir()
+    return "/.claude" in cwd or _under(os.path.normpath(cwd or "/"), home) or (
+        cfg is not None and (_under(os.path.normpath(cwd or "/"), cfg) or _under(os.path.realpath(cwd or "/"), cfg)))
 
 
 def _moves_ancestor(s: str, cwd: str, home: str) -> bool:
     user = os.path.expanduser("~")
     state = os.environ.get("XDG_STATE_HOME") or os.path.join(user, ".local", "state")
     roots = (os.path.join(user, ".claude"), os.path.join(user, ".claude.json"), home, os.path.join(state, "bawwab"))
+    cfg = redirected_config_dir()  # $CLAUDE_CONFIG_DIR adds its dir; ~/.claude stays
+    roots += (cfg, os.path.realpath(cfg)) if cfg else ()
     for tok in s.split():
         t = tok.replace("${HOME}", user).replace("$HOME", user)
         t = os.path.normpath(os.path.join(cwd or "/", os.path.expanduser(t)))

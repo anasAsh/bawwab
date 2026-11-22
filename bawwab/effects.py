@@ -30,11 +30,11 @@ from bawwab.envkeys import entry_meta_key
 from bawwab.agents import ADAPTERS, UNSCANNABLE, EffectItem, adapter_for
 from bawwab.agents.claude_code import UnreadableConfig
 from bawwab.paths import bawwab_home
-from bawwab.report import sanitise
+from bawwab.report import advice_short, format_advice, sanitise
 from bawwab.scan import TRANSIENT_RULES, scan_target, synthetic_report
 from bawwab.selfid import SELF_KEY_PREFIX, SELF_LABEL, is_self
 from bawwab.store import Store, open_store, report_from_dict, report_to_dict
-from bawwab.types import ScanReport, Target, Verdict
+from bawwab.types import Advice, ScanReport, Target, Verdict
 
 # Allowed while something is quarantined: they change nothing. AskUserQuestion lets Claude ask the user
 # what to do with each item (the user still runs approve/reject).
@@ -531,7 +531,7 @@ def refresh(cwd: Path, scan=None, store: Store | None = None, force: bool = Fals
         return new + _fail_closed(store, problem)
     try:
         stored = fpm.load(bh, c)
-        fp = fpm.fingerprint(c, home)
+        fp = fpm.fingerprint(c, home, bawwab_home=bh)
         if not force and stored is not None and stored[0] == fp:
             return new
         digest = fpm.semantic_digest(c, home)
@@ -695,6 +695,15 @@ def _report_of(q: dict) -> tuple[str, list]:
         return "SUSPICIOUS", []
 
 
+def _advice_of(q: dict) -> tuple[Advice | None, Verdict]:
+    """The stored report's recommendation and verdict; (None, SUSPICIOUS) when it can't be read."""
+    try:
+        rep = report_from_dict(json.loads(q["report"]))
+        return rep.advice, rep.verdict
+    except (ValueError, KeyError, TypeError):
+        return None, Verdict.SUSPICIOUS
+
+
 def _label_of(q: dict) -> str:
     if q["ident"] == ERROR_IDENT:
         return "the effect check itself failed (fail closed)"
@@ -751,18 +760,18 @@ def _groups(entries: list[dict]) -> dict[str, list[dict]]:
 
 def quarantine_text(entries: list[dict]) -> str:
     """The block message: one row per quarantined item (or install-time batch), the commands once."""
-    rows: list[tuple[str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str]] = []
     keep: list[str] = []
     force: list[str] = []
     for qid, g in _groups(entries).items():
         qid = sanitise(qid, 8)
         if len(g) > 1:
-            rows.append((qid, f"{len(g)} existing hooks/settings", "SUSPICIOUS",
+            rows.append((qid, f"{len(g)} existing hooks/settings", "SUSPICIOUS", "-",
                          "set up before bawwab was installed; nothing to scan"))
             keep.append(qid)
             continue
         verdict, findings = _report_of(g[0])
-        rows.append((qid, item_name(g[0]), verdict, _why(g[0], findings)))
+        rows.append((qid, item_name(g[0]), verdict, advice_short(*_advice_of(g[0])), _why(g[0], findings)))
         (force if verdict == "MALICIOUS" else keep).append(qid)
     n = len(rows)
     head = (f"⛔ bawwab: {n} change{'s' if n != 1 else ''} to Claude's setup {'are' if n != 1 else 'is'} on hold. "
@@ -770,8 +779,9 @@ def quarantine_text(entries: list[dict]) -> str:
     w_id = max(len("ID"), *(len(r[0]) for r in rows))
     w_item = max(len("ITEM"), *(len(r[1]) for r in rows))
     w_v = max(len("VERDICT"), *(len(r[2]) for r in rows))
-    lines = [head, "", f"  {'ID':<{w_id}}  {'ITEM':<{w_item}}  {'VERDICT':<{w_v}}  WHY"]
-    lines += [f"  {i:<{w_id}}  {it:<{w_item}}  {v.lower():<{w_v}}  {why}" for i, it, v, why in rows]
+    w_a = max(len("ADVICE"), *(len(r[3]) for r in rows))
+    lines = [head, "", f"  {'ID':<{w_id}}  {'ITEM':<{w_item}}  {'VERDICT':<{w_v}}  {'ADVICE':<{w_a}}  WHY"]
+    lines += [f"  {i:<{w_id}}  {it:<{w_item}}  {v.lower():<{w_v}}  {a:<{w_a}}  {why}" for i, it, v, a, why in rows]
     lines.append("")
     if keep:
         lines.append(f"  keep:     ! {cmd('approve')} {' '.join(keep)}")
@@ -782,8 +792,11 @@ def quarantine_text(entries: list[dict]) -> str:
     lines += ["", (
         "For Claude: show the user this message as is, in a code block. Then ask about each item with the "
         "AskUserQuestion tool (at most 4 per call; options Keep, Remove, Not now; name the item and its verdict in "
-        "each question). Reply with the exact command lines for their answers, one line per item with its name "
-        "as a trailing `# comment`, for the user to run. Never run approve or reject yourself: only the user can.")]
+        "each question, and include Claude's recommendation from the ADVICE column (keep / care = keep with care / "
+        "don't = don't install / ? = can't tell; `! " + cmd("effects") + "` has the full text), saying it is advice, "
+        "not a verdict: the user decides). Reply with the exact command lines for their answers, one line per item "
+        "with its name as a trailing `# comment`, for the user to run. Never run approve or reject yourself: only "
+        "the user can.")]
     return "\n".join(lines)
 
 
@@ -809,6 +822,7 @@ def quarantine_details(entries: list[dict]) -> str:
                 out.append(f"    [{f.severity.value}] {sanitise(f.rule, 60)}: {sanitise(f.evidence, 200)}")
             if len(findings) > MAX_SHOWN_FINDINGS:
                 out.append(f"    … and {len(findings) - MAX_SHOWN_FINDINGS} more")
+            out += format_advice(*_advice_of(g[0]), indent="    ")
             force = " --force" if verdict == "MALICIOUS" else ""
         out.append(f"    keep:    ! {cmd('approve')}{force} {qid}  # {name}")
         out.append(f"    remove:  ! {cmd('reject')} {qid}  # {name}")

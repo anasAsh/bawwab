@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from bawwab.paths import bawwab_home
 from bawwab.ruleset import RULESET_VERSION
-from bawwab.types import Finding, Mode, ScanReport, Severity, Target, Verdict
+from bawwab.types import Advice, Assessment, Finding, Mode, ScanReport, Severity, Target, Verdict
 
 PENDING_TTL = timedelta(hours=1)
 _ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"  # RFC 4648 base32
@@ -126,7 +126,21 @@ def report_to_dict(r: ScanReport) -> dict:
         ],
         "scanned_at": _iso(r.scanned_at),
         "diff_summary": r.diff_summary,
+        **({"advice": _advice_to_dict(r.advice)} if r.advice is not None else {}),
     }
+
+
+def _advice_to_dict(a: Advice) -> dict:
+    return {"recommendation": a.recommendation, "summary": a.summary, "reason": a.reason,
+            "per_finding": [{"finding_id": x.finding_id, "assessment": x.assessment, "why": x.why,
+                             "quote": x.quote, "file": x.file, "line": x.line} for x in a.per_finding]}
+
+
+def _advice_from_dict(d: dict | None) -> Advice | None:
+    if not isinstance(d, dict):
+        return None
+    return Advice(d["recommendation"], d.get("summary", ""),
+                  [Assessment(**x) for x in d.get("per_finding", [])], d.get("reason", ""))
 
 
 def _finding_from_dict(d: dict) -> Finding:
@@ -146,6 +160,7 @@ def report_from_dict(d: dict) -> ScanReport:
         findings=[_finding_from_dict(f) for f in d["findings"]],
         scanned_at=_utc(datetime.fromisoformat(d["scanned_at"])),
         diff_summary=d.get("diff_summary"),
+        advice=_advice_from_dict(d.get("advice")),
     )
 
 
@@ -155,6 +170,11 @@ def _hash(material: str) -> str:
 
 def _finding_material(key: str, f: Finding, ordinal: int) -> str:
     return f"{key}\0{f.rule}\0{f.file}\0{f.line}\0{f.evidence}\0{ordinal}"
+
+
+def provisional_finding_id(key: str, f: Finding, ordinal: int) -> str:
+    """The id put_report will give this finding unless it collides (then put_report remaps the advice)."""
+    return "F" + _hash(_finding_material(key, f, ordinal))[:6]
 
 
 class Store:
@@ -189,6 +209,7 @@ class Store:
 
     def put_report(self, r: ScanReport, snapshot: dict | None = None) -> None:
         data = None
+        before = [f.id or provisional_finding_id(r.key, f, i) for i, f in enumerate(r.findings)]
         with self._tx():
             self._conn.execute("DELETE FROM findings WHERE key=?", (r.key,))
             for i, f in enumerate(r.findings):
@@ -210,6 +231,10 @@ class Store:
                     n += 2
                     if n > len(digest):  # pragma: no cover - unreachable in practice
                         raise sqlite3.IntegrityError("finding id space exhausted")
+            if r.advice is not None:  # the reviewer keyed its assessments by the ids findings were about to get
+                remap = {old: f.id for old, f in zip(before, r.findings)}
+                for a in r.advice.per_finding:
+                    a.finding_id = remap.get(a.finding_id, a.finding_id)
             data = json.dumps(report_to_dict(r))
             self._conn.execute(
                 "INSERT OR REPLACE INTO scans(key, report, scanned_at, snapshot, ruleset) VALUES (?,?,?,?,?)",

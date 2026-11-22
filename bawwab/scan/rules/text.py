@@ -26,6 +26,7 @@ class _Text:
     text: str
     is_description: bool  # tool/prompt/resource description or remote metadata (not a skill document)
     shadow_exempt: bool = False  # a protocol parameter table entry: every rule but tool-shadowing (R42 N2)
+    params: frozenset[str] = frozenset()  # the tool's own parameter names, from its signature or input schema
 
 
 def _is_doc_path(rel: str, is_skill: bool = True) -> bool:
@@ -68,6 +69,25 @@ def _const_str(node: ast.AST | None) -> str | None:
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
+_NOT_PARAMS = {"self", "cls", "ctx", "context"}
+
+
+def _py_params(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    a = fn.args
+    return frozenset(x.arg for x in (*a.posonlyargs, *a.args, *a.kwonlyargs) if x.arg not in _NOT_PARAMS)
+
+
+def _py_schema_keys(node: ast.AST | None) -> frozenset[str]:
+    """Property names of a literal JSON-schema dict (`{"type": "object", "properties": {...}}`)."""
+    if not isinstance(node, ast.Dict):
+        return frozenset()
+    d = {_const_str(k): v for k, v in zip(node.keys, node.values) if k is not None}
+    props = d.get("properties")
+    if isinstance(props, ast.Dict):
+        return frozenset(k for k in map(_const_str, props.keys) if k)
+    return frozenset()
+
+
 def _py_descriptions(text: str) -> list[_Text]:
     tree = parsing.py_parse(text)
     out: list[_Text] = []
@@ -80,12 +100,16 @@ def _py_descriptions(text: str) -> list[_Text]:
                 kw = {k.arg: k.value for k in call.keywords} if call else {}
                 desc = _const_str(kw.get("description")) or ast.get_docstring(n)
                 if desc:
-                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc[:MAX_DESC], True))
+                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc[:MAX_DESC], True,
+                                     params=_py_params(n)))
                 break
         elif isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", "")) == "Tool":
-            kw = {k.arg: _const_str(k.value) for k in n.keywords}
+            kwn = {k.arg: k.value for k in n.keywords}
+            kw = {k: _const_str(v) for k, v in kwn.items()}
             if kw.get("description"):
-                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"][:MAX_DESC], True))
+                schema = next((kwn[k] for k in ("inputSchema", "input_schema", "parameters") if k in kwn), None)
+                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"][:MAX_DESC], True,
+                                 params=_py_schema_keys(schema)))
     return out
 
 
@@ -117,6 +141,25 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
                     res[(string_of(k) if k.type == "string" else txt(k))] = c.child_by_field_name("value")
         return res
 
+    def shape_keys(n, depth: int = 0) -> frozenset[str]:
+        """Parameter names of a tool's input: a zod shape `{a: z.string()}`, `z.object({...})`, or a JSON schema
+        `{type: "object", properties: {...}}`."""
+        if n is None or depth > 3:
+            return frozenset()
+        if n.type == "call_expression":
+            a = n.child_by_field_name("arguments")
+            return shape_keys(a.named_children[0], depth + 1) if a is not None and a.named_children else frozenset()
+        if n.type != "object":
+            return frozenset()
+        p = pairs(n)
+        if "properties" in p:
+            return shape_keys(p["properties"], depth + 1)
+        return frozenset(k for k in p if k)
+
+    def schema_of(p: dict) -> frozenset[str]:
+        return next((shape_keys(p[k]) for k in ("inputSchema", "input_schema", "parameters", "schema", "args") if k in p),
+                    frozenset())
+
     out: list[_Text] = []
     consumed: set[int] = set()
     objects = []
@@ -136,13 +179,17 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
             a = args.named_children
             name = string_of(a[0]) if a else None
             desc = None
+            params: frozenset[str] = frozenset()
             if len(a) > 1 and a[1].type != "object":
                 desc = string_of(a[1])
+                params = frozenset().union(*(shape_keys(x) for x in a[2:4] if x.type in ("object", "call_expression")))
             elif len(a) > 1:
                 consumed.add(a[1].id)
-                desc = string_of(pairs(a[1]).get("description"))
+                p1 = pairs(a[1])
+                desc = string_of(p1.get("description"))
+                params = schema_of(p1)
             if desc:
-                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc[:MAX_DESC], True))
+                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc[:MAX_DESC], True, params=params))
         elif n.type == "object":
             objects.append(n)
     for o in objects:
@@ -151,7 +198,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
         p = pairs(o)
         desc, name = string_of(p.get("description")), string_of(p.get("name"))
         if desc and name:
-            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True, _schema_param(o, p, string_of, txt)))
+            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True, _schema_param(o, p, string_of, txt), schema_of(p)))
     return out
 
 
@@ -160,6 +207,9 @@ _TOOL_KEYS = {"inputSchema", "input_schema", "parameters", "handler", "execute",
 
 
 _PARAM_CONTAINERS = {"parameters", "returns", "properties", "items"}
+# queryParameters / pathParams / prompt `arguments`: a list of parameter rows (Sentry's bundled API endpoint tables)
+_PARAM_LIST_KEY = re.compile(r"(?:query|path|body|header|form|url|request)_?param(?:eter)?s|parameters|params|arguments", re.I)
+_BOOL_LIT = {"true", "false", "!0", "!1"}
 
 
 def _schema_param(o, p: dict, string_of, txt) -> bool:
@@ -169,7 +219,10 @@ def _schema_param(o, p: dict, string_of, txt) -> bool:
     it is only not a tool that can shadow another (R40 rescan, R42 N2)."""
     if _TOOL_KEYS & set(p):
         return False
-    if not ("$ref" in p or string_of(p.get("type")) in _SCHEMA_TYPES):
+    typed = "$ref" in p or string_of(p.get("type")) in _SCHEMA_TYPES
+    req = p.get("required")
+    row = req is not None and txt(req) in _BOOL_LIT  # {name, required: false, description}: a parameter row
+    if not (typed or row):
         return False
     holder = o.parent
     in_array = holder is not None and holder.type == "array"
@@ -177,12 +230,16 @@ def _schema_param(o, p: dict, string_of, txt) -> bool:
         holder = holder.parent
     if holder is not None and holder.type == "arguments" and in_array:
         # inspectorBackend.registerCommand("Domain.cmd", [{name, type, optional, description, typeRef}])
-        return "typeRef" in p  # the CDP table form; `optional` alone is attacker-cheap (review N9)
+        return typed and "typeRef" in p  # the CDP table form; `optional` alone is attacker-cheap (review N9)
     if holder is None or holder.type != "pair":
         return False
     k = holder.child_by_field_name("key")
     key = (string_of(k) if k is not None and k.type == "string" else txt(k)) if k is not None else None
-    return key in _PARAM_CONTAINERS
+    if key is None:
+        return False
+    if in_array and _PARAM_LIST_KEY.fullmatch(key):
+        return True  # queryParameters: [{name, required: false, description, type}] - a parameter row, not a tool
+    return typed and key in _PARAM_CONTAINERS
 
 
 _FALLBACK_RE = re.compile(
@@ -341,7 +398,19 @@ SHADOW_RES = [
     re.compile(r"\b(?:always|must|should|first)\s+(?:call|use|invoke|run)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
     re.compile(r"\boverrid(?:e|es|ing)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
     re.compile(r"\bnever\s+(?:use|call|invoke)\s+(?:the\s+)?" + _NAME + _TOOLWORD, re.I),
+    # no name, a generic reference to the agent's other tools / servers, with an imperative aimed at the agent
+    re.compile(
+        rf"\b(?:ignore|never\s+(?:use|call|invoke)|do\s+not\s+(?:use|call|invoke)|don{_APOS}?t\s+(?:use|call|invoke))\s+"
+        r"(?:the\s+|any\s+|all\s+)?(?:other|another)\s+(?:(?:mcp\s+)?servers?(?:" + _APOS + r"s?)?\s+|mcp\s+)?(?:tools?|servers?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:when|whenever|before|after)\s+(?:you\s+)?(?:are\s+)?(?:using|use|calling|call|invoking|invoke)\s+"
+        r"(?:any|every|all|each)\s+(?:other\s+)?(?:tools?|servers?)\b[^.\n]{0,100}?\b(?:bcc|cc|forward|copy\s+to)\b",
+        re.I,
+    ),
 ]
+_GENERIC_RES = (6, 7)  # indexes of SHADOW_RES with no tool name: they count as they match
 _STRONG_SIBLING = (1, 2, 4, 5)  # indexes of SHADOW_RES that shadow even a tool from the same package
 _REDIRECT_RE = re.compile(r"\b(?:bcc|cc|send|forward|copy\s+to)\b", re.I)
 _GENERIC = {"this", "the", "a", "an", "that", "it", "any", "each", "every", "other", "another", "your", "same", "tool", "these",
@@ -442,12 +511,16 @@ class TextRules:
     def run(self, files: list[ScanFile], extra: list[ExtraText]) -> list[Finding]:
         texts = _collect(files, extra)
         tool_names = {n for t in texts if not t.shadow_exempt and (n := _tool_name(t.label)) and n not in ("(unnamed)", "(unparsed)")}
+        # the target's own parameter names: tool signatures / input schemas, and parameter-row entries
+        param_names = set().union(*(t.params for t in texts)) | {
+            n for t in texts if t.shadow_exempt and (n := _tool_name(t.label))}
+        param_names -= tool_names  # a name that is also a tool is a tool (fail closed)
         out: list[Finding] = []
         for t in texts:
-            out.extend(self._one(t, tool_names))
+            out.extend(self._one(t, tool_names, param_names))
         return out
 
-    def _one(self, t: _Text, tool_names: set[str]) -> list[Finding]:
+    def _one(self, t: _Text, tool_names: set[str], param_names: set[str] = frozenset()) -> list[Finding]:
         out: list[Finding] = []
         m = _first(OVERRIDE_RES, t, _override_ok)
         if m:
@@ -464,15 +537,22 @@ class TextRules:
         if t.is_description and not t.shadow_exempt:
             own = _tool_name(t.label)
             others = tool_names - ({own} if own else set())
-            m = _first(SHADOW_RES, t, lambda m: self._names_other(m, own, others))
+            params = (t.params | param_names) - others
+            m = _first(SHADOW_RES, t, lambda m: self._names_other(m, own, others, params))
             if m:
                 out.append(_mk("tool-shadowing", Severity.HIGH, t, m.start(), m.end()))
         return out
 
     @staticmethod
-    def _names_other(m: re.Match, own: str | None, others: set[str]) -> bool:
+    def _names_other(m: re.Match, own: str | None, others: set[str], params: set[str] = frozenset()) -> bool:
+        if any(m.re is SHADOW_RES[i] for i in _GENERIC_RES):
+            return True
         n = m.group("n").rstrip(".:,;-")
         if not n or n.lower() in _GENERIC or n == own:
+            return False
+        if n in params and not m.group("w") and _REDIRECT_RE.search(m.string, m.start(), m.end() + 80) is None:
+            # "pass unique_id instead of entity_id", "overrides project_id": a comparison between the target's own
+            # parameters. Still shadowing when the text calls it a tool/server or redirects mail (bcc/forward ...).
             return False
         if n in others:  # a sibling tool: only a strong pattern counts
             return any(m.re is SHADOW_RES[i] for i in _STRONG_SIBLING) or (

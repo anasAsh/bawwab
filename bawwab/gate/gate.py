@@ -20,7 +20,7 @@ from bawwab.config import DEFAULT_LEVEL, load_config
 from bawwab.config import blocks as blocks_at
 from bawwab.envkeys import entry_meta_key
 from bawwab.gate.detect import HookInput, Protected, Targets, detect_install, install_dir
-from bawwab.gate.pin import pin_changes
+from bawwab.gate.pin import pin_changes, pins_needed
 from bawwab.gate.prefilter import prefilter
 from bawwab.report import format_report, sanitise
 from bawwab.scan import scan_target, synthetic_report
@@ -34,6 +34,7 @@ _KEY_FIELDS = {
     "Write": ("file_path", "content"),
     "Edit": ("file_path", "old_string", "new_string", "replace_all"),
     "MultiEdit": ("file_path", "edits"),
+    "NotebookEdit": ("notebook_path", "cell_id", "new_source", "cell_type", "edit_mode"),
 }
 
 
@@ -250,9 +251,24 @@ def _decide(inp: HookInput, det: Targets | Protected, scan: Callable[..., ScanRe
     for reason, key in links:
         _link_entries(store, det.env_entries, reason, key)
     if isinstance(det, Targets) and det.pinnable:
+        resolved = {t: r.resolved_version for t, r in results}
         try:
-            updated, changes = pin_changes(inp, {t: r.resolved_version for t, r in results})
-        except Exception:  # noqa: BLE001 - a failed rewrite never blocks; just no pin
+            updated, changes = pin_changes(inp, resolved)
+        except Exception:  # noqa: BLE001 - see below: a needed pin that fails goes to the user
+            try:
+                needed = pins_needed(resolved)
+            except Exception:  # noqa: BLE001 - can't tell whether a pin was needed: assume it was
+                needed = [("the package", "the scanned version")]
+            if needed:
+                # The scan was of one resolved version; the unpinned call may run another (spec §1 "Version
+                # pinning"). Bawwab never emits allow, and a broken rewrite is our failure, not the package's,
+                # so "ask" without updatedInput: the user sees the unpinned command and decides.
+                wanted = ", ".join(f"{name} to {version}" for name, version in needed)
+                note = "scanned clean" if not warnings else "not blocked at this level"
+                out = decision("ask", sanitise(
+                    f"bawwab: {note}, but could not pin {wanted}; the command as written may install a "
+                    f"different version than the one scanned", 500))
+                return (_with_warning(out, warnings) if warnings else out), keys
             updated, changes = None, []
         if updated is not None and changes:
             pinned = ", ".join(f"{name} to {version}" for name, version in changes)

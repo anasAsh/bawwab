@@ -3,11 +3,17 @@
 fingerprint(): stat data (mtime, ctime, size, inode) of every watched JSON file, and of every entry under
 the watched directories (skills/commands/agents, installed plugins' install paths): see _walk for the
 rules (skip node_modules & co, breadth-first with per-root and per-subtree budgets, key files always).
+It also covers the local code MCP server entries run (a script file, its package dir, `uv run`'s project:
+the table's payload_candidates / payload_roots), so changed code under an unchanged entry counts.
+Symlinks are followed (dirs once each, by device and inode) and their link text recorded; the effect item's
+content hash (bawwab/agents/claude_code.py _tree_hash) follows the same rule.
 semantic_digest(): the same, except JSON files count only through the keys that matter (mcpServers,
 hooks, ...), so Claude rewriting ~/.claude.json (numStartups, tips, project metadata) is noise.
 
 The stored state lives in $BAWWAB_HOME/fp:
   {"v": 1, "cwds": {cwd: [fingerprint, digest, ts]}, "quarantine": <active entries>}
+$BAWWAB_HOME/fp-payloads caches the payload paths per cwd, keyed by the config files' stat data, so an idle
+hook never parses ~/.claude.json: {cwd: [key, [[path, base], ...]]}.
 check() is "same" (fingerprint unchanged), "noise" (fingerprint changed but the digest did not; the stored
 fingerprint is updated) or "changed" (the slow path must run the effect check).
 """
@@ -208,14 +214,105 @@ def _paths(cwd: str, home: str, agents=None) -> tuple[list, list, list]:
     return files, dirs, tables
 
 
-def fingerprint(cwd: str, home: str, agents=None) -> str:
+def _candidates(tables: list, cwd: str, home: str, load) -> list:
+    """(path, base) of the local code MCP server entries run (the tables' payload_candidates)."""
+    out: list = []
+    for t in tables:
+        fn = getattr(t, "payload_candidates", None)
+        out += [tuple(c) for c in fn(cwd, home, load)] if fn else []
+    return sorted(set(out))
+
+
+def _payloads(h, cwd: str, home: str, cands: list) -> None:
+    """Feed the local code of MCP server entries into h: each file's stat (a missing one too, so creating it
+    counts), each package dir walked like a plugin install path. The rules are payload_roots', shared with
+    the effect item's content hash (bawwab/agents/claude_code.py)."""
+    if not cands:
+        return
+    t = _watch_tables()[0]
+    stops: dict = {}
+    for path, base in cands:
+        if base not in stops:
+            stops[base] = t.stop_dirs(cwd, home, base)
+        for root, tree in t.payload_roots(path, stops[base]):
+            if tree:
+                _walk(root, h, True)
+            else:
+                h.update(f"P\0{root}\0{_stat(root)}\n".encode())
+                if os.path.islink(root):
+                    _link(h, root)
+
+
+_PAYLOAD_CACHE = "fp-payloads"
+_MEMO: dict = {}  # cwd -> (jsig, candidates), this process only
+
+
+def _json_loader(files: list):
+    def load(path):
+        for p, _k, t in files:
+            if p == path:
+                try:
+                    with open(p, "rb") as f:
+                        return _parse(t, f.read(), p)
+                except (OSError, ValueError, RecursionError):
+                    return None
+        return None
+    return load
+
+
+def _cached_candidates(files: list, tables: list, cwd: str, home: str, jsig: str, bawwab_home) -> list:
+    """The payload candidates, read from the config files only when their stat data (jsig) changed since the
+    last call for this cwd: the hook must not parse a large ~/.claude.json on every tool call. The cache holds
+    paths only; their stat data is read every time. Within one process (bawwab, the watcher) a memo does the
+    same without the file."""
+    if not any(getattr(t, "payload_candidates", None) for t in tables):
+        return []
+    mem = _MEMO.get(cwd)
+    if mem is not None and mem[0] == jsig:
+        return mem[1]
+    path = os.path.join(bawwab_home, _PAYLOAD_CACHE) if bawwab_home else None
+    data: dict = {}
+    if path:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            row = data.get(cwd) if isinstance(data, dict) else None
+            if isinstance(row, list) and len(row) == 2 and row[0] == jsig and isinstance(row[1], list):
+                return [tuple(c) for c in row[1]]
+        except (OSError, ValueError):
+            data = {}
+    cands = _candidates(tables, cwd, home, _json_loader(files))
+    if len(_MEMO) >= _MAX_CWDS:
+        _MEMO.clear()
+    _MEMO[cwd] = (jsig, cands)
+    if path and os.path.isdir(bawwab_home):
+        data = data if isinstance(data, dict) else {}
+        data.pop(cwd, None)
+        data[cwd] = [jsig, cands]
+        for k in list(data)[: max(0, len(data) - _MAX_CWDS)]:
+            del data[k]
+        try:
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+    return cands
+
+
+def fingerprint(cwd: str, home: str, agents=None, bawwab_home=None) -> str:
+    """bawwab_home: where to cache the MCP payload paths between calls (the hook passes it)."""
     cwd, home = str(cwd), str(home)
-    files, dirs, _ = _paths(cwd, home, agents)
+    files, dirs, tables = _paths(cwd, home, agents)
     h = hashlib.sha256()
-    for p, _k, _t in files:
-        h.update(f"J\0{p}\0{_stat(p)}\n".encode())
+    rows = [f"J\0{p}\0{_stat(p)}\n" for p, _k, _t in files]
+    for r in rows:
+        h.update(r.encode())
     for d, item in dirs:
         _walk(d, h, item)
+    jsig = hashlib.sha256(f"{cwd}\0{home}\0{os.environ.get('CLAUDE_PROJECT_DIR', '')}\0{''.join(rows)}".encode())
+    _payloads(h, cwd, home, _cached_candidates(files, tables, cwd, home, jsig.hexdigest(), bawwab_home))
     return h.hexdigest()
 
 
@@ -243,10 +340,12 @@ def semantic_digest(cwd: str, home: str, agents=None) -> str:
     cwd, home = str(cwd), str(home)
     files, dirs, tables = _paths(cwd, home, agents)
     h = hashlib.sha256()
+    parsed: dict = {}
     for p, keypaths, t in files:
         try:
             with open(p, "rb") as f:
                 data = _parse(t, f.read(), p)
+            parsed[p] = data
             part = [_pick(data, kp, cwd, home, tables) for kp in keypaths]
         except FileNotFoundError:
             part = "-"
@@ -255,6 +354,7 @@ def semantic_digest(cwd: str, home: str, agents=None) -> str:
         h.update(f"J\0{p}\0{json.dumps(part, sort_keys=True, default=str)}\n".encode())
     for d, item in dirs:
         _walk(d, h, item)
+    _payloads(h, cwd, home, _candidates(tables, cwd, home, parsed.get))
     return h.hexdigest()
 
 
@@ -290,15 +390,16 @@ def plugin_data_dirs(home: str) -> list[str]:
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd and os.path.isabs(pd) and is_bawwab_plugin_dir(pd):
         out.append(os.path.normpath(pd))
-    base = os.path.join(_claude_dir(home), "plugins", "data")
-    try:
-        names = sorted(os.listdir(base))
-    except OSError:
-        names = []
-    for n in names:
-        d = os.path.join(base, n)
-        if is_bawwab_plugin_dir(d) and os.path.isdir(d) and os.path.normpath(d) not in out:
-            out.append(os.path.normpath(d))
+    for cfg in _claude_dirs(home):
+        base = os.path.join(cfg, "plugins", "data")
+        try:
+            names = sorted(os.listdir(base))
+        except OSError:
+            names = []
+        for n in names:
+            d = os.path.join(base, n)
+            if is_bawwab_plugin_dir(d) and os.path.isdir(d) and os.path.normpath(d) not in out:
+                out.append(os.path.normpath(d))
     return out
 
 
@@ -306,28 +407,36 @@ def data_marker(home: str, name: str) -> bool:
     return any(os.path.exists(os.path.join(d, name)) for d in plugin_data_dirs(home))
 
 
-def _claude_dir(home: str) -> str:
-    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
+def _claude_dirs(home: str) -> list:
+    """Claude Code's config dirs: ~/.claude and $CLAUDE_CONFIG_DIR (never only the latter: see the watch table)."""
+    return _watch_tables()[0].config_dirs(home)
+
+
+def _installed_entries(home: str) -> list:
+    """(key, entries) of every config dir's plugins/installed_plugins.json."""
+    out = []
+    for cfg in _claude_dirs(home):
+        try:
+            with open(os.path.join(cfg, "plugins", "installed_plugins.json")) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        plugins = data.get("plugins") if isinstance(data, dict) else None
+        if isinstance(plugins, dict):
+            out += list(plugins.items())
+    return out
 
 
 def plugin_installed_at(home: str) -> float | None:
     """When Claude Code installed bawwab as a plugin: the earliest installedAt of a `bawwab@*` entry (or the
-    entry at CLAUDE_PLUGIN_ROOT, when set) in installed_plugins.json; else None. Read from the file, never
+    entry at CLAUDE_PLUGIN_ROOT, when set) in any config dir's installed_plugins.json; else None. Read from the file, never
     from the process environment, so the user's `!` shell and the hooks agree."""
     from datetime import datetime, timezone
 
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     root = os.path.normpath(root) if root else None
-    try:
-        with open(os.path.join(_claude_dir(home), "plugins", "installed_plugins.json")) as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return None
-    plugins = data.get("plugins") if isinstance(data, dict) else None
-    if not isinstance(plugins, dict):
-        return None
     times = []
-    for key, entries in plugins.items():
+    for key, entries in _installed_entries(home):
         for e in entries if isinstance(entries, list) else [entries]:
             if not isinstance(e, dict):
                 continue
@@ -384,12 +493,13 @@ def session_after(home: str, at: float, current: str | None = None) -> bool:
     dir begins later). bawwab's SessionStart ran in it, so bawwab's state existed. A transcript written after
     `at` that doesn't say when it began counts (fail closed). Without `current` (the CLI from a `!` shell),
     the most recently written session is taken as the current one."""
-    proj = os.path.join(_claude_dir(home), "projects")
     sessions: dict[str, list] = {}  # id -> [newest mtime, started after at]
-    try:
-        dirs = [d.path for d in os.scandir(proj) if d.is_dir(follow_symlinks=False)]
-    except OSError:
-        return False
+    dirs = []
+    for cfg in _claude_dirs(home):  # every config dir's projects/ (CLAUDE_CONFIG_DIR moves it)
+        try:
+            dirs += [d.path for d in os.scandir(os.path.join(cfg, "projects")) if d.is_dir(follow_symlinks=False)]
+        except OSError:
+            pass
     for d in dirs:
         try:
             files = [(e.path, e.name, e.stat().st_mtime) for e in os.scandir(d)
@@ -524,7 +634,7 @@ def quarantine_active(bawwab_home: str) -> bool:
 def check(cwd: str, home: str, bawwab_home: str) -> str:
     cwd, home = str(cwd), str(home)
     stored = load(bawwab_home, cwd)
-    fp = fingerprint(cwd, home)
+    fp = fingerprint(cwd, home, bawwab_home=bawwab_home)
     if stored is not None and stored[0] == fp:
         return "same"
     if stored is None:

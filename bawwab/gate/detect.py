@@ -25,7 +25,7 @@ from pathlib import Path
 
 from bawwab.envkeys import loader_key, server_entry_hash
 from bawwab.gate.prefilter import bash_install_like, bawwab_exe_file, context as _prefilter_context
-from bawwab.paths import bawwab_home, claude_home, claude_json
+from bawwab.paths import bawwab_home, claude_config_dirs, claude_home, claude_json_files
 from bawwab.types import Target
 
 
@@ -152,7 +152,55 @@ def _home_vars(tok: str) -> str:
     if "$" not in tok:
         return tok
     home = str(Path.home())
-    return re.sub(r"\$\{HOME\}|\$HOME(?![A-Za-z0-9_])", lambda _: home, tok)
+    tok = re.sub(r"\$\{HOME\}|\$HOME(?![A-Za-z0-9_])", lambda _: home, tok)
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    if cfg and "CLAUDE_CONFIG_DIR" in tok:  # as the shell would expand it (an unset one is left alone)
+        tok = re.sub(r"\$\{CLAUDE_CONFIG_DIR\}|\$CLAUDE_CONFIG_DIR(?![A-Za-z0-9_])", lambda _: cfg, tok)
+    return tok
+
+
+# ------------------------------------------------------------------ Claude Code config dirs (CLAUDE_CONFIG_DIR)
+#
+# Every user config dir and file (bawwab.paths: ~/.claude and ~/.claude.json always, plus $CLAUDE_CONFIG_DIR and
+# its .claude.json when set) is protected the same way: the variable adds locations, it never removes one.
+
+def _cfg_dirs() -> tuple[str, ...]:
+    """The config dirs, normalised, and their realpaths (a write may name either); cached per detect call."""
+    return _cached(("cfg-dirs", *_cfg_env()), lambda: _with_real(str(d) for d in claude_config_dirs()))
+
+
+def _cfg_files() -> tuple[str, ...]:
+    """The user config files (.claude.json), normalised, and their realpaths; cached per detect call."""
+    return _cached(("cfg-files", *_cfg_env()), lambda: _with_real(str(f) for f in claude_json_files()))
+
+
+def _cfg_env() -> tuple:
+    return os.environ.get("CLAUDE_CONFIG_DIR"), os.environ.get("HOME")
+
+
+def _with_real(paths) -> tuple[str, ...]:
+    out: list[str] = []
+    for p in paths:
+        for q in (os.path.normpath(p), os.path.realpath(p)):
+            if q not in out:
+                out.append(q)
+    return tuple(out)
+
+
+def _redirected_mentions() -> tuple[str, ...]:
+    """Text that names $CLAUDE_CONFIG_DIR's dir (absolute, ~/ or $HOME/ forms); () when the variable is unset."""
+    if not os.environ.get("CLAUDE_CONFIG_DIR"):
+        return ()
+    user = os.path.normpath(str(Path.home()))
+    out = ["CLAUDE_CONFIG_DIR"]
+    for d in _cfg_dirs()[1:]:
+        if d in (os.path.normpath(str(claude_home())), os.path.realpath(str(claude_home()))):
+            continue
+        out.append(d)
+        if _under(d, user) and d != user:
+            rel = os.path.relpath(d, user)
+            out += [f"~/{rel}", f"$HOME/{rel}", f"${{HOME}}/{rel}"]
+    return tuple(out)
 
 
 def _abspath(tok: str, cwd: str) -> str:
@@ -173,11 +221,17 @@ def _target_from_url(url: str, transport: object = None) -> Target:
 
 
 def install_dir(p: str) -> tuple[str, str] | None:
-    """(kind, path of the .claude/<kind> dir) when p is inside an install dir."""
+    """(kind, path of the .claude/<kind> dir) when p is inside an install dir (of a project's or the user's
+    .claude, or of $CLAUDE_CONFIG_DIR)."""
     parts = Path(p).parts
     for i in range(len(parts) - 1):
         if parts[i] == ".claude" and parts[i + 1] in INSTALL_DIRS:
             return parts[i + 1], str(Path(*parts[: i + 2]))
+    for d in _cfg_dirs():
+        if p.startswith(d.rstrip("/") + "/"):
+            kind = p[len(d.rstrip("/")) + 1:].split("/", 1)[0]
+            if kind in INSTALL_DIRS:
+                return kind, os.path.join(d, kind)
     return None
 
 
@@ -292,7 +346,11 @@ def _env_data_dirs() -> tuple[str, ...]:
 
 def _bawwab_data_dirs() -> list[str]:
     """R55: bawwab's plugin data dir (bootstrap markers, its venv) and a venv set by BAWWAB_VENV."""
-    return list(_data_dirs(os.environ.get("CLAUDE_PLUGIN_DATA"), os.environ.get("BAWWAB_VENV"), str(claude_home())))
+    out: list[str] = []
+    for chome in [str(claude_home())] + [str(d) for d in claude_config_dirs()[1:]]:  # and $CLAUDE_CONFIG_DIR's
+        out += [d for d in _data_dirs(os.environ.get("CLAUDE_PLUGIN_DATA"), os.environ.get("BAWWAB_VENV"), chome)
+                if d not in out]
+    return out
 
 
 @functools.lru_cache(maxsize=16)
@@ -332,16 +390,17 @@ def _bawwab_mentions() -> tuple[str, ...]:
 
 
 def _mentions_sensitive(text: str) -> bool:
-    return any(s in text for s in _SENSITIVE + _bawwab_mentions())
+    return any(s in text for s in _SENSITIVE + _bawwab_mentions() + _redirected_mentions())
 
 
 def _config_kind(p: str) -> str | None:
     name = os.path.basename(p)
     if name == ".mcp.json":
         return "mcp"
-    if name == ".claude.json" and p == os.path.normpath(str(claude_json())):
+    if name == ".claude.json" and p in _cfg_files():
         return "claude_json"
-    if os.path.basename(os.path.dirname(p)) == ".claude" and name.startswith("settings") and name.endswith(".json"):
+    if name.startswith("settings") and name.endswith(".json") and (
+            os.path.basename(os.path.dirname(p)) == ".claude" or os.path.dirname(p) in _cfg_dirs()):
         return "settings"
     return None
 
@@ -436,21 +495,28 @@ def _plugin_source(loc: Path, data: dict, src: object) -> Target | None:
 
 def _plugin(spec: str, acc: _Acc) -> None:
     name, _, mk = spec.rpartition("@") if "@" in spec else (spec, "", "")
-    known = _read_json(claude_home() / "plugins" / "known_marketplaces.json")
-    known = known if isinstance(known, dict) else {}
     matches = []
-    for m in [mk] if mk else list(known):
-        entry = known.get(m)
-        if not isinstance(entry, dict):
-            continue
-        loc = entry.get("installLocation")
-        loc = Path(loc) if isinstance(loc, str) and loc else claude_home() / "plugins" / "marketplaces" / m
-        data = _read_json(loc / ".claude-plugin" / "marketplace.json")
-        if not isinstance(data, dict) or not isinstance(data.get("plugins"), list):
-            continue
-        for p in data["plugins"]:
-            if isinstance(p, dict) and p.get("name") == name:
-                matches.append((loc, data, p))
+    seen: list[str] = []
+    for cfg in claude_config_dirs():  # every config dir's marketplaces; the same match in two dirs counts once
+        mine: list = []
+        known = _read_json(cfg / "plugins" / "known_marketplaces.json")
+        known = known if isinstance(known, dict) else {}
+        for m in [mk] if mk else list(known):
+            entry = known.get(m)
+            if not isinstance(entry, dict):
+                continue
+            loc = entry.get("installLocation")
+            loc = Path(loc) if isinstance(loc, str) and loc else cfg / "plugins" / "marketplaces" / m
+            data = _read_json(loc / ".claude-plugin" / "marketplace.json")
+            if not isinstance(data, dict) or not isinstance(data.get("plugins"), list):
+                continue
+            for p in data["plugins"]:
+                if isinstance(p, dict) and p.get("name") == name:
+                    mine.append((loc, data, p))
+        key = json.dumps([[os.path.realpath(x[0]), x[2]] for x in mine], sort_keys=True, default=str)
+        if mine and key not in seen:
+            seen.append(key)
+            matches += mine
     t = _plugin_source(*matches[0][:2], matches[0][2].get("source")) if len(matches) == 1 else None
     if t is None:
         acc.protect(f"unresolvable plugin: {spec}")
@@ -1047,7 +1113,7 @@ def _moves_config(p: str) -> bool:
     p = os.path.normpath(p)
     if _config_kind(p) or _bawwab_path(p) or install_dir(p) or os.path.basename(p) == ".claude":
         return True
-    roots = (str(claude_home()), str(claude_json()), str(bawwab_home()), _xdg_bawwab())
+    roots = (*_cfg_dirs(), *_cfg_files(), str(bawwab_home()), _xdg_bawwab())
     return any(_under(os.path.normpath(r), p) for r in roots)
 
 
@@ -1580,7 +1646,7 @@ _RAW_MAX_CWDS = 16
 
 def _sensitive_dir(p: str) -> bool:
     """A cwd from which a relative path can reach Claude config, an install dir or the bawwab home."""
-    return "/.claude/" in p + "/" or _moves_config(p) or _bawwab_path(p)
+    return "/.claude/" in p + "/" or any(_under(p, d) for d in _cfg_dirs()) or _moves_config(p) or _bawwab_path(p)
 
 
 def _quoted_cuts(line: str) -> tuple[list[int], list[int]]:
@@ -2553,6 +2619,11 @@ def _bash_pass(cmd: str, cwd: str, acc: _Acc, depth: int, extracted: tuple[str, 
 
 def _new_content(inp: HookInput, path: str) -> str:
     ti = inp.tool_input
+    if inp.tool_name == "NotebookEdit":
+        # The notebook Claude Code would write (cell lookup by id, insert/delete, cleared outputs) is not
+        # simulated: a mismatch would let the scan see a different file. Every NotebookEdit of a config file or
+        # into an install dir is protected instead (fail closed).
+        raise _Unevaluable
     if inp.tool_name == "Write":
         c = ti.get("content", "")
         if not isinstance(c, str):
@@ -2653,7 +2724,7 @@ def _config_change(inp: HookInput, path: str, kind: str, acc: _Acc) -> None:
     for plugin, on in oldp.items():
         if on is True and _is_bawwab_plugin(plugin) and newp.get(plugin) is not True:
             acc.protect("disables bawwab")
-    if kind == "settings" and os.path.dirname(path) != os.path.normpath(str(claude_home())):
+    if kind == "settings" and os.path.dirname(path) not in _cfg_dirs():  # a project's .claude/settings*.json
         top_dir = os.path.dirname(os.path.dirname(path))
     else:
         top_dir = inp.cwd
@@ -2686,8 +2757,20 @@ def _install_write(inp: HookInput, path: str, acc: _Acc) -> None:
     acc.overlays.setdefault(t, {})[path] = content
 
 
+# IPython shell escapes: `!cmd`, `%sx cmd`, `%system cmd`, and the shell cell magics (%%bash, %%sh, %%script sh)
+_IPY_SHELL = re.compile(r"(?m)^([ \t]*)(?:!!?|%(?:sx|system)\b|%%(?:bash|sh|script[ \t]+\S+)[^\n]*$)")
+
+
+def _ipython_shell(src: str) -> str:
+    """A notebook cell's source with its shell escapes stripped, so `!bawwab approve X` reads as the command
+    it runs."""
+    return _IPY_SHELL.sub(r"\1", src)
+
+
 def _file_tool(inp: HookInput, acc: _Acc) -> None:
-    fp = inp.tool_input.get("file_path")
+    """Write/Edit/MultiEdit (file_path) and NotebookEdit (notebook_path, new_source, cell_id, cell_type,
+    edit_mode: Claude Code's tool schema)."""
+    fp = inp.tool_input.get("notebook_path" if inp.tool_name == "NotebookEdit" else "file_path")
     if not isinstance(fp, str) or not fp:
         return
     p = os.path.normpath(fp if os.path.isabs(fp) else os.path.join(inp.cwd or "/", fp))
@@ -2699,6 +2782,9 @@ def _file_tool(inp: HookInput, acc: _Acc) -> None:
         new = _new_content(inp, p)
     except _Unevaluable:
         new = ""  # an edit that doesn't apply changes nothing
+        if inp.tool_name == "NotebookEdit":  # the cell's new text is what the R55/R56 checks read
+            src = inp.tool_input.get("new_source")
+            new = _ipython_shell(src) if isinstance(src, str) else ""
     if "bawwab" in new and _execs_bawwab(new):  # R55: a script that runs bawwab under another name
         acc.user_only("writes a script that runs bawwab")
     old = _read_text(p)
@@ -2881,7 +2967,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
                 _write_text_only(cmd, inp.cwd, acc)
             except _TooComplex:
                 return Protected("command too complex to analyse")
-    elif inp.tool_name in ("Write", "Edit", "MultiEdit"):
+    elif inp.tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         try:
             _file_tool(inp, acc)
         except _TooComplex:  # e.g. more than _MAX_TARGETS servers in one config write

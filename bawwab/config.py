@@ -35,6 +35,7 @@ class Config:
     suspicious: Severity = Severity.MED
     trusted: list[str] = field(default_factory=lambda: ["@modelcontextprotocol/*"])
     level: str = DEFAULT_LEVEL
+    review_enabled: bool = True  # "review": {"enabled": bool}, spec §4a
 
 
 DEFAULT_CONFIG = Config()
@@ -83,11 +84,14 @@ def _apply(base: Config, d: dict) -> Config:
     tr = d.get("trusted")
     if isinstance(tr, list) and all(isinstance(x, str) for x in tr):
         cfg.trusted = list(tr)
+    rv = d.get("review") if isinstance(d.get("review"), dict) else {}
+    if isinstance(rv.get("enabled"), bool):
+        cfg.review_enabled = rv["enabled"]
     return cfg
 
 
 def _tighten(cfg: Config, d: dict) -> Config:
-    """Project config may only tighten: deep mode, lower thresholds, narrower trusted. llm ignored."""
+    """Project config may only tighten: deep mode, lower thresholds, narrower trusted, review on. llm ignored."""
     out = replace(cfg, trusted=list(cfg.trusted))
     if _enum(Mode, d.get("mode"), None) == Mode.DEEP:
         out.mode = Mode.DEEP
@@ -111,6 +115,9 @@ def _tighten(cfg: Config, d: dict) -> Config:
             if e not in kept and not any(c in e for c in "*?[") and is_trusted(cfg, e):
                 kept.append(e)
         out.trusted = kept
+    rv = d.get("review") if isinstance(d.get("review"), dict) else {}
+    if rv.get("enabled") is True:
+        out.review_enabled = True
     return out
 
 

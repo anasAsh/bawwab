@@ -11,6 +11,7 @@ from bawwab.types import Finding, Severity
 TIMEOUT_S = 90.0
 MAX_EVIDENCE = 500
 MIN_QUOTE = 20
+UNGROUNDED = Severity.LOW  # what an unquoted high/critical claim counts as
 _SEVS = {s.value: s for s in Severity}
 _QUOTED = re.compile(r"\"([^\"]+)\"|'([^']+)'|`([^`]+)`")
 
@@ -55,8 +56,11 @@ def _parse(raw: str, sent: str, allowed: set[str]) -> list[Finding]:
         if file is not None and not isinstance(file, str):
             raise _Invalid("schema mismatch")
         severity = _SEVS[sev]
-        if severity == Severity.CRITICAL and not _quotes_input(ev, sent):
-            severity = Severity.HIGH
+        if severity >= Severity.HIGH and not _quotes_input(ev, sent):
+            # Escalate-only: the judge may add weight, but only for what it can show. A HIGH or CRITICAL claim
+            # without a verbatim quote of the sent text is kept for the user to read, at LOW, so it never makes
+            # a verdict by itself (and a CRITICAL is not left at an equally ungrounded HIGH).
+            severity = UNGROUNDED
         out.append(
             Finding(_rule(rule), severity, "judge", ev[:MAX_EVIDENCE], file=file if file in allowed else None)
         )
