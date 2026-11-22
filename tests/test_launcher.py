@@ -664,3 +664,25 @@ def test_prose_about_bawwab_in_an_rc_file_passes(user_bin, tmp_path):
     home, ub, env = user_bin
     ti = {"file_path": str(home / ".bashrc"), "content": "# bawwab (gatekeeper) is installed\nexport X=1\n"}
     assert run_gate(HookInput("Write", ti, str(tmp_path)), scan=FakeScan()) is None
+
+
+def test_own_launchers_earlier_on_path_dont_hide_the_shim(user_bin, tmp_path):
+    """`uv run` puts the venv's bin/ (with bawwab's console script) first, and Claude Code may put the plugin's
+    bin/ on PATH: both run this same code, so the shim behind them still counts. A foreign one doesn't."""
+    home, ub, env = user_bin
+    assert _setup("--link", env).returncode == 0
+    venv_bin = Path(sys.prefix) / "bin"
+    console = venv_bin / "bawwab"
+    if sys.prefix != sys.base_prefix and console.exists():
+        os.environ["PATH"] = f"{venv_bin}:{env['PATH']}"
+        assert clicmd.exe() == "bawwab"
+    os.environ["PATH"] = f"{LAUNCHER.parent}:{env['PATH']}"
+    assert clicmd.exe() == "bawwab"
+    r = _setup("--link", {**env, "PATH": os.environ["PATH"]})
+    assert r.returncode == 0, r.stderr  # re-linking with the plugin's bin/ first is fine too
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "bawwab").write_text(LAUNCHER.read_text())  # a copy of the launcher is not this tree's launcher
+    (other / "bawwab").chmod(0o755)
+    os.environ["PATH"] = f"{other}:{env['PATH']}"
+    assert clicmd.exe() == QUOTED

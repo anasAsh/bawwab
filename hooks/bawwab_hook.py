@@ -617,7 +617,8 @@ def link(unlink: bool = False) -> int:
         _say(f"bawwab setup --link: your PATH has a relative entry before {d}; Bawwab only trusts a `bawwab` it "
              "can locate the same way from any directory. Not linked.", True)
         return 1
-    other = shutil.which("bawwab", path=os.pathsep.join(before)) if before else None
+    hits = [shutil.which("bawwab", path=e) for e in before]
+    other = next((h for h in hits if h and not c._own_bawwab(h, launcher)), None)
     if other:
         _say(f"bawwab setup --link: {other} comes before {d} on your PATH and would run instead. Remove it (or "
              "reorder PATH), then run this again. Not linked.", True)

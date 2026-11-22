@@ -20,6 +20,7 @@ import re
 import shlex
 import shutil
 import stat
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LAUNCHER = os.path.join(ROOT, "bin", "bawwab")
@@ -132,26 +133,42 @@ def _path_entries(path: str | None = None) -> list[str]:
     return [os.path.normpath(e) if e else "" for e in raw.split(os.pathsep)]
 
 
+def _own_bawwab(p: str, launcher: str) -> bool:
+    """p is one of bawwab's own launchers for this tree, which a shell may meet on PATH before the shim and which
+    run the same code: this tree's bin/bawwab (Claude Code may put a plugin's bin/ on PATH), the verified stable
+    launcher, or the console script of the venv this process runs in (`uv run` puts its bin/ first)."""
+    real = os.path.realpath(p)
+    if real == launcher or (stable_ok(launcher) is not None and real == os.path.realpath(stable_path() or "")):
+        return True
+    if sys.prefix == sys.base_prefix:
+        return False
+    return os.path.dirname(real) == os.path.realpath(os.path.join(sys.prefix, "bin")) and os.path.isfile(real)
+
+
 def linked(launcher: str | None = None) -> bool:
-    """`bawwab` on this process's PATH is the shim `bawwab setup --link` wrote, unchanged, in a user bin dir
-    (SHIM_DIRS), every PATH entry before that dir is absolute, and what the shim runs verifies too. Checked each
-    time a command is printed, never cached. It can't see the user's own shell (its PATH, aliases or functions)
-    or a change made after this check: docs/threat-model.md 5.7."""
+    """The first `bawwab` on this process's PATH, past bawwab's own launchers (_own_bawwab), is the shim
+    `bawwab setup --link` wrote, unchanged, in a user bin dir (SHIM_DIRS); every PATH entry up to it is absolute;
+    and what the shim runs verifies too. Checked each time a command is printed, never cached. It can't see the
+    user's own shell (its PATH, aliases or functions) or a change made after this check: docs/threat-model.md
+    5.7."""
     launcher = launcher or _launcher()
     home = os.path.expanduser("~")
     if launcher is None or not home or home == "/" or not os.path.isabs(home):
         return False
-    hit = shutil.which("bawwab")
-    if not hit or not os.path.isabs(hit):
-        return False
-    where = os.path.normpath(os.path.dirname(hit))
-    entries = _path_entries()
-    if where not in shim_dirs() or not all(os.path.isabs(e) for e in entries[:entries.index(where)]):
-        return False
-    target = shim_target(launcher)
-    if target is None or not _holds(hit, shim_text(target)):
-        return False
-    return target == launcher or stable_ok(launcher) is not None
+    shims = set(shim_dirs())
+    for entry in _path_entries():
+        if not os.path.isabs(entry):
+            return False  # what `bawwab` is would depend on the shell's cwd
+        hit = shutil.which("bawwab", path=entry)
+        if not hit:
+            continue
+        if entry not in shims and _own_bawwab(hit, launcher):
+            continue
+        target = shim_target(launcher)
+        if entry not in shims or target is None or not _holds(hit, shim_text(target)):
+            return False  # another `bawwab` comes first
+        return target == launcher or stable_ok(launcher) is not None
+    return False
 
 
 def show_path(p: str) -> str:
