@@ -717,6 +717,30 @@ def _run_gate(raw: str, deny_on_error: bool = True, effects: bool = False) -> st
     return None
 
 
+def _test_home() -> str | None:
+    """BAWWAB_HOME lies inside a repo the user allowed for tests (`bawwab allow-env`, bawwab/allowenv.py): the
+    hooks never enforce from such a home, so a Claude Code started with it (by a script, a test) gets read-only
+    tools only. Cheap: nothing is read unless BAWWAB_HOME is set."""
+    if not os.environ.get("BAWWAB_HOME"):
+        return None
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location("_bawwab_allowenv", os.path.join(PLUGIN_ROOT, "bawwab",
+                                                                                       "allowenv.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.test_home()
+    except Exception:  # noqa: BLE001 - can't tell: as before allow-env (the gate refused setting it)
+        return None
+
+
+def _test_home_text(repo: str) -> str:
+    return (f"bawwab: this Claude Code runs with BAWWAB_HOME inside {repo}, which `allow-env` allows only for "
+            "tests, so Bawwab won't check tool calls from it; only read-only tools run. Start Claude Code without "
+            "BAWWAB_HOME.")
+
+
 def gate() -> int:
     raw = sys.stdin.read()
     try:
@@ -726,6 +750,11 @@ def gate() -> int:
     if not isinstance(data, dict):
         return 0
     _note_session(data)
+    th = _test_home()
+    if th is not None:
+        if data.get("tool_name") not in READ_ONLY_TOOLS:
+            print(_deny(_test_home_text(th)))
+        return 0
     try:
         install_like = prefilter(data)
     except Exception:  # noqa: BLE001 - can't tell (e.g. NUL in a path): treat as install-like, fail closed
@@ -766,6 +795,10 @@ def post() -> int:
     if not isinstance(data, dict) or not _post_tool(data.get("tool_name")):
         return 0
     _note_session(data)
+    th = _test_home()
+    if th is not None:
+        print(json.dumps({"decision": "block", "reason": _test_home_text(th)}))
+        return 0
     cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else os.getcwd()
     if not _config_changed(cwd):
         return 0

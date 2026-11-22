@@ -273,7 +273,7 @@ def _state_targets() -> list[str]:
     """bawwab's own state: its home and key files, and the install markers (paths a glob must not reach)."""
     home = os.path.normpath(str(bawwab_home()))
     out = [home, *(os.path.join(home, f) for f in _STATE_FILES), os.path.join(str(claude_home()), _MARKER),
-           _xdg_bawwab(), os.path.join(_xdg_bawwab(), _MARKER)]
+           _xdg_bawwab(), os.path.join(_xdg_bawwab(), _MARKER), _allow_list()]
     pd = os.environ.get("CLAUDE_PLUGIN_DATA")
     if pd:
         out.append(os.path.join(os.path.normpath(pd), _MARKER))
@@ -364,8 +364,15 @@ def _data_dirs(plugin_data: str | None, venv: str | None, chome: str) -> tuple[s
     return tuple(out)
 
 
+def _allow_list() -> str:
+    """bawwab/allowenv.py's list (~/.bawwab/allow-env.json, by HOME even when BAWWAB_HOME points elsewhere)."""
+    return os.path.join(str(Path.home()), ".bawwab", "allow-env.json")
+
+
 def _bawwab_path1(p: str) -> bool:
     if _under(p, _bawwab_root()) or os.path.basename(p) == _MARKER or _under(p, _xdg_bawwab()):
+        return True
+    if p == _allow_list() or (os.path.basename(p) == "allow-env.json" and os.path.realpath(p) == _allow_list()):
         return True
     if "/data/bawwab" in p and _PLUGIN_DATA_RE.search(p):  # <claude home>/plugins/data/bawwab*: data dir, venv
         return True
@@ -1350,7 +1357,7 @@ def _copies_bawwab(exe: str, src: str, dest: str, cwd: str) -> bool:
 _RUNS_BAWWAB = re.compile(
     r"(?:^|[\s;&|('\"`=])(?:[^\s;&|('\"`]*/)?bawwab(?:\.cli)?['\"]?(?=[\s;&|)'\",\]]|$)"
     r"|bawwab\.cli\b|(?:from|import)\s+bawwab\b|-m\s+bawwab\b|bawwab_hook", re.M)
-_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects|level)\b")
+_PASSES_ARGS = re.compile(r"\$[@*1-9]|\$\{[@*1-9]|\bargv\b|\b(?:approve|reject|--skip|effects|level|allow-env)\b")
 
 
 _SHEBANG = re.compile(r"\s*#!")
@@ -1514,7 +1521,14 @@ def _protected_tail(args: list[str]) -> bool:
         return _lowers_level(rest)
     if sub == "setup":
         return _links(rest)
+    if sub == "allow-env":
+        return _allows_env(rest)
     return False
+
+
+def _allows_env(rest: list[str]) -> bool:
+    """`allow-env <repo>` lets commands in a repo set BAWWAB_HOME: the user's choice. Only listing is Claude's."""
+    return any(a != "--list" for a in rest)
 
 
 def _links(rest: list[str]) -> bool:
@@ -1567,6 +1581,8 @@ def _bawwab_decision(words: list[str], bawwab_vars: set[str] = frozenset(), cwd:
             return _lowers_level(rest)
         if w == "setup":
             return _links(rest)
+        if w == "allow-env":
+            return _allows_env(rest)
         return False
     if not tail:
         return False
@@ -1591,7 +1607,7 @@ def _search_tool(w: str, cwd: str) -> bool:
 
 
 _MAX_RESOLVE = 8  # words examined for a bawwab executable before the subcommand
-_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level", "setup"})
+_SUBCOMMANDS = frozenset({"approve", "reject", "init", "effects", "level", "setup", "allow-env"})
 
 
 _INTERPRETER = re.compile(r"python[0-9.]*|node(js)?|perl|ruby|bun|deno|php|bash|sh|zsh|dash|ksh")
@@ -1984,7 +2000,7 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
                                                             for m in _BW_WORD.finditer(s))):
             out.add(s)
             continue
-        if "/" in s and re.search(r"\b(?:approve|reject|init|effects|setup)\b", s):
+        if "/" in s and re.search(r"\b(?:approve|reject|init|effects|setup|allow-env)\b", s):
             for m in _PATH_TOKEN.finditer(s):
                 paths += 1
                 if paths > 256:
@@ -1999,7 +2015,7 @@ def _protected_lines(text: str, cwd: str) -> set[str]:
 
 def _new_protected(new: str, old: str, cwd: str) -> bool:
     """`new` holds a protected bawwab invocation that `old` didn't (an edit elsewhere in a doc passes)."""
-    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects|setup)\b", new):
+    if "bawwab" not in new and not re.search(r"\b(?:approve|reject|init|effects|setup|allow-env)\b", new):
         return False
     return bool(_protected_lines(new, cwd) - _protected_lines(old, cwd))
 
@@ -2961,7 +2977,7 @@ def _writes_anything(segs: list[_Seg]) -> bool:
 _WHOLE_TOKENISE = 20_000  # bytes: above this, the whole-command claude check tokenises only relevant lines
 
 
-def _whole_command_checks(cmd: str, acc: _Acc) -> None:
+def _whole_command_checks(cmd: str, acc: _Acc, cwd: str = "") -> None:
     """Things no reading of the shell grammar may miss: a nested claude without bawwab's hooks, and
     overriding the variables that locate or switch off bawwab."""
     s = cmd.replace('"', "").replace("'", "").replace("\\", "")
@@ -2977,8 +2993,52 @@ def _whole_command_checks(cmd: str, acc: _Acc) -> None:
         segs = _segments(_tokens(text))
     if _NESTED_CLAUDE.search(s) or _nested_claude(segs) or ("disableAllHooks" in s and _writes_anything(segs)):
         acc.protect("nested claude without bawwab hooks")
-    if _BAWWAB_ENV.search(s):
+    if _BAWWAB_ENV.search(s) and not _allowed_test_home(cmd, cwd):
         acc.protect("bawwab environment override")
+
+
+_ENV_ASSIGN = re.compile(r"BAWWAB_HOME=([^$`*?\[\]{}~\\]+)")
+# a nested Claude Code (any word naming claude), another HOME or config dir, or a cd that changes what a relative
+# path means: no test home then
+_ENV_NEVER = re.compile(r"(?i:claude)|(?<![A-Za-z0-9_])HOME(?![A-Za-z0-9_])|(?<![\w-])(?:cd|pushd|popd)(?![\w-])")
+
+
+def _allowed_test_home(cmd: str, cwd: str) -> bool:
+    """`bawwab allow-env <repo>` (the user's): in that repo, a command may set BAWWAB_HOME to a dir inside it
+    (bawwab/allowenv.py). Every BAWWAB_ word of the command must be a plain `BAWWAB_HOME=<literal path>`
+    assignment (also after `export`/`env`) whose path, and the call's cwd, lie inside one allowed repo, symlinks
+    resolved; nothing else may set or read it into another variable; and the command must not name claude,
+    HOME, CLAUDE_CONFIG_DIR or cd (a nested Claude Code is never covered, and a relative path must mean one
+    thing). Bawwab's hooks also refuse to run on such a home (hooks/bawwab_hook.py)."""
+    if not cwd or "\n" in cmd or "<<" in cmd or "`" in cmd or "$(" in cmd:
+        return False
+    try:
+        from bawwab import allowenv
+    except ImportError:
+        return False
+    if not allowenv.repos():
+        return False
+    try:
+        words = _tokens(cmd)
+    except ValueError:
+        return False
+    if any(_ENV_NEVER.search(w) for w in words) or "BAWWAB_CHILD" in cmd:
+        return False
+    cwd = os.path.normpath(cwd)
+    repo = allowenv.repo_of(cwd)
+    if repo is None:
+        return False
+    hits = [w for w in words if "BAWWAB_" in w]
+    if not hits or cmd.count("BAWWAB_") != len(hits):
+        return False  # a mention inside one word more than once, or in text the tokens don't show
+    for w in hits:
+        m = _ENV_ASSIGN.fullmatch(w)
+        if not m or not m.group(1):
+            return False
+        p = os.path.normpath(os.path.join(cwd, m.group(1)))
+        if not allowenv.real_inside(p, repo) or p == repo:
+            return False
+    return True
 
 
 _APPROVAL = "bawwab approval via tool call"
@@ -3005,7 +3065,7 @@ def _write_text_only(cmd: str, cwd: str, acc: _Acc) -> None:
     again = _Acc(4 * len(blanked) + 1_000_000)
     again.root = blanked
     try:
-        _whole_command_checks(blanked, again)
+        _whole_command_checks(blanked, again, cwd)
         _bash(blanked, cwd, again)
     except _TooComplex:
         return
@@ -3187,7 +3247,7 @@ def _again_without(cmd: str, cwd: str, spans: list[tuple[int, int]], blank) -> _
     again = _Acc(4 * len(blanked) + 1_000_000)
     again.root = blanked
     try:
-        _whole_command_checks(blanked, again)
+        _whole_command_checks(blanked, again, cwd)
         _bash(blanked, cwd, again)
     except _TooComplex:
         return None
@@ -3222,7 +3282,7 @@ def detect_install(inp: HookInput) -> Targets | Protected | None:
             acc.budget = 4 * len(cmd) + 1_000_000
             acc.root = cmd
             try:
-                _whole_command_checks(cmd, acc)
+                _whole_command_checks(cmd, acc, inp.cwd)
                 _bash(cmd, inp.cwd, acc)
                 _write_text_only(cmd, inp.cwd, acc)
                 _literal_text_only(cmd, inp.cwd, acc)

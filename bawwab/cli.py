@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -70,6 +71,11 @@ def _build() -> argparse.ArgumentParser:
     wg.add_argument("--uninstall", action="store_true", help="stop and remove the user service")
     w.add_argument("--unit-dir", help=argparse.SUPPRESS)  # tests: write the unit here, never start it
     sub.add_parser("status", help="what is quarantined or on hold, across every agent, and the watcher's state")
+    ae = sub.add_parser("allow-env", help="let commands in a repo set BAWWAB_HOME to a dir inside it, for tests "
+                                         "(user only; never a nested claude)")
+    ae.add_argument("repo", nargs="?", help="the repo dir (default: list the allowed ones)")
+    ae.add_argument("--remove", action="store_true", help="take the repo off the list")
+    ae.add_argument("--list", action="store_true", help="list the allowed repos")
     sb = sub.add_parser("sandbox", help="deep mode: build the Docker sandbox image, or check that it can run")
     sb.add_argument("action", choices=("build", "check"))
     st = sub.add_parser("setup", help="plugin: sync bawwab's own dependencies now and show any error")
@@ -486,6 +492,32 @@ def _setup(args) -> int:
     return rc
 
 
+def _allow_env(args) -> int:
+    from bawwab import allowenv
+    from bawwab.store import open_store
+
+    if args.list or not args.repo:
+        rs = allowenv.repos()
+        print("\n".join(f"bawwab: commands in {sanitise(r, 300)} may set BAWWAB_HOME inside it" for r in rs)
+              if rs else "bawwab: no repo may set BAWWAB_HOME (the gate refuses it everywhere)")
+        return 0
+    if args.remove:
+        ok = allowenv.remove(args.repo)
+        print(f"bawwab: {'removed' if ok else 'not on the list'}: {sanitise(os.path.realpath(args.repo), 300)}")
+        open_store().audit("allow-env.remove", repo=os.path.realpath(args.repo), ok=ok)
+        return 0 if ok else 1
+    try:
+        d = allowenv.add(args.repo)
+    except ValueError as e:
+        print(f"error: {sanitise(str(e), 300)}", file=sys.stderr)
+        return 1
+    open_store().audit("allow-env.add", repo=d)
+    print(f"bawwab: commands run in {sanitise(d, 300)} may now set BAWWAB_HOME to a dir inside it (a test home). "
+          "A command that also runs claude, or sets HOME or CLAUDE_CONFIG_DIR, is still refused, and Bawwab's "
+          f"hooks never run on such a home. Undo: `{cmd('allow-env --remove')} {shlex.quote(d)}`.")
+    return 0
+
+
 def _sandbox(args) -> int:
     from bawwab.sandbox.docker import DockerRunner, SandboxUnavailable, build_image
 
@@ -538,6 +570,8 @@ def main(argv: list[str] | None = None) -> int:
             return _status()
         if args.cmd == "sandbox":
             return _sandbox(args)
+        if args.cmd == "allow-env":
+            return _allow_env(args)
         from bawwab.store import open_store
 
         if args.cmd == "diff":

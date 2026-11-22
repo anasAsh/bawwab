@@ -421,6 +421,9 @@ bawwab effects                 # what is on hold, with every finding and evidenc
 bawwab watch --install         # background watcher as a user service (systemd / launchd)
 bawwab watch --once            # one pass now, then print the status
 bawwab status                  # what is quarantined or on hold, across every agent
+
+# Working on Bawwab itself
+bawwab allow-env <repo-dir>    # commands run in that repo may set BAWWAB_HOME to a dir inside it (tests)
 ```
 
 Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3` error, so it slots into CI.
@@ -428,8 +431,14 @@ Exit codes for `bawwab scan`: `0` clean · `1` suspicious · `2` malicious · `3
 In Claude Code, type these as `! bawwab …`: the `!` runs them in your shell, as you. With the plugin only,
 use the command exactly as Bawwab's message prints it, which names the plugin's launcher by its path (`~/…`),
 or `bawwab` after `setup --link`. Claude can run `scan`, `explain`, `diff`, `init --scan`, `setup --retry`,
-`setup --unlink`, `level` and `level high`, but never `approve`, `reject`, `init --skip`, `setup --link` or a
-lower level, by any name or path.
+`setup --unlink`, `allow-env --list`, `level` and `level high`, but never `approve`, `reject`, `init --skip`,
+`setup --link`, `allow-env` or a lower level, by any name or path.
+
+`allow-env` is for developing Bawwab: Bawwab refuses any command that sets `BAWWAB_HOME`, because a nested
+Claude Code pointed at a copied, edited store would skip your decisions. After `! bawwab allow-env <repo>`,
+a command run in that repo may set `BAWWAB_HOME` to a dir inside it (`BAWWAB_HOME=.tmp/bw uv run pytest`), as
+long as it doesn't run `claude` or change `HOME`. Bawwab's hooks never check calls from a Claude Code started
+with such a home: it gets read-only tools only.
 
 ### MCP tools
 
