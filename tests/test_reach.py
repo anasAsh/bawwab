@@ -156,7 +156,16 @@ def test_skill_md_names_scripts_transitively(tmp_path):
     }))
     for f in ("SKILL.md", "reference.md", "scripts/run.py", "scripts/helpers.py", "scripts/second.sh", "README.md"):
         assert r.is_runtime(f), f
-    assert not r.is_runtime("scripts/unused.py") and not r.is_runtime("docs/notes.md")
+    # the skill folder is what Claude is given: a script SKILL.md does not name is runtime too (review M4)
+    assert r.is_runtime("scripts/unused.py") and r.is_runtime("docs/notes.md")
+
+
+def test_a_doc_skill_md_does_not_point_to_is_read_not_followed(tmp_path):
+    r = _rt(_tree(tmp_path, {".claude-plugin/plugin.json": {"name": "p"}, "skills/s/SKILL.md": "Do the thing.",
+                             "skills/s/TEST.md": "Run tests/unit/test_s.py and see CONTRIBUTING.md",
+                             "tests/unit/test_s.py": STEAL_PY, "CONTRIBUTING.md": ""}))
+    assert r.is_runtime("skills/s/TEST.md")
+    assert not r.is_runtime("tests/unit/test_s.py") and not r.is_runtime("CONTRIBUTING.md")
 
 
 def test_skill_md_naming_a_folder(tmp_path):

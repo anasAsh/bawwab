@@ -38,7 +38,7 @@ from pathlib import Path
 
 from bawwab.types import Finding, Severity
 
-__all__ = ["DEMOTABLE_RULES", "Reach", "classify", "demote_unreachable"]
+__all__ = ["DEMOTABLE_RULES", "Reach", "classify", "demote_unreachable", "model_facing_docs", "skill_dirs"]
 
 # Rules about what a file's own code or text does: in a file that never runs and is never read, they are listed
 # only. Every other rule is about the package itself (identity, install hooks in the manifest, plugin hooks,
@@ -227,6 +227,54 @@ def _vendored(rel: str) -> bool:
     return any(p in VENDORED_DIRS for p in parts[:-1])
 
 
+def _other_tool(rel: str) -> bool:
+    """In another tool's agent config folder (.github/agents, .codex, .cursor, .pi...): Claude does not load it."""
+    return any(p.startswith(".") and p not in (".claude", ".claude-plugin") for p in rel.split("/")[:-1])
+
+
+def skill_dirs(rels: Iterable[str]) -> set[str]:
+    """The skill folders of a target: each folder holding a SKILL.md that Claude would load ("" for a root one)."""
+    return {_dirname(r) for r in rels if _base(r) == "SKILL.md" and not _vendored(r) and not _other_tool(r)}
+
+
+def in_skill(rel: str, skills: set[str]) -> str | None:
+    """The innermost skill folder holding rel, or None. The whole folder is what Claude is given: SKILL.md's prose
+    ("run the helper in the scripts folder") names files no path token reaches, and Claude lists the folder and
+    reads or runs what is there. So every file in it is runtime and every doc in it is model-facing. Vendored
+    dependencies are not (their own imports decide)."""
+    if _vendored(rel):
+        return None
+    d = _dirname(rel)
+    while True:
+        if d in skills:
+            return d
+        if not d:
+            return None
+        d = _dirname(d)
+
+
+def model_facing_docs(rels: Iterable[str]) -> dict[str, str]:
+    """Docs the agent reads, by path -> their component folder: every SKILL.md and each doc in its skill folder
+    (its README.md, a reference.md it points to), commands/*.md and agents/*.md. The one definition the text
+    rules, the judge and the classifier share (bawwab.scan.rules.text._collect, _model_facing below)."""
+    rels = list(rels)
+    skills = skill_dirs(rels)
+    out: dict[str, str] = {}
+    for r in rels:
+        if _vendored(r):
+            continue
+        low = r.lower()
+        sk = in_skill(r, skills) if low.endswith(_DOC_EXTS) else None
+        if sk is not None:
+            out[r] = sk
+            continue
+        parts = r.split("/")
+        if low.endswith(".md") and not _other_tool(r) and any(p in ("commands", "agents") for p in parts[:-1]):
+            i = max(k for k, p in enumerate(parts[:-1]) if p in ("commands", "agents"))
+            out[r] = "/".join(parts[: i + 1])
+    return out
+
+
 # ------------------------------------------------------------------ the classifier
 
 
@@ -259,6 +307,8 @@ class _State:
     model_facing: dict[str, str] = field(default_factory=dict)
 
     weak: set[str] = field(default_factory=set)  # reached only by a path string in code: imports followed only
+    skills: set[str] = field(default_factory=set)  # skill folders (skill_dirs)
+    docs: dict[str, str] = field(default_factory=dict)  # model_facing_docs: by path, before following
 
     def add(self, rel: str | None, anchor: str | None = None, weak: bool = False) -> None:
         """anchor: rel is a model-facing doc of that component folder."""
@@ -336,6 +386,7 @@ def classify(root: Path | None, files: list | None = None, *, extra_seeds: Itera
         return Reach(None, "too many files to classify", files=frozenset(rels))
     texts = {f.rel: f.text for f in files or [] if f.rel in rels}
     st = _State(Path(root), files is None, rels, dirs, texts)
+    st.skills, st.docs = skill_dirs(rels), model_facing_docs(rels)
     for r in rels:
         st.by_dir.setdefault(_dirname(r), []).append(r)
     for r in rels:
@@ -908,20 +959,23 @@ def _expand_dir(st: _State, p: str, weak: bool = False) -> None:
 
 
 def _model_facing(st: _State) -> None:
+    for r, anchor in sorted(st.docs.items()):
+        if _base(r) == "SKILL.md" or r == posixpath.join(anchor, "README.md") or anchor not in st.skills:
+            st.add(r, anchor)  # SKILL.md, its README.md, commands/agents docs: what they name is followed
     for r in sorted(st.rels):
-        if _vendored(r):
+        if st.skills and in_skill(r, st.skills) is not None:
+            # A skill folder is runtime as a whole (in_skill says why). A doc in it that SKILL.md does not point
+            # to is read, not followed: Claude reaches it by listing the folder, and the paths such a doc names
+            # outside the folder (a TEST.md naming the repo's tests/) are the maintainers' material.
+            st.add(r)
+    for r in sorted(st.rels):
+        if _vendored(r) or r in st.docs:
             continue
         parts = r.split("/")
         b = parts[-1]
-        if any(p.startswith(".") and p not in (".claude", ".claude-plugin") for p in parts[:-1]):
-            continue  # another tool's agent config (.github/agents, .codex, .cursor, .pi...): Claude does not load it
-        if b == "SKILL.md":
-            st.add(r, _dirname(r))
-            st.add(posixpath.join(_dirname(r), "README.md") if _dirname(r) else "README.md", _dirname(r))
-        elif b.lower().endswith(".md") and any(p in ("commands", "agents") for p in parts[:-1]):
-            i = max(k for k, p in enumerate(parts[:-1]) if p in ("commands", "agents"))
-            st.add(r, "/".join(parts[: i + 1]))
-        elif parts[0] == ".claude" and len(parts) > 1:
+        if _other_tool(r):
+            continue
+        if parts[0] == ".claude" and len(parts) > 1:
             # A repo's own Claude config is loaded when Claude is opened in the checkout: it counts, but what its
             # docs name is developer material (tests, scripts). Settings hooks run code: they are followed.
             if b.startswith("settings") and b.endswith(".json"):
