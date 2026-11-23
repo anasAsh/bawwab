@@ -4,7 +4,7 @@ import re
 import secrets
 
 from bawwab.scan.files import ExtraText, ScanFile
-from bawwab.scan.rules.text import model_facing_text
+from bawwab.scan.rules.text import doc_rank, model_facing_text
 from bawwab.types import Finding
 
 MAX_BYTES = 60_000
@@ -83,13 +83,17 @@ def build_prompt(
     """Return (system, user, sent_text, allowed_file_labels, truncated)."""
     allowed: set[str] = set()
     sections: list[tuple[str, str]] = []
+    rels = {f.rel for f in files}
+    later: list[tuple[str, str]] = []
     for t in model_facing_text(files, extra):
         allowed.add(t.label)
-        sections.append((t.label, t.text))
+        # a skill's other docs (reference.md...) come after the static findings' context: they fill what is left
+        (later if t.label in rels and doc_rank(t.label) == 2 else sections).append((t.label, t.text))
     for rel in {f.file for f in static if f.file}:
         allowed.add(rel)
     for c in _context_sections(files, static):
         sections.append((c.label, c.text))
+    sections += later
 
     body_parts: list[str] = []
     used = 0

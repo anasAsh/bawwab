@@ -9,13 +9,15 @@ from collections import Counter
 from dataclasses import dataclass
 
 from bawwab.scan.files import ExtraText, ScanFile
+from bawwab.scan.reach import model_facing_docs
 from bawwab.scan.rules import parsing
 from bawwab.scan.rules.code import JS_EXT, PY_EXT, TS_EXT, _js_lang
 from bawwab.types import Finding, Severity
 
-MAX_DESC = 20_000
 VENDORED = ("node_modules/", "site-packages/", ".venv/", "vendor/")
 DESC_KINDS = ("tool", "prompt", "resource")
+# Descriptions are kept whole, as docs are: a cap lets 20 KB of benign prose push a payload past what the rules see.
+# Their size is bounded by the file limits (bawwab.scan.files) like any other text.
 
 # ---------------------------------------------------------------- collecting model-facing text
 
@@ -100,7 +102,7 @@ def _py_descriptions(text: str) -> list[_Text]:
                 kw = {k.arg: k.value for k in call.keywords} if call else {}
                 desc = _const_str(kw.get("description")) or ast.get_docstring(n)
                 if desc:
-                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc[:MAX_DESC], True,
+                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc, True,
                                      params=_py_params(n)))
                 break
         elif isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", "")) == "Tool":
@@ -108,7 +110,7 @@ def _py_descriptions(text: str) -> list[_Text]:
             kw = {k: _const_str(v) for k, v in kwn.items()}
             if kw.get("description"):
                 schema = next((kwn[k] for k in ("inputSchema", "input_schema", "parameters") if k in kwn), None)
-                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"][:MAX_DESC], True,
+                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"], True,
                                  params=_py_schema_keys(schema)))
     return out
 
@@ -189,7 +191,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
                 desc = string_of(p1.get("description"))
                 params = schema_of(p1)
             if desc:
-                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc[:MAX_DESC], True, params=params))
+                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc, True, params=params))
         elif n.type == "object":
             objects.append(n)
     for o in objects:
@@ -198,7 +200,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
         p = pairs(o)
         desc, name = string_of(p.get("description")), string_of(p.get("name"))
         if desc and name:
-            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True, _schema_param(o, p, string_of, txt), schema_of(p)))
+            out.append(_Text(f"tool {name}", desc, True, _schema_param(o, p, string_of, txt), schema_of(p)))
     return out
 
 
@@ -249,7 +251,7 @@ _FALLBACK_RE = re.compile(
 
 
 def _fallback_descriptions(text: str) -> list[_Text]:
-    return [_Text("tool (unparsed)", _unescape(next(g for g in m.groups() if g is not None))[:MAX_DESC], True)
+    return [_Text("tool (unparsed)", _unescape(next(g for g in m.groups() if g is not None)), True)
             for m in _FALLBACK_RE.finditer(text)]
 
 
@@ -280,12 +282,20 @@ def _source_descriptions(f: ScanFile) -> list[_Text]:
     return []
 
 
+def doc_rank(rel: str) -> int:
+    """Order of the model-facing docs (the judge's 60 KB budget is spent in this order): SKILL.md first, then a
+    skill's README.md and commands/agents docs, then the other docs of a skill folder."""
+    base = rel.rsplit("/", 1)[-1].lower()
+    return 0 if base == "skill.md" else 1 if _is_doc_path(rel) else 2
+
+
 def _collect(files: list[ScanFile], extra: list[ExtraText]) -> list[_Text]:
     out: list[_Text] = []
     is_skill = any(f.rel.rsplit("/", 1)[-1].lower() == "skill.md" for f in files)
-    for f in files:
-        if _is_doc_path(f.rel, is_skill):
-            out.append(_Text(f.rel, f.text, False))
+    docs = model_facing_docs(f.rel for f in files)
+    picked = [f for f in files if f.rel in docs or _is_doc_path(f.rel, is_skill)]
+    for f in sorted(picked, key=lambda f: doc_rank(f.rel)):  # stable: file order within a rank
+        out.append(_Text(f.rel, f.text, False))
     for f in files:
         out.extend(_source_descriptions(f))
     out.extend(_Text(e.label, e.text, True) for e in extra)
