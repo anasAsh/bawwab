@@ -1867,7 +1867,9 @@ class CodeRules:
         if hit:
             out.append(_finding("install.custom-index", Severity.MED, f, _line_of(raw, hit[0]),
                                 f"installs Python packages from {hit[1][:120]}"))
-        if not f.rel.endswith(".min.js"):
+        # a signature or certificate file (a sigstore bundle, a detached .asc) is encoded by its format and is
+        # verified, never run
+        if not f.rel.endswith(".min.js") and not f.rel.lower().endswith(_SIGNATURE_EXTS):
             m = next((m for m in BLOB_RE.finditer(raw) if not m.group(1).isdigit() and not _image_b64(m.group(1))), None)
             if m:
                 line = _line_of(raw, m.start())
@@ -2764,6 +2766,7 @@ def _floor(f: ScanFile, found: list[Finding], strong: list[tuple[str, int]]) -> 
 
 
 COMBO_WINDOW = 20
+_SIGNATURE_EXTS = (".sig", ".asc", ".minisig", ".sigstore", ".p7s", ".crt", ".cer")
 
 
 @lru_cache(maxsize=512)
