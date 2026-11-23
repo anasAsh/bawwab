@@ -21,6 +21,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install
         run: uv sync --locked
+      - name: Fetch the JS/TS grammars
+        # what setup does on a user's machine; the eval sandbox copies them and then runs offline
+        run: uv run python -c "from bawwab.scan.rules.parsing import prefetch; prefetch()"
       - name: Tests
         run: uv run pytest -q -m "not timing"
       - name: Timing tests (not blocking)

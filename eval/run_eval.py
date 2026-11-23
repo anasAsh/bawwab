@@ -174,10 +174,15 @@ class Sandbox:
                             ignore=shutil.ignore_patterns("bundles"))
         elif not self.ts_cache.exists():
             # no grammars to copy (a fresh CI runner: the tests ran under a temp HOME): fetch them now, while the
-            # network is still reachable; the hooks run offline, where a missing grammar fails the JS rules
-            subprocess.run([str(ROOT / ".venv" / "bin" / "python"), "-c",
-                            "from bawwab.scan.rules.parsing import prefetch; prefetch()"], cwd=ROOT, check=True,
-                           env={**os.environ, "TREE_SITTER_LANGUAGE_PACK_CACHE_DIR": str(self.ts_cache)}, timeout=300)
+            # network may still be reachable; the hooks run offline, where a missing grammar fails the JS rules.
+            # Best effort: an isolated run (bwrap) has no network, and its JS scans fail as before.
+            try:
+                subprocess.run([str(ROOT / ".venv" / "bin" / "python"), "-c",
+                                "from bawwab.scan.rules.parsing import prefetch; prefetch()"], cwd=ROOT,
+                               env={**os.environ, "TREE_SITTER_LANGUAGE_PACK_CACHE_DIR": str(self.ts_cache)},
+                               capture_output=True, timeout=300)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         self.build_template()
 
     def build_template(self) -> None:
