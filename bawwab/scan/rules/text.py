@@ -598,22 +598,23 @@ COVERT_RES = [
 HIDDEN_RE = re.compile("[\u061c\u200b-\u200f\u2060-\u2064\ufeff\U000e0000-\U000e007f\u202a-\u202e\u2066-\u2069]")
 
 
-def _html_comments(text: str):
-    """Yield (start, end, body) of each <!-- --> comment that rendering hides, in linear time. A comment inside a
-    closed fenced code block, or a `<!--` in inline code, is shown as code to whoever reads the page: it is example
-    markup ("<!-- Include accessibility tracks -->" in a <video> snippet), not text hidden from the reviewer."""
+def _html_comments(text: str, skip_code: bool = False):
+    """Yield (start, end, body) of each <!-- --> comment, in linear time. skip_code (a skill's other docs only): a
+    comment inside a closed fenced code block, or a `<!--` in inline code, is shown as code to whoever reads the
+    page: example markup ("<!-- Include accessibility tracks -->" in a <video> snippet), not hidden text. SKILL.md,
+    README and commands/agents docs keep every comment: Claude reads a fenced one as text all the same."""
     pos = 0
     fences: list[tuple[int, int]] | None = None
     while (i := text.find("<!--", pos)) >= 0:
-        if i > 0 and text[i - 1] == "`":
+        if skip_code and i > 0 and text[i - 1] == "`":
             pos = i + 4
             continue
         j = text.find("-->", i + 4)
         if j < 0:
             return
-        if fences is None:
+        if skip_code and fences is None:
             fences = _fences(text)
-        if any(a <= i < b for a, b in fences):
+        if skip_code and any(a <= i < b for a, b in fences):
             pos = i + 4
             continue
         yield i, j + 3, text[i + 4 : j][:4000]
@@ -805,7 +806,7 @@ class TextRules:
         if (h := _hidden(t)) is not None:
             out.append(h)
         listed = None
-        for start, end, body in _html_comments(t.text):
+        for start, end, body in _html_comments(t.text, skip_code=t.extended):
             names = any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", body) for n in tool_names if len(n) >= 3)
             if not (VERB_RE.search(body) or names):
                 continue
