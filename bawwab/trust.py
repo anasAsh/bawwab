@@ -144,9 +144,12 @@ def diff_snapshots(old: dict, new: dict) -> tuple[list[Finding], str]:
     summary: list[str] = []
     old, new = _comparable(old, new)
     old_text, new_text = old.get("text", {}), new.get("text", {})
+    of, nf = old.get("files", {}), new.get("files", {})
     for label in sorted(new_text):
         if old_text.get(label) == new_text[label]:
             continue
+        if label not in old_text and label in of and of[label] == nf.get(label):
+            continue  # a file trusted unchanged that a newer Bawwab reads as model-facing: the target did not change
         diff = _text_diff(label, old_text.get(label), new_text[label])
         kind = "changed" if label in old_text else "added"
         from bawwab.report import sanitise
@@ -163,7 +166,6 @@ def diff_snapshots(old: dict, new: dict) -> tuple[list[Finding], str]:
         names = ", ".join(sanitise(n, 60) for n in added_tools)
         findings.append(Finding("rugpull.tools-added", Severity.MED, "trust", f"new tool(s) since trusted: {names[:300]}"))
         summary.insert(0, f"new tools: {names[:300]}")
-    of, nf = old.get("files", {}), new.get("files", {})
     added = len(set(nf) - set(of))
     removed = len(set(of) - set(nf))
     changed = sum(1 for k in nf if k in of and of[k] != nf[k])

@@ -117,10 +117,13 @@ def test_model_facing_collection():
         ScanFile("node_modules/p/README.md", "no"), ScanFile("commands/x.py", "no"),
     ]
     got = model_facing_text(files, [ExtraText("remote tool q", "z")])
+    # SKILL.md first; a root SKILL.md makes the whole repo its skill folder, so docs/other.md is read too (M5)
     assert [(e.label, e.text) for e in got] == [
         ("SKILL.md", "a"), ("x/SKILL.md", "b"), ("commands/a/b.md", "c"), ("agents/r.md", "d"),
-        ("README.md", "e"), ("remote tool q", "z"),
+        ("README.md", "e"), ("docs/other.md", "no"), ("remote tool q", "z"),
     ]
+    got = model_facing_text([f for f in files if f.rel != "SKILL.md"], [])
+    assert "docs/other.md" not in {e.label for e in got}
 
 
 def test_python_tool_extraction():
