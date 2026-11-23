@@ -60,6 +60,17 @@ def _remember(src: bytes | str) -> None:
         _refused.popitem(last=False)
 
 
+JS_LANGS = ("javascript", "typescript", "tsx")
+
+
+def prefetch() -> None:
+    """Download the JS/TS grammars now (first-run setup) rather than at the first scan: a scan that cannot fetch
+    one (offline, a proxy that blocks GitHub) fails the rules that parse JS, and a failed rule is SUSPICIOUS."""
+    from tree_sitter_language_pack import download
+
+    download(list(JS_LANGS))
+
+
 def refused(text: str) -> bool:
     """Whether some parse of this text (or its UTF-8 bytes) was refused for size."""
     return bool(_refused) and (_key(text) in _refused or _key(text.encode()) in _refused)

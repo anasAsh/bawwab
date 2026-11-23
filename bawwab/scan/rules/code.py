@@ -1485,6 +1485,26 @@ def _bare_claude_read(f: ScanFile, t: str, m: re.Match, line_no: int) -> bool:
     return False
 
 
+def _project_claude(t: str, m: re.Match, line_no: int, home: bool) -> bool:
+    """A .claude/settings*.json of the project, not the user's (FP round 2): the literal starts with .claude or
+    ./.claude, or the line anchors it to a project directory (cwd, __dirname, ROOT, repo...) and names no home.
+    Like the project's own .env it is "own": LOW alone, still counted for a combo and the network backstop."""
+    if home or _ROOT_HOME_RE.search(_line_text(t, line_no)):
+        return False
+    a = m.start() - 2 if t[max(0, m.start() - 2) : m.start()] == "./" else m.start()
+    q = t[a - 1 : a] if a > 0 else ""
+    if q in ("'", '"', "`"):
+        anchor = _join_anchor(t, a - 1)  # path.join(X, '.claude', ...), X / ".claude"
+        if not anchor.strip():
+            # a relative path on its own: inside the project, unless the file names the home directory anywhere
+            # (`HOME_CFG = os.path.join(".claude", "settings.json")`, joined to Path.home() later)
+            return not HOME_RE.search(t)
+        return _PROJECT_ANCHOR_RE.search(anchor) is not None and not HOME_RE.search(anchor)
+    if q in ("", " ", "\t", "\n"):
+        return not HOME_RE.search(t)  # a bare relative shell word, in a file that never names the home directory
+    return _PROJECT_ANCHOR_RE.search(_line_text(t, line_no)) is not None
+
+
 def _claude_refs(t: str, f: ScanFile | None = None):
     """(pos, "cred" | "install") for each reference into a .claude directory.
 
@@ -1498,7 +1518,7 @@ def _claude_refs(t: str, f: ScanFile | None = None):
         line_no = _line_of(t, m.start())
         home = bool(HOME_RE.search(_line_text(t, line_no)))
         if CLAUDE_CRED_FILE_RE.match(sub):
-            kind = "cred"
+            kind = "own" if sub.startswith("settings") and _project_claude(t, m, line_no, home) else "cred"
         elif sub in CLAUDE_INSTALL_SUBDIRS and sub and home and _install_dir_escapes(t, m):
             kind = "cred"  # ~/.claude/skills/.. and the like (round 5)
         elif sub in CLAUDE_INSTALL_SUBDIRS:
@@ -1787,7 +1807,7 @@ class CodeRules:
         out = [(x.rule, x.line or 1) for x in found if x.rule in STRONG_RULES]
         t, regexes = _code_info(f.rel, f.text)
         # Every credential hit except a regex literal counts, deny-listed or not (R29).
-        hits = [p for p, kind in _cred_hits(f, t, regexes) if kind != "regex"]
+        hits = [p for p, kind in _cred_hits(f, t, regexes) if kind not in ("regex", "prose") and not _write_dest(f, t, p)]
         if hits:
             cred_lines = [_line_of(t, p) for p in hits]
             if _combo_near(f, t, hits, cred_lines, _net_lines(f, t)):
@@ -1858,7 +1878,7 @@ class CodeRules:
         installs = [pos for pos, kind in _claude_refs(t, f) if kind == "install" and not _context(f, t, pos, regexes)]
         real = [p for p, k in hits if k == "real"]
         denied = [p for p, k in hits if k != "real"]
-        comboable = [p for p, k in hits if k != "regex"]
+        comboable = [p for p, k in hits if k not in ("regex", "prose") and not _write_dest(f, t, p)]
         net = _net_calls(f, t)
         net_lines = [ln for ln, _ in net]
         over = next((c for c in _env_copies(f, t) if c.budget), None)
@@ -2386,6 +2406,7 @@ _ENV_FLAG_RE = re.compile(r"^-{1,2}(?:env-file|env_file|dotenv|env)$")
 _PERMISSION_RULE_RE = re.compile(
     r"""[rRbBuUfF]{0,2}['"`]\s*(?:Read|Edit|Write|MultiEdit|Bash|Grep|Glob|LS|NotebookRead|NotebookEdit|WebFetch)\("""
 )
+_ALLOW_KEY_RE = re.compile(r"allow|permit|grant|approv|trust", re.I)
 IGNORE_LIST_RE = re.compile(r"^(?:[\w-]*\.)?[\w-]*ignore$|^\.?worktreeinclude$", re.I)
 _MATCH_HEAD_RE = re.compile(
     r"(?:[!=]==?|\bnot\s+in|\bin)\s*$"
@@ -2542,6 +2563,12 @@ def _precise_kind(f: ScanFile, t: str, m: re.Match, regexes) -> str | None:
         kind = _context(f, t, lit[0], regexes)  # Read(~/.ssh/**) inside a deny list
         if kind:
             return kind
+        # A permission rule names what Claude may or may not do; the code holding it reads nothing. Only an allow
+        # list widens access (FP round 2): `SECRET_READ_DENY = "Read(**/.env)"`, a rule in a test's loop, are "deny".
+        o = _open_bracket(t, lit[0])
+        head = t[max(0, (o if o is not None else lit[0]) - 120) : o if o is not None else lit[0]]
+        if not _ALLOW_KEY_RE.search(head):
+            return "deny"
     kind = "real"
     if m.group("dotenv") is not None:
         kind = _dotenv_kind(t, pos, end, lit, mode is not None)
@@ -2551,14 +2578,138 @@ def _precise_kind(f: ScanFile, t: str, m: re.Match, regexes) -> str | None:
     return "deny" if _only_matched(t, a, b) else kind
 
 
+# ---------------------------------------------------------------- write destinations (FP round 2)
+# Exfiltration reads a secret and sends it. A credential path that is only the DESTINATION of a write, a mkdir or a
+# delete (a test fixture writing join(root, ".env"), `printf ... > "$HOME/x/.env"`) is no source for a combo or the
+# network backstop. It is still a credential-access finding (writing into ~/.ssh is its own attack).
+_DEST_LEAVES = {
+    "writeFile", "writeFileSync", "appendFile", "appendFileSync", "outputFile", "outputFileSync", "writeJson",
+    "writeJsonSync", "outputJson", "outputJsonSync", "mkdir", "mkdirSync", "mkdirp", "ensureDir", "ensureDirSync",
+    "rm", "rmSync", "unlink", "unlinkSync", "rmdir", "rmdirSync", "truncate", "truncateSync", "makedirs", "remove",
+}
+_JOIN_LEAVES = {"join", "resolve", "Path", "joinpath", "PurePath", "expanduser"}
+_DEST_TAIL_RE = re.compile(
+    r"""(?:\s*/\s*[frbu]?(['"])[^'"\n]{0,200}\1)*\s*\)*\s*\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir)\s*\("""
+)
+_SHELL_DEST_RE = re.compile(r"""(?:^|[^>&0-9<])>>?\s*['"]?[^\s'"<>|;&]*$|\b(?:mkdir|rm|touch)\s+(?:-\w+\s+)*['"]?[^\s'"<>|;&]*$""")
+
+
+def _write_dest(f: ScanFile, t: str, pos: int) -> bool:
+    """The credential path at pos is only where something is written, created or deleted (see above)."""
+    if f.rel.endswith((".sh", ".bash", ".zsh")):
+        ls = t.rfind("\n", 0, pos) + 1
+        return _SHELL_DEST_RE.search(t[ls:pos]) is not None
+    if not f.rel.endswith(PY_EXT + JS_EXT + TS_EXT):
+        return False
+    lit = re.match(r"""[^'"`\n]*['"`]""", t[pos : pos + 400])  # to the end of the string literal holding pos
+    end = pos + (lit.end() if lit else 0)
+    if f.rel.endswith(PY_EXT) and _DEST_TAIL_RE.match(t, end):
+        return True  # (root / ".env").write_text(...)
+    i = pos
+    for _ in range(4):  # out through path builders: writeFileSync(path.join(dir, ".env"), ...)
+        o = _open_bracket(t, i)
+        if o is None or t[o] != "(":
+            return False
+        args = _top_args(t, o)
+        m = re.search(r"([\w$.]+)\s*$", t[max(0, o - 120) : o])
+        leaf = (m.group(1) if m else "").rsplit(".", 1)[-1]
+        if leaf in _JOIN_LEAVES:
+            i = o  # any segment of a path being built
+            continue
+        if not args or pos > o + 1 + len(args[0]):
+            return False  # the destination is the first argument
+        if leaf in _DEST_LEAVES:
+            return True
+        return leaf == "open" and _WRITE_MODE_RE.search(",".join(args[1:])) is not None
+    return False
+
+
+# ---------------------------------------------------------------- docstrings no model reads (FP round 2)
+# A Python docstring is prose, not code: a path named in it is not read. But a docstring can be model-facing: an
+# MCP tool's description is its function's docstring (@mcp.tool()), a pydantic model's docstring becomes its JSON
+# schema description, and any code that reads __doc__ hands it on. So only docstrings no such path reaches are
+# "prose" (LOW alone, never counted for a combo or the network backstop):
+# * the module's, a class's whose bases are all exceptions or test cases (or a Test* class with none), and a
+#   function's with no decorator but plain-Python ones (pytest, property, functools, contextlib, abc, typing...)
+#   that is never referenced as a value (passed to add_tool(fn), put in a list, self.fn without a call);
+# * and none at all in a file that mentions __doc__ or getdoc (fail closed).
+_PLAIN_DECORATOR_RE = re.compile(
+    r"^(?:pytest|unittest|mock|patch|functools|contextlib|abc|typing|typing_extensions|dataclasses|enum)(?:\.|$)"
+    r"|^(?:staticmethod|classmethod|property|cached_property|wraps|lru_cache|cache|contextmanager"
+    r"|asynccontextmanager|dataclass|abstractmethod|override|overload|final|unique|fixture|total_ordering)$"
+    r"|\.(?:setter|getter|deleter)$"
+)
+_PLAIN_BASE_RE = re.compile(r"(?:Error|Exception|Warning|TestCase|Tests?)$")
+
+
+@lru_cache(maxsize=256)
+def _prose_docstrings(rel: str, text: str) -> tuple[tuple[int, int], ...]:
+    """Character spans of the docstrings in a Python file that no model reads (see above)."""
+    if not rel.endswith(PY_EXT) or re.search(r"__doc__|getdoc", text):
+        return ()
+    try:
+        tree = parsing.py_parse(text)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return ()
+    values: set[str] = set()
+    callees: set[int] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            callees.add(id(n.func))
+    for n in ast.walk(tree):
+        if id(n) in callees:
+            continue
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+            values.add(n.id)
+        elif isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load):
+            values.add(n.attr)
+    lines = text.split("\n")
+    starts = [0]
+    for ln in lines:
+        starts.append(starts[-1] + len(ln) + 1)
+
+    def char(lineno: int, col: int) -> int:
+        line = lines[lineno - 1] if 0 < lineno <= len(lines) else ""
+        return starts[lineno - 1] + len(line.encode()[:col].decode("utf-8", "replace"))
+
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) or not n.body:
+            continue
+        d = n.body[0]
+        if not (isinstance(d, ast.Expr) and isinstance(d.value, ast.Constant) and isinstance(d.value.value, str)):
+            continue
+        if isinstance(n, ast.ClassDef):
+            bases = [ast.unparse(b) for b in n.bases]
+            if n.keywords or n.decorator_list or not (
+                    (bases and all(_PLAIN_BASE_RE.search(b) for b in bases)) or (not bases and n.name.startswith("Test"))):
+                continue
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            decos = [ast.unparse(x.func if isinstance(x, ast.Call) else x) for x in n.decorator_list]
+            if any(not _PLAIN_DECORATOR_RE.search(x) for x in decos) or n.name in values:
+                continue
+        v = d.value
+        if v.end_lineno is None or v.end_col_offset is None:
+            continue
+        out.append((char(v.lineno, v.col_offset), char(v.end_lineno, v.end_col_offset)))
+    return tuple(out)
+
+
+def _in_prose(f: ScanFile, t: str, pos: int) -> bool:
+    if len(t) != len(f.text):
+        return False
+    return any(a <= pos < b for a, b in _prose_docstrings(f.rel, f.text))
+
+
 def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
     """Sorted (pos, kind) for credential paths and .claude credential references.
 
     kind is "real", "deny" (deny-list / matcher collection: LOW alone, still counts for
     combos, the floor and the backstop), "env" (a copy of the environment whose use is
     unclear: LOW alone, backstop-eligible), "own" (the project's own dotenv file: LOW alone,
-    combo- and backstop-eligible, FP plan step 3) or "regex" (a regex literal: the only
-    combo-exempt context, R29). A copy of the environment handed to a child process is
+    combo- and backstop-eligible, FP plan step 3; also a project's own .claude/settings*.json), "prose" (in a
+    docstring no model reads, _prose_docstrings: LOW alone, never combo- or backstop-eligible) or "regex" (a regex
+    literal: combo-exempt, R29). A copy of the environment handed to a child process is
     not a hit at all (Task 10c B/C); copies are found on the syntax tree (R45).
     """
     hits = []
@@ -2592,9 +2743,9 @@ def _cred_hits(f: ScanFile, t: str, regexes) -> list[tuple[int, str]]:
         if pos not in seen and not any(a <= pos < b for a, b in [(x.start(), x.end()) for x in CRED_RE.finditer(t, max(0, pos - 2), pos + 40)]):
             hits.append((pos, _context(f, t, pos, regexes) or "real"))
     for pos, kind in _claude_refs(t, f):
-        if kind == "cred":
-            hits.append((pos, _context(f, t, pos, regexes) or "real"))
-    return sorted(hits)
+        if kind in ("cred", "own"):
+            hits.append((pos, _context(f, t, pos, regexes) or ("real" if kind == "cred" else "own")))
+    return sorted((p, "prose" if k != "regex" and _in_prose(f, t, p) else k) for p, k in hits)
 
 
 def _floor(f: ScanFile, found: list[Finding], strong: list[tuple[str, int]]) -> list[Finding]:

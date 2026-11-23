@@ -633,7 +633,9 @@ class _Js:
         if fn is None:
             return False
         path = self.module_of(fn)
-        if path is None or not launcher_path(*path):
+        if path is None:
+            return self.runtime_launcher(fn)
+        if not launcher_path(*path):
             return False
         root = fn
         while root.type in ("member_expression", "subscript_expression"):
@@ -645,6 +647,19 @@ class _Js:
             if decl is None or self.binding_patched(decl):
                 return False
         return not self.module_patched(path[0])
+
+    def runtime_launcher(self, fn) -> bool:
+        """Bun.spawn / Bun.spawnSync: the Bun runtime's own launcher, a global no import names (FP round 2). Only
+        when `Bun` is the global: not declared, not written through globalThis / Object.assign / eval anywhere, and
+        `Bun` / `Bun.spawn` never assigned."""
+        if fn.type != "member_expression":
+            return False
+        obj, prop = self.f(fn, "object"), self.f(fn, "property")
+        if obj is None or prop is None or obj.type != "identifier" or self.t(obj) != "Bun":
+            return False
+        if self.t(prop) not in ("spawn", "spawnSync") or self.resolve(obj) is not None or "Bun" in self.global_names():
+            return False
+        return not re.search(rb"(?<![\w$.])Bun\s*(?:\.\s*spawn\w*|\[[^\]]*\])?\s*=(?![=>])", self.src)
 
     def launcher_text(self, callee: str) -> bool:
         """For a callee given as text: resolved at module level (the r2 unit test's interface)."""
@@ -1297,6 +1312,12 @@ class _Js:
 
     # -------- sinks
 
+    def launch_barrier(self, call) -> bool:
+        """A real process launcher (resolved, in a file whose resolution is trusted) that is not itself a network
+        call: what it returns is a process, its exit status or its output, not the copy handed to it (FP round 2).
+        Without this, every later use of the child (`proc.stdin.write(...)`) made the copy a sink."""
+        return not self.untrusted() and self.launcher(call)
+
     def sink_call(self, call) -> bool:
         callee = self.callee(call)
         args = self.f(call, "arguments")
@@ -1314,6 +1335,8 @@ class _Js:
             if t in ("call_expression", "new_expression"):
                 if self.sink_call(p):
                     return True
+                if self.launch_barrier(p):
+                    return False
                 n = p
                 continue
             if t == "variable_declarator":
@@ -2008,6 +2031,10 @@ class _Py:
 
     # -------- sinks
 
+    def launch_barrier(self, call: ast.Call) -> bool:
+        """As _Js.launch_barrier: a resolved launcher's result is not made from the copy handed to it."""
+        return not self.untrusted() and self.launcher(call) is not None
+
     def sink_call(self, call: ast.Call) -> bool:
         callee = ast.unparse(call.func)
         parts = [ast.unparse(a) for a in call.args] + [f"{k.arg}={ast.unparse(k.value)}" if k.arg else f"**{ast.unparse(k.value)}"
@@ -2024,6 +2051,8 @@ class _Py:
             if isinstance(p, ast.Call):
                 if self.sink_call(p):
                     return True
+                if self.launch_barrier(p):
+                    return False
                 n = p
                 continue
             if isinstance(p, (ast.Assign, ast.AnnAssign, ast.AugAssign)):

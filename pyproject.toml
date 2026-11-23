@@ -1,6 +1,6 @@
 [project]
 name = "bawwab"
-version = "0.1.6"
+version = "0.1.7"
 description = "Security scanner for MCP servers, Claude Code plugins and Agent Skills: catches malware, prompt injection, tool poisoning and rug-pulls before your AI agent installs them"
 requires-python = ">=3.12"
 license = "MIT"
