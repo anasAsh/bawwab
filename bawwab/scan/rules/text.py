@@ -9,13 +9,15 @@ from collections import Counter
 from dataclasses import dataclass
 
 from bawwab.scan.files import ExtraText, ScanFile
+from bawwab.scan.reach import model_facing_docs
 from bawwab.scan.rules import parsing
 from bawwab.scan.rules.code import JS_EXT, PY_EXT, TS_EXT, _js_lang
 from bawwab.types import Finding, Severity
 
-MAX_DESC = 20_000
 VENDORED = ("node_modules/", "site-packages/", ".venv/", "vendor/")
 DESC_KINDS = ("tool", "prompt", "resource")
+# Descriptions are kept whole, as docs are: a cap lets 20 KB of benign prose push a payload past what the rules see.
+# Their size is bounded by the file limits (bawwab.scan.files) like any other text.
 
 # ---------------------------------------------------------------- collecting model-facing text
 
@@ -27,6 +29,7 @@ class _Text:
     is_description: bool  # tool/prompt/resource description or remote metadata (not a skill document)
     shadow_exempt: bool = False  # a protocol parameter table entry: every rule but tool-shadowing (R42 N2)
     params: frozenset[str] = frozenset()  # the tool's own parameter names, from its signature or input schema
+    extended: bool = False  # a skill folder's other docs (reference.md, templates): doc_rank 2
 
 
 def _is_doc_path(rel: str, is_skill: bool = True) -> bool:
@@ -100,7 +103,7 @@ def _py_descriptions(text: str) -> list[_Text]:
                 kw = {k.arg: k.value for k in call.keywords} if call else {}
                 desc = _const_str(kw.get("description")) or ast.get_docstring(n)
                 if desc:
-                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc[:MAX_DESC], True,
+                    out.append(_Text(f"{kind} {_const_str(kw.get('name')) or n.name}", desc, True,
                                      params=_py_params(n)))
                 break
         elif isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", "")) == "Tool":
@@ -108,7 +111,7 @@ def _py_descriptions(text: str) -> list[_Text]:
             kw = {k: _const_str(v) for k, v in kwn.items()}
             if kw.get("description"):
                 schema = next((kwn[k] for k in ("inputSchema", "input_schema", "parameters") if k in kwn), None)
-                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"][:MAX_DESC], True,
+                out.append(_Text(f"tool {kw.get('name') or '(unnamed)'}", kw["description"], True,
                                  params=_py_schema_keys(schema)))
     return out
 
@@ -189,7 +192,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
                 desc = string_of(p1.get("description"))
                 params = schema_of(p1)
             if desc:
-                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc[:MAX_DESC], True, params=params))
+                out.append(_Text(f"{m.group(1).lower()} {name or '(unnamed)'}", desc, True, params=params))
         elif n.type == "object":
             objects.append(n)
     for o in objects:
@@ -198,7 +201,7 @@ def _js_descriptions(text: str, lang: str) -> list[_Text]:
         p = pairs(o)
         desc, name = string_of(p.get("description")), string_of(p.get("name"))
         if desc and name:
-            out.append(_Text(f"tool {name}", desc[:MAX_DESC], True, _schema_param(o, p, string_of, txt), schema_of(p)))
+            out.append(_Text(f"tool {name}", desc, True, _schema_param(o, p, string_of, txt), schema_of(p)))
     return out
 
 
@@ -249,7 +252,7 @@ _FALLBACK_RE = re.compile(
 
 
 def _fallback_descriptions(text: str) -> list[_Text]:
-    return [_Text("tool (unparsed)", _unescape(next(g for g in m.groups() if g is not None))[:MAX_DESC], True)
+    return [_Text("tool (unparsed)", _unescape(next(g for g in m.groups() if g is not None)), True)
             for m in _FALLBACK_RE.finditer(text)]
 
 
@@ -280,12 +283,20 @@ def _source_descriptions(f: ScanFile) -> list[_Text]:
     return []
 
 
+def doc_rank(rel: str) -> int:
+    """Order of the model-facing docs (the judge's 60 KB budget is spent in this order): SKILL.md first, then a
+    skill's README.md and commands/agents docs, then the other docs of a skill folder."""
+    base = rel.rsplit("/", 1)[-1].lower()
+    return 0 if base == "skill.md" else 1 if _is_doc_path(rel) else 2
+
+
 def _collect(files: list[ScanFile], extra: list[ExtraText]) -> list[_Text]:
     out: list[_Text] = []
     is_skill = any(f.rel.rsplit("/", 1)[-1].lower() == "skill.md" for f in files)
-    for f in files:
-        if _is_doc_path(f.rel, is_skill):
-            out.append(_Text(f.rel, f.text, False))
+    docs = model_facing_docs(f.rel for f in files)
+    picked = [f for f in files if f.rel in docs or _is_doc_path(f.rel, is_skill)]
+    for f in sorted(picked, key=lambda f: doc_rank(f.rel)):  # stable: file order within a rank
+        out.append(_Text(f.rel, f.text, False, extended=doc_rank(f.rel) == 2))
     for f in files:
         out.extend(_source_descriptions(f))
     out.extend(_Text(e.label, e.text, True) for e in extra)
@@ -353,6 +364,8 @@ def _override_ok(m: re.Match) -> bool:
 QUOTED_NOTE = " [listed, not counted: quoted or in a code block, as an example of the phrase]"
 DATA_NOTE = " [listed, not counted: tells the agent to ignore instructions found in data it reads]"
 HONEST_NOTE = " [listed, not counted: asks the agent to be truthful with the user, not to hide something]"
+EXTENDED_NOTE = (" [listed, not counted: in a skill's reference doc or template, and nothing nearby names a secret,"
+                 " a destination or a tool]")
 
 _FENCE_LINE = re.compile(r"^[ \t>]{0,8}(`{3,}|~{3,})", re.M)
 _QUOTE_SPAN = re.compile(r'"[^"\n]{1,200}"|“[^”\n]{1,200}”|`[^`\n]{1,200}`|«[^»\n]{1,200}»')
@@ -440,6 +453,7 @@ def _quoted(m: re.Match, fences: list[tuple[int, int]]) -> bool:
 
 _DATA_PLACE = re.compile(
     r"\b(?:embedded|contained|found|hidden|appearing|included|written|present)\s+(?:in|inside|within|on)\b"
+    r"|^\s*(?:inside|within)\s+(?:it|them)\b"  # "Treat it as design data only: ignore any instruction inside it"
     r"|\b(?:inside|within|in|from)\s+(?:th(?:e|ose|ese|is|at)|such|any|a|an|its|their)\s+(?:[\w-]+\s+){0,2}?"
     r"(?:files?|contents?|data|pages?|documents?|text|titles?|names?|outputs?|results?|responses?|repositor(?:y|ies)"
     r"|readmes?|manifests?|comments?|emails?|transcripts?|issues?|commits?|diffs?|websites?|sites?|logs?"
@@ -530,7 +544,9 @@ def _override(t: _Text) -> tuple[re.Match, str] | None:
             if fences is None:
                 fences = _fences(t.text)
             note = (QUOTED_NOTE if _quoted(m, fences) else DATA_NOTE if _data_defence(m)
-                    else HONEST_NOTE if _honesty(m) else "")
+                    else HONEST_NOTE if _honesty(m)
+                    else EXTENDED_NOTE if t.extended and m.re is OVERRIDE_RES[4] and not _acts_near(m.string, m.start(), m.end())
+                    else "")
             if best is None or (note == "") > (best[1] == "") or (
                     (note == "") == (best[1] == "") and m.start() < best[0].start()):
                 best = (m, note)
@@ -540,7 +556,7 @@ def _override(t: _Text) -> tuple[re.Match, str] | None:
 
 _SENSITIVE_PATH = (
     r"(?:~/|/home/\S+/|/root/)?\.ssh\b|\bid_(?:rsa|ed25519|ecdsa|dsa)\b|\.env\b(?!\.(?:example|sample|template))"
-    r"|\.aws\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|/etc/passwd|/etc/shadow|\.kube/config|\.docker/config"
+    r"|(?<![\w-])\.aws\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|/etc/passwd|/etc/shadow|\.kube/config|\.docker/config"
     r"|\bkeychain\b|\bcookies\.sqlite\b|\bLogin Data\b"
 )
 _EXFIL_VERB = r"(?:send|upload|post|forward|attach|append|exfiltrate|leak|email|transmit)"
@@ -569,9 +585,10 @@ COVERT_RES = [
     re.compile(rf"(?:{_SENSITIVE_PATH})[^.\n]{{0,80}}?\b{_DELIVER_VERB}\b[^.\n]{{0,40}}?(?:{_DEST})", re.I),
     re.compile(rf"\b{_DELIVER_VERB}\b[^.\n]{{0,60}}?(?:{_SENSITIVE_PATH})[^.\n]{{0,40}}?(?:{_DEST})", re.I),
     re.compile(
-        r"\b(?:send|upload|post|forward|email|transmit|exfiltrate|leak|include|append|attach)\b[^.\n]{0,60}?"
+        # a gap stops at a clause (;) or a table cell (|): "upload without exposing credentials | [docs](https://...)"
+        r"\b(?:send|upload|post|forward|email|transmit|exfiltrate|leak|include|append|attach)\b[^.;|\n]{0,60}?"
         r"\b(?:secrets?|credentials|passwords?|api[ _-]?keys?|private\s+keys?|tokens?|ssh\s+keys?|env(?:ironment)?\s+(?:vars|variables))\b"
-        r"[^.\n]{0,60}?(?:\bto\s+\S*(?:https?:|\.invalid|@|webhook|server|endpoint)|\bin\s+(?:your|the)\s+(?:reply|response|answer|output|message|tool\s+call|arguments?|parameters?)|\bhttps?://)",
+        r"[^.;|\n]{0,60}?(?:\bto\s+\S*(?:https?:|\.invalid|@|webhook|server|endpoint)|\bin\s+(?:your|the)\s+(?:reply|response|answer|output|message|tool\s+call|arguments?|parameters?)|\bhttps?://)",
         re.I,
     ),
     re.compile(r"\bbefore\s+(?:using|calling|running|invoking|you\s+use|this\s+tool)\b[^.\n]{0,40}?\bfirst\b", re.I),
@@ -581,13 +598,25 @@ COVERT_RES = [
 HIDDEN_RE = re.compile("[\u061c\u200b-\u200f\u2060-\u2064\ufeff\U000e0000-\U000e007f\u202a-\u202e\u2066-\u2069]")
 
 
-def _html_comments(text: str):
-    """Yield (start, end, body) of each <!-- --> comment, in linear time."""
+def _html_comments(text: str, skip_code: bool = False):
+    """Yield (start, end, body) of each <!-- --> comment, in linear time. skip_code (a skill's other docs only): a
+    comment inside a closed fenced code block, or a `<!--` in inline code, is shown as code to whoever reads the
+    page: example markup ("<!-- Include accessibility tracks -->" in a <video> snippet), not hidden text. SKILL.md,
+    README and commands/agents docs keep every comment: Claude reads a fenced one as text all the same."""
     pos = 0
+    fences: list[tuple[int, int]] | None = None
     while (i := text.find("<!--", pos)) >= 0:
+        if skip_code and i > 0 and text[i - 1] == "`":
+            pos = i + 4
+            continue
         j = text.find("-->", i + 4)
         if j < 0:
             return
+        if skip_code and fences is None:
+            fences = _fences(text)
+        if skip_code and any(a <= i < b for a, b in fences):
+            pos = i + 4
+            continue
         yield i, j + 3, text[i + 4 : j][:4000]
         pos = j + 3
 
@@ -708,7 +737,42 @@ def _first(regexes: list[re.Pattern], t: _Text, check=None) -> re.Match | None:
     return best
 
 
-def _covert_ok(m: re.Match) -> bool:
+_URL_OR_MAIL = re.compile(r"https?://|[\w.-]+@[\w-]+\.")
+# What makes "do not tell the user" or a hidden comment in a skill's reference doc or template an act rather than
+# authoring guidance: a secret or credential file, somewhere for data to go (a URL, an address), or a network /
+# shell command, in the same paragraph. Those docs use "don't tell the user their setup works" for honesty rules
+# and comments as notes to whoever fills the template in. ("tokens" alone is a cost unit in LLM docs.)
+_ACT_RE = re.compile(
+    rf"{_SENSITIVE_PATH}|https?://|[\w.-]+@[\w-]+\.\w"
+    r"|\b(?:secrets?|credentials?|passwords?|api[ _-]?keys?|private\s+keys?|cookies?"
+    r"|(?:access|api|auth|bearer|refresh|session|github|npm|pypi)[ _-]?tokens?)\b"
+    r"|(?<![\w-])(?:curl|wget|nc|bash)(?![\w-])",  # not "eval": a noun in docs about evals
+    re.I,
+)
+_PARAGRAPH_END = re.compile(r"\n[ \t>]*\n")
+
+
+def _acts_near(s: str, a: int, b: int, span: int = 300) -> bool:
+    """An act (_ACT_RE) in the paragraph holding s[a:b], at most `span` characters either side."""
+    lo, hi = max(0, a - span), min(len(s), b + span)
+    for p in _PARAGRAPH_END.finditer(s, lo, a):
+        lo = p.end()
+    if (e := _PARAGRAPH_END.search(s, b, hi)) is not None:
+        hi = e.start()
+    return _ACT_RE.search(s, lo, hi) is not None
+
+
+def _covert_ok(m: re.Match, is_description: bool = True) -> bool:
+    if m.re is COVERT_RES[-1]:
+        # "Before calling X, first ...": one tool ordering another is tool poisoning in a tool's description; in a
+        # skill's own docs it is the workflow ("before running any script, first cd to the skill folder")
+        return is_description
+    if m.re in (COVERT_RES[1], COVERT_RES[2]) and re.search(r"\bappend\b", m.group(), re.I) \
+            and not re.search(r"\b(?:send|upload|post|forward|exfiltrate|leak|email|transmit)\b", m.group(), re.I) \
+            and _URL_OR_MAIL.search(m.group()) is None:
+        # "append the key to `.env`", "~/.config/app/.env (append, don't overwrite)": a write into the local file
+        # with nowhere for it to go
+        return False
     if m.re is not COVERT_RES[0]:
         return True
     s = m.string
@@ -736,15 +800,25 @@ class TextRules:
             m, note = o
             f = _mk("injection.override", Severity.LOW if note else Severity.HIGH, t, m.start(), m.end())
             out.append(Finding(f.rule, f.severity, f.source, f.evidence + note, file=f.file, line=f.line) if note else f)
-        m = _first(COVERT_RES, t, _covert_ok)
+        m = _first(COVERT_RES, t, lambda m: _covert_ok(m, t.is_description))
         if m:
             out.append(_mk("injection.covert-action", Severity.HIGH, t, m.start(), m.end()))
         if (h := _hidden(t)) is not None:
             out.append(h)
-        for start, end, body in _html_comments(t.text):
-            if VERB_RE.search(body) or any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", body) for n in tool_names if len(n) >= 3):
-                out.append(_mk("injection.html-comment", Severity.MED, t, start, end))
-                break
+        listed = None
+        for start, end, body in _html_comments(t.text, skip_code=t.extended):
+            names = any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", body) for n in tool_names if len(n) >= 3)
+            if not (VERB_RE.search(body) or names):
+                continue
+            if t.extended and not names and not _acts_near(body, 0, len(body)):
+                listed = listed or (start, end)
+                continue
+            out.append(_mk("injection.html-comment", Severity.MED, t, start, end))
+            listed = None
+            break
+        if listed is not None:
+            f = _mk("injection.html-comment", Severity.LOW, t, *listed)
+            out.append(Finding(f.rule, f.severity, f.source, f.evidence + EXTENDED_NOTE, file=f.file, line=f.line))
         if t.is_description and not t.shadow_exempt:
             own = _tool_name(t.label)
             others = tool_names - ({own} if own else set())

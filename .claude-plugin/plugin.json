@@ -1,6 +1,6 @@
 {
   "name": "bawwab",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Bawwab (بوّاب, gatekeeper): scans MCP servers, skills and plugins for malicious behaviour before Claude Code installs them, and quarantines unscanned changes to Claude's configuration.",
   "author": {
     "name": "Anas Al-Hamdan"
