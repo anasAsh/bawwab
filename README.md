@@ -10,7 +10,7 @@ scanner, and watches Cursor, Codex CLI, Claude Desktop and VS Code.
 ![status](https://img.shields.io/badge/status-pre--release-orange)
 ![python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![agent](https://img.shields.io/badge/agent-Claude%20Code-d97757)
-![tests](https://img.shields.io/badge/tests-2900%2B%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-3600%2B%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![report](https://img.shields.io/badge/report-popular%20extensions%20scan-0b5cad)](https://anasash.github.io/bawwab/)
 
@@ -133,7 +133,7 @@ as the same OS user (see [Honest limitations](#honest-limitations)).
 |---|---|
 | 🔍 **Static rules** | install scripts, `curl \| sh`, eval of decoded or fetched code, credential access (`~/.ssh`, `.env`, `~/.aws`), exfiltration hosts, obfuscation, hidden Unicode, prompt-injection phrasing, tool shadowing, risky plugin hooks, typosquats |
 | ☣️ **Known malware** | npm and PyPI packages listed as malicious (`MAL-*`) in [OSV](https://osv.dev), from the [OpenSSF malicious-packages](https://github.com/ossf/malicious-packages) feed. A failed lookup is a note, not a block. |
-| 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* It reads the model-facing text (tool, prompt and resource descriptions, `SKILL.md`, commands, agents) and the code around each static finding, up to 60 KB: not the whole package, so code with no static finding is left to the static rules. Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
+| 🧠 **Claude review** | intent: *"does this try to steer the agent or hide something from the user?"* It reads the model-facing text (tool, prompt and resource descriptions, `SKILL.md` and every other doc in a skill's folder, commands, agents) and the code around each static finding, up to 60 KB: not the whole package, so code with no static finding is left to the static rules. When that is too much, `SKILL.md`, README, commands, agents, descriptions and the findings' code come first, and a skill's other docs fill what is left. Scanned text is passed as quoted, untrusted data. The review can **raise** a verdict, never lower one. |
 | 🧭 **Claude's recommendation** | on anything not clean: Claude reads the flagged code (and more of the package if it needs to), assesses each finding as false alarm, expected or real, and recommends *keep*, *keep with care*, *don't install* or *can't tell*. Every claim must quote a real line, which Bawwab checks; it can never recommend keeping something rated malicious, and it never changes the verdict or who approves. |
 | 🔁 **Rug-pull diff** | remembers what you trusted and shows exactly what changed: `bawwab diff <name>` |
 | 🕸️ **Cross-server check** | server A's tool, prompt or resource descriptions steering server B's tools (skills, agents and READMEs that name tools on purpose are left to the injection rules) |
@@ -150,6 +150,12 @@ as the same OS user (see [Honest limitations](#honest-limitations)).
 - **Can't be talked out of a finding.** A static red flag always reaches you, whatever the scanned text says to the reviewer.
 - **Never grants permission.** A clean scan doesn't approve the command. Claude Code's normal permission rules still apply.
 - **Low noise.** It's tested against real packages (official MCP servers, Playwright, DigitalOcean and others), which must come back clean.
+- **Counts what runs or what the agent reads.** A finding in a file that nothing runs and Claude never reads
+  (tests, fixtures, examples, CI workflows, unreferenced dev scripts) is listed as LOW: shown, never counted
+  toward the verdict. Runtime files are traced from the entry points, install scripts, plugin manifest and hooks,
+  and the model-facing docs, then through what those import or name by path. A skill's folder is runtime as a
+  whole (vendored dependencies excepted), since Claude lists it and runs what is there. A target whose layout
+  Bawwab doesn't understand is treated as all runtime.
 
 ### Deep mode
 
@@ -225,8 +231,9 @@ the benchmark doesn't run it and these numbers say nothing about it.
 
 - Two rates are given for samples labelled suspicious or malicious: **detected** (any verdict other than clean,
   which is what blocks an install at the default level) and **exact verdict** (the verdict equals the label).
-  Static rules alone stop at *suspicious* for prompt injection, hidden Unicode, tool shadowing and eval of fetched
-  code; the AI judge is what can raise those to *malicious*, so the static exact-verdict rate is low by design.
+  Static rules alone stop at *suspicious* for prompt injection, hidden Unicode, tool shadowing and a download
+  piped into a shell; the AI judge is what can raise those to *malicious*, so the static exact-verdict rate is low
+  by design.
 - The **false-positive rate** is over the safe samples above, pooled. It is a check on these chosen samples,
   not an estimate for packages in general; the table also splits it by source.
 - A sample whose fetch or scan failed is **not scored**: it is listed apart and counts as neither detected nor a
@@ -250,23 +257,23 @@ Mode: **static-only**. 73 samples: 32 positive (labelled suspicious or malicious
 | cross-server | 2/2 (100%) | 1/2 (50%) | 0/1 (0%) | 0 |
 | hidden-unicode | 2/2 (100%) | 0/2 (0%) | 0/1 (0%) | 0 |
 | install-script | 4/4 (100%) | 4/4 (100%) | 1/1 (100%) | 0 |
-| mcp-server | n/a | n/a | 1/17 (6%) | 0 |
+| mcp-server | n/a | n/a | 0/17 (0%) | 0 |
 | obfuscation | 4/4 (100%) | 4/4 (100%) | 0/1 (0%) | 0 |
 | plugin-hooks | 2/2 (100%) | 2/2 (100%) | 0/2 (0%) | 0 |
 | prompt-injection | 5/5 (100%) | 0/5 (0%) | 0/1 (0%) | 0 |
-| remote-code | 3/3 (100%) | 0/3 (0%) | 0/1 (0%) | 0 |
+| remote-code | 3/3 (100%) | 2/3 (67%) | 0/1 (0%) | 0 |
 | skill | n/a | n/a | 0/11 (0%) | 0 |
 | telemetry | 1/1 (100%) | 1/1 (100%) | n/a | 0 |
 | tool-shadowing | 1/3 (33%) | 0/3 (0%) | 0/1 (0%) | 0 |
 | typosquat | 2/2 (100%) | 2/2 (100%) | 0/1 (0%) | 0 |
-| **all** | 30/32 (94%) | 18/32 (56%) | 2/41 (5%) | 0 |
+| **all** | 30/32 (94%) | 20/32 (62%) | 1/41 (2%) | 0 |
 
 | Set | Detected | Exact verdict | False positives | Not scored |
 |---|---|---|---|---|
-| seen during tuning | 30/32 (94%) | 18/32 (56%) | 2/41 (5%) | 0 |
+| seen during tuning | 30/32 (94%) | 20/32 (62%) | 1/41 (2%) | 0 |
 | held out | n/a | n/a | n/a | 0 |
-| handwritten corpus (`bench/corpus/`) | 29/31 (94%) | 17/31 (55%) | 1/16 (6%) | 0 |
-| real packages (`bench/safe-packages.txt`) | 1/1 (100%) | 1/1 (100%) | 1/25 (4%) | 0 |
+| handwritten corpus (`bench/corpus/`) | 29/31 (94%) | 19/31 (61%) | 1/16 (6%) | 0 |
+| real packages (`bench/safe-packages.txt`) | 1/1 (100%) | 1/1 (100%) | 0/25 (0%) | 0 |
 
 No held-out samples yet: every sample above was seen while the rules were tuned, so these numbers show fit to this corpus, not performance on unseen samples.
 
@@ -279,8 +286,8 @@ Definitions:
 - **Not scored**: the fetch or scan failed (`fetch.failed`, `gate.error`, `rules.error`, `judge.unavailable`, or an error in the runner). Counted as neither detected nor a false positive, and listed separately.
 
 - **Adversarial samples** (written to talk the AI judge out of a finding): detected 5/6, exact verdict 3/6
-- **Real malware** (DataDog dataset, npm): detected 67/100 (67%), rated malicious 36/100; GuardDog 90/100
-- **Real malware** (DataDog dataset, pypi): detected 80/100 (80%), rated malicious 13/100; GuardDog 99/100
+- **Real malware** (DataDog dataset, npm): detected 68/100 (68%), rated malicious 37/100; GuardDog 90/100
+- **Real malware** (DataDog dataset, pypi): detected 82/100 (82%), rated malicious 14/100; GuardDog 99/100
 
 Not an exact verdict, or a false positive:
 
@@ -291,15 +298,12 @@ Not an exact verdict, or a false positive:
 - `malicious/inject-html-comment`: expected malicious, got suspicious (injection.covert-action, injection.html-comment)
 - `malicious/inject-skill-ssh`: expected malicious, got suspicious (injection.covert-action, injection.override)
 - `malicious/inject-tool-poisoning`: expected malicious, got suspicious (credential-access)
-- `malicious/remote-js-fetch-eval`: expected malicious, got suspicious (remote-code.eval-fetch)
-- `malicious/remote-py-exec-urlopen`: expected malicious, got suspicious (remote-code.eval-fetch)
 - `malicious/remote-skill-curl-bash`: expected malicious, got suspicious (remote-code.pipe-shell)
 - `malicious/shadow-bcc-email`: expected malicious, got suspicious (tool-shadowing)
 - `malicious/shadow-redirect-payments`: expected malicious, got clean (no findings)
 - `malicious/unicode-tag-chars-tool`: expected malicious, got suspicious (injection.hidden-unicode)
 - `malicious/unicode-zero-width-skill`: expected malicious, got suspicious (injection.hidden-unicode)
 - `safe/native-addon-gyp`: expected clean, got suspicious (install-script)
-- `package/@notionhq/notion-mcp-server@2.6.1`: expected clean, got suspicious (exfil.combo) — known FP (R49): bundled express deps call Function on runtime-built code, which trips the R47 untrusted-resolution switch; not tuned away
 <!-- bench:end -->
 
 ## Install
@@ -356,7 +360,9 @@ The plugin adds:
 
 If setup can't install Bawwab's dependencies (offline, a proxy, uv missing), install commands are held, and
 once Bawwab is initialised so are other tool calls after a config change; read-only tools (Read, Grep, Glob)
-keep working. Setup retries itself about once a minute. To retry now and see the error, run
+keep working. Setup also downloads the JavaScript/TypeScript grammars the code rules parse with, so a later
+scan doesn't depend on reaching GitHub; a scan that can't get them fails the JS rules and comes back
+suspicious. Setup retries itself about once a minute. To retry now and see the error, run
 `! bawwab setup --retry` (or the full launcher path Bawwab shows), and check your proxy (`HTTPS_PROXY`),
 network and uv configuration. Last resort: `/plugin disable bawwab`, which turns Bawwab's protection off.
 
@@ -593,7 +599,7 @@ install` and friends are scanned automatically before they run.
 
 The same way: `bawwab scan ./my-plugin` or `bawwab scan ./my-skill`, or ask Claude "is this plugin safe?" and it
 uses the `scan_plugin` / `scan_skill` tools. Skills are Markdown plus scripts, so Bawwab reads both: hidden
-instructions in `SKILL.md` and what the scripts do.
+instructions in `SKILL.md` and the other docs in the skill's folder, and what every script in that folder does.
 
 ### What is MCP tool poisoning?
 

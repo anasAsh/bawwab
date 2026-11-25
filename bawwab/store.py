@@ -98,6 +98,18 @@ def content_key(key: str) -> bool:
     return isinstance(key, str) and key.split(":", 1)[0] in _CONTENT_KINDS
 
 
+def _local_key_parts(key: str) -> tuple[str, str] | None:
+    """(path, rest) of a local folder's content key `local:<path>@<version>#<hash>[~static]`; rest is everything
+    after the path. None for any other key."""
+    if not isinstance(key, str) or not key.startswith("local:/") or "#" not in key:
+        return None
+    head, tail = key.rsplit("#", 1)
+    if "@" not in head or not tail:
+        return None
+    path, version = head[len("local:"):].rsplit("@", 1)
+    return os.path.normpath(path), f"@{version}#{tail}"
+
+
 def item_ids(ident: str, server: str | None = None) -> tuple[str, ...]:
     """What the approval of a non-clean verdict binds to besides the content key: the item's ident, and for a
     Claude Code MCP server also `mcp:<name>`, the form the gate knows from `claude mcp add <name> ...` (so an
@@ -447,7 +459,9 @@ class Store:
             return True
         with self._tx():
             row = self._conn.execute("SELECT approved_at, claimed_by FROM approvals WHERE key=?", (key,)).fetchone()
-            if row is None or (row["claimed_by"] is not None and row["claimed_by"] not in items):
+            if row is None:
+                return self._approved_moved(key, items)
+            if row["claimed_by"] is not None and row["claimed_by"] not in items:
                 return False
             self._conn.execute("UPDATE approvals SET claimed_by=? WHERE key=? AND claimed_by IS NULL",
                                (items[0], key))
@@ -457,6 +471,30 @@ class Store:
             self._conn.execute("INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
                                (_iso(_now()), "approval.claimed", json.dumps({"key": key, "items": list(items)})))
         return True
+
+    def _approved_moved(self, key: str, items: tuple) -> bool:
+        """Inside is_approved's transaction: this item was approved with the same bytes in a sibling folder (a
+        plugin update installs into a new version dir, and some marketplaces name it after their own commit, so
+        an unchanged plugin moves every day). The approval follows the item there and is recorded under key."""
+        new = _local_key_parts(key)
+        if new is None:
+            return False
+        marks = ",".join("?" * len(items))
+        for row in self._conn.execute(f"SELECT key, approved_at FROM item_approvals WHERE item IN ({marks}) "
+                                      "AND key LIKE 'local:%'", items).fetchall():
+            old = _local_key_parts(row["key"])
+            if old is None or old[1] != new[1] or os.path.dirname(old[0]) != os.path.dirname(new[0]):
+                continue
+            if self._conn.execute("SELECT 1 FROM rejections WHERE key=?", (row["key"],)).fetchone():
+                continue
+            for i in items:
+                self._conn.execute("INSERT OR IGNORE INTO item_approvals(item, key, approved_at) VALUES (?,?,?)",
+                                   (i, key, row["approved_at"]))
+            self._conn.execute("INSERT INTO audit(ts, event, fields) VALUES (?,?,?)",
+                               (_iso(_now()), "approval.moved",
+                                json.dumps({"key": key, "from": row["key"], "items": list(items)})))
+            return True
+        return False
 
     def is_rejected(self, key: str) -> bool:
         return self._conn.execute("SELECT 1 FROM rejections WHERE key=?", (key,)).fetchone() is not None
