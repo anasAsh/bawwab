@@ -134,12 +134,18 @@ def strip_single_dir(dest: Path, prefer: str | None = None) -> Path:
 
 
 def hash_tree(root: Path) -> str:
-    """sha256 over sorted `rel\\0sha256` lines. Symlinks are hashed by target, never followed."""
+    """sha256 over sorted `rel\\0sha256` lines. Symlinks are hashed by target, never followed. Claude Code's
+    .in_use markers of the root are left out, as the scanned file list leaves them out (bawwab/scan/files.py):
+    they come and go with every session, and this hash is the approval key of an installed plugin."""
+    from bawwab.agents.claude_code_watch import is_in_use_marker
+
     lines: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames.sort()
         for name in filenames:
             p = Path(dirpath) / name
+            if is_in_use_marker(str(p), str(root)):
+                continue
             rel = p.relative_to(root).as_posix()
             try:
                 if p.is_symlink():

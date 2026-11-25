@@ -100,3 +100,22 @@ def test_code_dropped_in_in_use_is_still_a_change(plugin):
     assert fx.fp_module().check(str(proj), str(home), str(bawwab_home())) == "changed"
     assert fx.refresh(proj, scan=FakeScan(Verdict.SUSPICIOUS))
     assert [q["ident"] for q in open_store().active_quarantine()] == ["claude-code:plugin:p1@mkt"]
+
+
+def test_content_hash_and_inventory_fingerprint_ignore_markers(tmp_path):
+    """The approval key (fetch.hash_tree) and the inventory's rescan fingerprint: a new session moved both, so an
+    approved plugin was asked about, and warned about, again in every session."""
+    from bawwab.fetch.common import hash_tree
+    from bawwab.types import Target
+
+    root = tmp_path / "p"
+    _w(root / "index.js", "x")
+    t = Target("local", str(root), path=str(root))
+    h, fp = hash_tree(root), inv._fingerprint(t)
+    _marker(root, 1)
+    assert (hash_tree(root), inv._fingerprint(t)) == (h, fp)
+    _marker(root, 2)
+    (root / ".in_use" / "1").unlink()
+    assert (hash_tree(root), inv._fingerprint(t)) == (h, fp)
+    _w(root / ".in_use" / "payload.js", "evil()")
+    assert hash_tree(root) != h and inv._fingerprint(t) != fp
