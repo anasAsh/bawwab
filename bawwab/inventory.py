@@ -11,6 +11,7 @@ from pathlib import Path
 
 from bawwab.clicmd import cmd as cli_cmd
 from bawwab.agents import ADAPTERS, InstalledItem
+from bawwab.agents.claude_code_watch import is_in_use_marker
 from bawwab.fetch.target import package_position
 from bawwab.gate.pin import _pin_argv, _pins
 from bawwab.paths import bawwab_home
@@ -46,6 +47,8 @@ def _fingerprint(t: Target) -> str | None:
             dns[:] = sorted(d for d in dns if d != ".git")
             for fn in sorted(fns):
                 p = os.path.join(dp, fn)
+                if is_in_use_marker(p, t.path):  # a new session is not a change (else: a rescan every session)
+                    continue
                 try:
                     st = os.lstat(p)
                 except OSError:
